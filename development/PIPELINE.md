@@ -32,7 +32,10 @@ flowchart LR
    (`scripts/bootstrap_vcpkg.cmake`) and refuses a vcpkg at another commit,
    since another commit changes every package's ABI hash and so misses every
    cached package. The fetch is a treeless partial clone: the overrides read
-   old port trees from vcpkg's history, which a shallow clone lacks.
+   old port trees from vcpkg's history, which a shallow clone lacks. The bootstrap reads each override's port tree itself, so vcpkg finds them
+   local: vcpkg's own git, run with a cleaned environment, could not resolve
+   github.com on Blacksmith's Windows runner. The toolchain ignores
+   `VCPKG_ROOT`, which Visual Studio's environment points at its bundled vcpkg.
 3. **Each direct dependency states its version** by an override in
    `vcpkg.json`, or by its overlay port in `ports/`. Third-party versions equal
    Iris-Headers' `cmake/dependencies.cmake` where vcpkg has them (table

@@ -1,5 +1,5 @@
 # VcpkgCaching_2 (OneReusableBuild_2.5; RTM Build_02): the checks of a pull request into any branch
-# (Ryan, 2026-11-24: "use the vcpkg on all branches"), cheapest first (ci_runners.md): the tools'
+# (decided 2026-11-24: vcpkg on every branch), cheapest first (ci_runners.md): the tools'
 # tests and the workflow lint, then Linux and the JavaScript module, then Windows (2x a Linux
 # minute) and macOS (20x) only once Linux passes. Every build is one call of _build.yml.
 name: ci

@@ -6,8 +6,7 @@ parser, and every rule here is a property of one line or of an indented block), 
 line per violation with its file and line number. Exit status 1 when any is found.
 
 Rules:
-- runner: every runner label is a pinned Blacksmith label (Ryan, 2026-11-24: "We should be using
-  blacksmith for our CI runners"); a GitHub-hosted label (`ubuntu-24.04`, `macos-latest`) is
+- runner: every runner label is a pinned Blacksmith label (decided 2026-11-24); a GitHub-hosted label (`ubuntu-24.04`, `macos-latest`) is
   refused wherever it appears, in `runs-on` or in a matrix value passed to one.
 - action-pin: an action from another repository is pinned to a full commit SHA with its version
   in a trailing comment, since a tag can be moved to other code.
@@ -17,14 +16,13 @@ Rules:
 - parallel: `-j` and `--parallel` name a job count (`-j$CPU_COUNT` with CPU_COUNT unset is
   unbounded and was in four workflows).
 - pr-branches: a `pull_request` trigger has no `branches:` filter, so every branch's pull requests
-  run (Ryan, 2026-11-24: "use the vcpkg on all branches").
+  run (decided 2026-11-24).
 - external-project: no third-party library is built by ExternalProject_Add; vcpkg provides them
   prebuilt from its binary cache (ci_runners.md, "Prebuilt over built").
 - global-build-state: no directory-scope `include_directories(` or `add_compile_definitions(`
   in Iris-Slide's own CMake files (B7); settings are target-scoped.
-- run-length: a `run:` step is at most MAX_RUN_LINES lines (Ryan, 2026-11-24: "avoid lots of
-  shell script in the actions yamls instead leaning on unified workflows with good Cmake
-  subscripts as needed"): one `cmake --preset`, `cmake --build --preset`, `ctest --preset`,
+- run-length: a `run:` step is at most MAX_RUN_LINES lines (decided 2026-11-24: little shell in
+  the workflow files, the logic in CMake presets and scripts): one `cmake --preset`, `cmake --build --preset`, `ctest --preset`,
   `cmake --workflow --preset` or `cmake -P scripts/<name>.cmake` call, which is the same on every
   operating system's shell. Logic lives in CMake presets and scripts, where it is tested.
 

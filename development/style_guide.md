@@ -4,7 +4,7 @@ Binding conventions for Iris-Slide's code and plans: C++20 (the library, the
 encoder and the bindings), Python (the Python package and tools) and
 JavaScript (the WASM module). Project specifics live in
 [ARCHITECTURE.md](ARCHITECTURE.md); where they are more specific than this
-guide, they win. Adopted 2026-11-24 from the style guide Ryan keeps for the
+guide, they win. Adopted 2026-11-24 from the style guide the maintainer keeps for the
 Iris repositories, with the references to other projects removed.
 
 ## Principles

@@ -12,19 +12,19 @@ only when its tests run green on every CI cell that runs them; code alone is
   [the design audit](analysis/design_audit_2026-11-24.md).
 - **Sprint:** the [WBS](WBS.md) sprint that delivers the row.
 - **Status:** Planned → Implemented → Verified (or Partial / Blocked, with a
-  note); Retired when Ryan drops it (the ID is never reused).
+  note); Retired when the maintainer drops it (the ID is never reused).
 - **Tests:** `Unit` · `Contract` (a public call's promise) · `Integration`
   (the encoder or a binding end to end) · `Hostile` (a damaged or hostile
   stream, under AddressSanitizer) · `Concurrency` (under ThreadSanitizer) ·
   `Static` (a gate that reads the source or settings) · `Benchmark` ·
-  `Review` (a document Ryan reads; no test can prove it).
+  `Review` (a document the maintainer reads; no test can prove it).
 - **Tags:** a comment line `// RTM <ID>[, <ID>…]` (C++) or `# RTM <ID>[, <ID>…]`
   (Python, CMake, workflows) on the code and the test; Catch2 tests also carry
   the tag `[<ID>]`.
 
 ```mermaid
 flowchart LR
-    G["Goal_nn<br/>Ryan's words"] --> R["requirement row"]
+    G["Goal_nn<br/>a dated requirement"] --> R["requirement row"]
     F["audit finding"] --> R
     R --> C["code<br/>// RTM tag"]
     R --> T["test<br/>[ID] tag"]
@@ -33,23 +33,26 @@ flowchart LR
 
 ## Goals
 
-| Goal | Ryan's words (2026-11-24) |
+| Goal | Requirement, as decided 2026-11-24 |
 |---|---|
-| Goal_01 | "re-name Iris-Codec to Iris-Slide and make that the open source decoder / encoder of slide files" |
-| Goal_02 | "It should capture the size of the buffer based upon the JPEG's encoded size so it's exact and can't overflow." · "Fix that sizing too." |
-| Goal_03 | "Let's get rid of PNG for tiles, yes? It should only be for annotations (but should be the preferred -- that should be vector (or do you think we should kill PNG all together?)" |
-| Goal_04 | "The idea I have is that the patient info does NOT go in the metadata block only the patient info HL7/FFHIR block." |
-| Goal_05 | "We should fix all things before we make this repo public" · "it's private while we work. I'll make it public once I like it" |
-| Goal_06 | "In the development make a Architecture doc that shows the governance / providence of each block within the IFE spec so we are properly guided." |
-| Goal_07 | "We can reference the proprietary codec but it's use will be runtime linked for those that pay royalties to use it. The other codecs are open" |
-| Goal_08 | "make sure that the WBS shows a clean workflow with an agile design so that we are testing and developing in short sprints with milestones and PRs at the end of each block" |
-| Goal_09 | "SVG preferred and let's just cut the PNG then. Simple is better." |
-| Goal_10 | "We will need to make a I2S repo as well … the information that goes into the slide when it is initially scanned by different scanners (acessioning number, stain info, time, date, scanner info like unique device ID). These are the things that need to go into I2S because they're indelible characteristics of the slide and not patient HL7 metadata." |
-| Goal_11 | "Yes, refuse PNG on re-encode too." |
-| Goal_12 | "let's have I2S be a JSON specification that gets compiled into C++ source like the IFE" |
-| Goal_13 | "We'll call the accessioning number DigitalSlideIdentifier(DSI)" |
-| Goal_14 | "We can add in the description that DSI has a separate DSI_is_PHI:bool so we know if it needs to be scrambled during deidentification" |
-| Goal_15 | "Absent flag should default to true, scramble it" |
+| Goal_01 | Iris-Codec is renamed Iris-Slide and is the open-source decoder and encoder of slide files |
+| Goal_02 | A decoder sizes its destination buffer from the JPEG stream's own encoded size, so the buffer is exact and cannot overflow; the same sizing applies to every codec |
+| Goal_03 | PNG is not used for tiles |
+| Goal_04 | Patient information goes only in the clinical (HL7 / FHIR) block, never in the metadata block |
+| Goal_05 | Every finding is fixed before the repository is released publicly; until then the work is private |
+| Goal_06 | `development/` holds an architecture document recording the governance and provenance of every block of the IFE specification |
+| Goal_07 | The proprietary codec may be referenced; it is linked at run time, for those who pay its royalties; every other codec is open |
+| Goal_08 | The WBS runs as short agile sprints, each tested and ending in a milestone and a pull request |
+| Goal_09 | SVG is the preferred annotation format, and PNG is removed entirely |
+| Goal_10 | A separate I2S repository specifies what a scanner records about a slide when it is first scanned (accessioning number, stain, time, date, the scanner's unique device identifier): indelible characteristics of the slide, kept apart from patient HL7 metadata |
+| Goal_11 | Re-encoding refuses PNG too |
+| Goal_12 | I2S is a JSON specification compiled into C++ source, as IFE is |
+| Goal_13 | The accessioning number is named DigitalImageIdentifier (DII) |
+| Goal_14 | The DII carries a separate boolean, `DII_is_PHI`, saying whether a de-identifier must scramble it |
+| Goal_15 | An absent `DII_is_PHI` flag defaults to true: the DII is scrambled |
+| Goal_16 | CI builds Iris-Slide's dependencies prebuilt through vcpkg on the pull requests of every branch, every build cache shared, the compiler cache included, on Blacksmith runners |
+| Goal_17 | Every dependency comes from vcpkg; Iris-Slide's CMake fetches nothing itself |
+| Goal_18 | Workflows are few and unified; their logic lives in CMake presets and scripts, with little shell in the workflow files |
 
 ## Requirements
 
@@ -71,10 +74,10 @@ flowchart LR
 | Decode_08 | A tile's expected extent is the file's TILE_LENGTH | D3, E3 | DecodeSafety_3 | Hostile | Planned |
 | Identity_01 | Attributes are written only as `METADATA_I2S` and hold no patient identity, from every source | Goal_04, C3, E1 | PatientIdentity_6 | Integration | Planned |
 | Identity_02 | The command line, C++ and Python reach the same identity handling | C3 | PatientIdentity_6 | Integration | Planned |
-| Identity_03 | Associated images that show identity (label, macro) are handled as Ryan decides | Goal_04 | PatientIdentity_6 | Integration | Blocked (Q2) |
-| Identity_04 | The clinical stream (HL7 v2, FHIR JSON, FastFHIR) is written as Ryan's answer to Q6 says | Goal_04 | PatientIdentity_6 | Integration | Blocked (Q6) |
+| Identity_03 | Associated images that show identity (label, macro) are handled as the maintainer decides | Goal_04 | PatientIdentity_6 | Integration | Blocked (Q2) |
+| Identity_04 | The clinical stream (HL7 v2, FHIR JSON, FastFHIR) is written as the maintainer's answer to Q6 says | Goal_04 | PatientIdentity_6 | Integration | Blocked (Q6) |
 | Identity_05 | Attribute keys come from one allow-list, and from I2S's generated C++ once I2S publishes; no `METADATA_DICOM` or `METADATA_FREE_TEXT` attributes are written | Goal_10, Goal_12, D8, E2, Q5 | PatientIdentity_6 | Integration, Static | Planned; the I2S source Blocked (X3) |
-| Identity_06 | The encoder writes the `DigitalSlideIdentifier` with its `DSI_is_PHI` flag; de-identification scrambles the DSI when the flag is true or absent and leaves it unchanged when false | Goal_13, Goal_14, Goal_15, D8, Q10 | PatientIdentity_6 | Integration | Planned; who sets the flag waits on Q10 |
+| Identity_06 | The encoder writes the `DigitalImageIdentifier` with its `DII_is_PHI` flag; de-identification scrambles the DII when the flag is true or absent and leaves it unchanged when false | Goal_13, Goal_14, Goal_15, D8, Q10 | PatientIdentity_6 | Integration | Planned; who sets the flag waits on Q10 |
 | Encode_01 | A tile stream passes through only when its encoding equals the requested one | C5 | EncoderCorrectness_7 | Integration | Planned |
 | Encode_02 | Every encode failure is returned or exits non-zero; nothing is printed and skipped | C9, C14 | EncoderCorrectness_7 | Integration | Planned |
 | Encode_03 | One source type per input owns its handle and reports its read errors | C10, A4 | SourceInterface_8 | Integration | Planned |
@@ -102,8 +105,8 @@ flowchart LR
 | Build_02 | Workflows follow `ci_runners.md` and PIPELINE.md: Blacksmith runners, pinned actions, content-keyed caches, timeouts, bounded parallelism, one reusable build, `run:` steps of one command | B5 | VcpkgCaching_2 | Static (`tools/workflow_lint.py`, `tools/tests`) | Implemented |
 | Build_03 | Release artifacts are checked for architecture, compression and that they run | B6 | WorkflowRunners_17 | Static | Planned |
 | Build_04 | Build settings are scoped to targets; the version is parsed once | B3, B7, A4 | VcpkgCaching_2, WorkflowRunners_17 | Static (`tools/workflow_lint.py`) | Partial: target-scoped and `hwy.cmake` deleted; the version parse remains (VersionParsedOnce_17.2) |
-| Build_05 | Every dependency comes from `vcpkg.json`, prebuilt from vcpkg's binary cache, and is found by `find_package(... CONFIG REQUIRED)`; nothing is fetched at configure, for the library, the encoder, the Python modules and the JavaScript module | Ryan 2026-11-24 ("rely solely on vcpkg"), B5 | VcpkgCaching_2 | Static (`tools/workflow_lint.py`: no ExternalProject), Integration (the encoder round trip) | Implemented |
-| Build_06 | CI shares vcpkg's packages and the compiler's objects through one store on every branch: pull requests write a quarantine main never reads, only `cache.yml` on main writes main's, a fork builds without it, and a broken cache fails the job | Ryan 2026-11-24 ("ccaching of everything") | VcpkgCaching_2 | Unit (`tools/tests/test_ci_scripts.py`), Integration (the pull request's `ci` run) | Implemented |
+| Build_05 | Every dependency comes from `vcpkg.json`, prebuilt from vcpkg's binary cache, and is found by `find_package(... CONFIG REQUIRED)`; nothing is fetched at configure, for the library, the encoder, the Python modules and the JavaScript module | Goal_17, B5 | VcpkgCaching_2 | Static (`tools/workflow_lint.py`: no ExternalProject), Integration (the encoder round trip) | Implemented |
+| Build_06 | CI shares vcpkg's packages and the compiler's objects through one store on every branch: pull requests write a quarantine main never reads, only `cache.yml` on main writes main's, a fork builds without it, and a broken cache fails the job | Goal_16, Goal_18 | VcpkgCaching_2 | Unit (`tools/tests/test_ci_scripts.py`), Integration (the pull request's `ci` run) | Implemented |
 | Performance_01 | Tile reads per second are measured against the paper's figure and held by a gate | audit §4 | ReadBenchmark_18 | Benchmark | Planned |
 | Performance_02 | The size and encode time of tile frames on single-plane layers are measured for Q8 | Q8 | ReadBenchmark_18 | Benchmark | Planned |
 | Release_01 | The documents describe the code, and a fresh audit finds no open finding | Goal_05, audit D1, audit D3 | PublicRelease_19 | Review | Planned |
