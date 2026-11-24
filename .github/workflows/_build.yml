@@ -59,6 +59,9 @@ jobs:
       CC: ${{ inputs.cc }}
       CXX: ${{ inputs.cxx }}
       VCPKG_MAX_CONCURRENCY: "4"   # the 4-vCPU runners (ci_runners.md: bound everything)
+      # vcpkg downloads no CMake or Ninja for arm64 Linux and uses the runner's (measured: "unable
+      # to detect the active compiler's information" without it, PR #2's first run).
+      VCPKG_FORCE_SYSTEM_BINARIES: ${{ endsWith(inputs.runner, '-arm') && '1' || '' }}
     defaults:
       run:
         shell: bash
@@ -75,6 +78,15 @@ jobs:
             dependencies/vcpkg
             dependencies/emsdk
           key: tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.preset }}-${{ hashFiles('vcpkg.json', 'scripts/bootstrap_vcpkg.cmake', 'scripts/bootstrap_emsdk.cmake') }}
+      # The system tools vcpkg's ports need and cannot fetch on these hosts: NASM for aom on x64
+      # Linux ("Could not find nasm", PR #2's first run), Ninja on arm64 Linux, pkg-config and
+      # Ninja on macOS.
+      - name: Build tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update --quiet && sudo apt-get install --yes --no-install-recommends nasm ninja-build pkg-config
+      - name: Build tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja pkgconf
       - name: The compiler's environment (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0

@@ -16,7 +16,11 @@ cmake_minimum_required(VERSION 3.27)
 set(errors "")
 set(lines "")
 
-# vcpkg
+# vcpkg. A configure that vcpkg failed never appends to the history, so its own last log is read.
+cmake_path(GET LOG PARENT_PATH log_folder)
+if(NOT EXISTS "${LOG}" AND EXISTS "${log_folder}/vcpkg-manifest-install.log")
+    set(LOG "${log_folder}/vcpkg-manifest-install.log")
+endif()
 if(NOT EXISTS "${LOG}")
     list(APPEND errors "no vcpkg install log at '${LOG}': the configure never reached vcpkg")
 else()

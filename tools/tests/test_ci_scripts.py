@@ -133,6 +133,13 @@ class CacheReport(unittest.TestCase):
         self.assertNotEqual(run.code, 0)
         self.assertIn("403", run.output)
 
+    def test_failed_configure_reads_its_own_log(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / "vcpkg-manifest-install.log").write_text(self._LOG + "error: building aom:x64-linux failed\n")
+            run = _run(_REPORT, {"LOG": str(Path(folder) / "vcpkg-install-history.log")}, {})
+        self.assertEqual(run.code, 0, run.output)
+        self.assertIn("1 of 2 packages", run.files["GITHUB_STEP_SUMMARY"])
+
     def test_missing_or_empty_log_fails(self) -> None:
         self.assertNotEqual(self._report(None).code, 0)
         self.assertNotEqual(self._report("nothing installed\n").code, 0)
