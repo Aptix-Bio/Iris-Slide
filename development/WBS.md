@@ -804,15 +804,15 @@ pull request opened after ReviewBot_17.8 merges
   request skipped with a notice (PIPELINE.md rule 10) [Review_01, Build_02]
   - [x] Red: `python3 -m unittest discover -s tools/tests`: 22 errors in `test_review_configuration.py` (no workflow, rubric, template, code owners or `require_secrets.py`) and 2 failures of the cache-key rule on the bot's keys; the 39 earlier tests pass ([6227f3c](https://github.com/Aptix-Bio/Iris-Slide/commit/6227f3c7fe5636569de3fa9338853099663386f4))
   - [x] Green: the same command, 63 tests pass; `tools/workflow_lint.py` 0 violations; the rubric and CODEOWNERS load with the bot's own `load_rubric` and `code_owners`; PIPELINE.md's two Mermaid diagrams render with mermaid-cli [d32cbe6](https://github.com/Aptix-Bio/Iris-Slide/commit/d32cbe6eb6bc6db37e365934ffaffb571929e310)
-  - [ ] Aligned: the review workflow is the one every public Aptix repository runs
+  - Aligned: the review workflow is the one every public Aptix repository runs
     (Iris-Headers, Iris-File-Extension), apart from comments and product text: the
     settings check `cmake/require_settings.cmake` in place of `tools/require_secrets.py`,
     its variables named after the secrets, the `fork-skipped` job last, `RULES_SHA` and
     `BOT_REF`, and the review step failing without a verdict; the rubric's shared
     items in the shared order, with AbiAndConsumers added; `cmake/check_review_configuration.cmake`
     in the `lint` job holds all of it
-    - [ ] Red: `cmake -P cmake/check_review_configuration.cmake` names each divergence
-    - [ ] Green: the same command passes; the tools' tests and the workflow lint pass
+    - [x] Red: `cmake -P cmake/check_review_configuration.cmake` fails with 23 problems, each divergence named (jobs `fork;review;code-review`, no `fork-skipped`, the `_SET` flags, `tools/require_secrets.py`, `RUBRIC_COMMIT`, no `BOT_REF`, `run: >` without `test -s verdict.json`); `python3 -m unittest discover -s tools/tests` fails 5 and errors 1 of 51 (rubric order, template, settings step, run-length) ([5da42ff](https://github.com/Aptix-Bio/Iris-Slide/commit/5da42ff8f4508359bfc99273482dd021c2459ff3))
+    - [x] Green: the same check passes, and passes unchanged on Iris-Headers' main and on Iris-File-Extension's pull request 6; 51 tests pass; `tools/workflow_lint.py` 0 violations; actionlint 1.7.12 clean; the pinned bot's `load_rubric` reads 13 items in order and `code_owners` the catch-all's owner; review.yml equals the shared workflow apart from comments
   - [ ] The maintainer sets the repository secrets `ANTHROPIC_KEY` and
     `GOVERNANCE_READ_TOKEN`; until then both review jobs fail naming the missing one
   - [ ] First review: a pull request opened after this task merges carries the bot's
@@ -929,3 +929,11 @@ audit marked closed with its commit
   token and runs it from that path; a fork's pull request is left to a
   maintainer, who pushes it to an Aptix-Bio branch (PIPELINE.md rule 10). The
   lint's cache-key rule admits the bot's content-addressed conversation keys.
+- **2026-11-24, ReviewBot_17.8.** Every public Aptix repository runs one review
+  workflow, so a property proved for one holds for all: Iris-Slide's
+  `review.yml` matches Iris-Headers' and Iris-File-Extension's apart from
+  comments and product text, and shares their configuration check
+  (`cmake/check_review_configuration.cmake`) and settings check
+  (`cmake/require_settings.cmake`). The rubric lists the shared items in the
+  shared order, AbiAndConsumers among them, before Iris-Slide's own. The
+  run-length rule counts a backslash-continued line with its command.

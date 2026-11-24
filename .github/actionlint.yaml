@@ -1,0 +1,17 @@
+# The Blacksmith runner labels the workflows use, so actionlint checks them as known labels
+# instead of reporting them unknown (tools/workflow_lint.py checks them against Blacksmith's
+# documented set).
+self-hosted-runner:
+  labels:
+    - blacksmith-2vcpu-ubuntu-2404
+    - blacksmith-4vcpu-ubuntu-2404
+    - blacksmith-4vcpu-ubuntu-2404-arm
+    - blacksmith-4vcpu-windows-2025
+    - blacksmith-6vcpu-macos-15
+# ReviewBot_17.8: `cache-mode` is a job key GitHub added on 2026-09-10 (GitHub changelog, "Control
+# GitHub Actions cache access with cache-mode", read 2026-11-24), after actionlint 1.7.12's schema;
+# the review job declares it to save its conversation under pull_request_target.
+paths:
+  .github/workflows/review.yml:
+    ignore:
+      - 'unexpected key "cache-mode" for "job" section'

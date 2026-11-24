@@ -54,7 +54,9 @@ WBS (the sprint's tasks, ticked, with evidence and commit links) · RTM (rows
 changed, with evidence) · Decisions (dated, each stated as a plain requirement) · Measurements
 (when any were taken) · Test results (per cell, local and CI) · Red first ·
 Failures fixed (symptom, root cause, fix, commit) · Clinical impact (what a
-pathologist would see differently) · Security impact (new input parsed? new
+pathologist would see differently) · Consumer impact (what Iris-Slide's
+consumers must change for a moved pin or a public API or Python change, and
+the merge order of a coordinated change) · Security impact (new input parsed? new
 dependency? patient data in the diff, logs or fixtures?) · AI authorship (which
 parts an AI agent wrote, with which tool, and what the maintainer did).
 `.github/pull_request_template.md` holds these sections, then the "Agent review"

@@ -24,9 +24,11 @@ Rules:
 - global-build-state: no directory-scope `include_directories(` or `add_compile_definitions(`
   in Iris-Slide's own CMake files (B7); settings are target-scoped.
 - run-length: a `run:` step is at most MAX_RUN_LINES lines (decided 2026-11-24: little shell in
-  the workflow files, the logic in CMake presets and scripts): one `cmake --preset`, `cmake --build --preset`, `ctest --preset`,
+  the workflow files, the logic in CMake presets and scripts), a line continued with a backslash
+  counting with the line after it: one `cmake --preset`, `cmake --build --preset`, `ctest --preset`,
   `cmake --workflow --preset` or `cmake -P scripts/<name>.cmake` call, which is the same on every
-  operating system's shell. Logic lives in CMake presets and scripts, where it is tested.
+  operating system's shell. Logic lives in CMake presets and scripts, where it is tested. The
+  review step every Aptix repository shares is the bot's one command and `test -s verdict.json`.
 
 Usage: python3 tools/workflow_lint.py [repository root]
 """
@@ -145,7 +147,9 @@ def _long_run_steps(path: Path, lines: list[str]) -> list[Violation]:
             continue
         if run.group(1).strip() and run.group(1).strip()[0] not in "|>":
             continue
-        count = sum(1 for _, text in _block(lines, index) if text.strip() and not text.lstrip().startswith("#"))
+        body = [text.rstrip() for _, text in _block(lines, index) if text.strip() and not text.lstrip().startswith("#")]
+        # A line continued with a backslash is one command with the line after it.
+        count = sum(1 for number, text in enumerate(body) if number == 0 or not body[number - 1].endswith("\\"))
         if count > MAX_RUN_LINES:
             found.append(Violation(path, index + 1, Rule.RUN_LENGTH,
                                    f"a run step of {count} lines (at most {MAX_RUN_LINES}): move it into a CMake preset or scripts/*.cmake"))

@@ -110,20 +110,23 @@ flowchart LR
     that can read that one repository's contents and nothing else, passed only
     to that checkout step and not persisted. The model key is the secret
     `ANTHROPIC_KEY`. A job whose secret is unset fails naming it
-    (`tools/require_secrets.py`).
+    (`cmake/require_settings.cmake`). The workflow is the review workflow
+    every public Aptix repository runs, apart from comments and product text.
 
     **Forks.** A pull request from a fork is not reviewed by the model: under
     `pull_request_target` its run would hold the secrets while the model reads
     text the fork's author wrote. Both review jobs are skipped and the job
-    "Review skipped (fork pull request)" leaves a notice on the run. A
+    "Fork pull requests get no model review" leaves a notice on the run. A
     maintainer reviews such a change by pushing its commits to an Aptix-Bio
     branch and opening a pull request from there, which the bot reviews.
 
     **Where to read a review:** each job's log (every line starts
     `review_bot:`), the run's summary page, the bot's comment on the pull
     request, and the `review-verdict` artifact (the full record, kept 90 days).
-    `tools/tests/test_review_configuration.py` holds every property of this
-    rule.
+    `cmake/check_review_configuration.cmake`, in the `lint` job of `ci.yml`,
+    holds the workflow's properties and the steps it shares with the other
+    repositories; `tools/tests/test_review_configuration.py` holds the rubric,
+    the template and the step order.
 
     ```mermaid
     flowchart LR

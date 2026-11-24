@@ -63,6 +63,13 @@ requirement, with its consequence. "None" if none. -->
 <!-- What a pathologist would see differently: decode, colour, tile geometry, or patient identity
 (ARCHITECTURE.md D2, D3, D8). "None" if none. -->
 
+## Consumer impact
+
+<!-- What Iris-Slide's consumers must change: a moved Iris-Headers or IFE pin (from and to which
+commit), a public header, exported symbol, CMake target or install path, or the Python package's
+surface; and, for a coordinated change, each sibling pull request and the order they merge.
+"None" if none. -->
+
 ## Security impact
 
 - New input parsed from a file or the network? _no / yes: where, and how every length is bounded_
@@ -85,14 +92,15 @@ requirement, with its consequence. "None" if none. -->
 - [ ] **StyleGuide** — `development/style_guide.md` followed
 - [ ] **MinimumSurface** — no near-duplicates, Iris-Headers and IFE types reused, nothing ahead of its sprint
 - [ ] **TestsFirst** — new behaviour tested and shown red first; per-cell results; no test weakened
+- [ ] **AbiAndConsumers** — consumer impact of a pin, public API or Python change stated; sibling changes coordinated
+- [ ] **PublicRepository** — nothing private, proprietary or internal; no quotations; no local paths
 - [ ] **SecurityImpact** — the section above filled in and matching the diff
 - [ ] **Pipeline** — workflows follow `ci_runners.md` and `PIPELINE.md`
-- [ ] **DependenciesThroughVcpkg** — every dependency from `vcpkg.json`, pinned
 - [ ] **DataProtection** — no patient data, slide files, secrets, keys or binaries
-- [ ] **PublicRepository** — nothing private, proprietary or internal; no quotations; no local paths
 - [ ] **Documentation** — Mermaid diagrams match the code; decisions recorded (advisory)
-- [ ] **ClinicalIntegrity** — decode, colour, tile geometry and identity changes listed under Clinical impact
 - [ ] **AgentDisclosure** — AI authorship disclosed and specific
+- [ ] **DependenciesThroughVcpkg** — every dependency from `vcpkg.json`, pinned
+- [ ] **ClinicalIntegrity** — decode, colour, tile geometry and identity changes listed under Clinical impact
 
 _Not yet reviewed._
 <!-- review-bot:end -->
