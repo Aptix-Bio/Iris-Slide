@@ -1,0 +1,11 @@
+{
+  "name": "pybind11",
+  "version": "3.1.0",
+  "description": "pybind11's headers and CMake config, without vcpkg's python3 port: the Python modules compile against the interpreter the build runs (find_package(Python))",
+  "homepage": "https://github.com/pybind/pybind11",
+  "license": "BSD-3-Clause",
+  "dependencies": [
+    { "name": "vcpkg-cmake", "host": true },
+    { "name": "vcpkg-cmake-config", "host": true }
+  ]
+}

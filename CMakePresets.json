@@ -1,0 +1,33 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 27, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "vcpkg",
+      "hidden": true,
+      "description": "VcpkgCaches_16: the third-party libraries from vcpkg.json (cmake/toolchains/vcpkg.cmake)",
+      "generator": "Ninja",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/vcpkg.cmake",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "FETCHCONTENT_UPDATES_DISCONNECTED": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": "vcpkg",
+      "displayName": "Release: the library, the encoder and OpenSlide",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "debug",
+      "inherits": "vcpkg",
+      "displayName": "Debug: the library, the encoder and OpenSlide",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "release", "configurePreset": "release" },
+    { "name": "debug", "configurePreset": "debug" }
+  ]
+}

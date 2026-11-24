@@ -1,0 +1,89 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "$comment": "VcpkgCaching_2 (RTM Build_01, Build_05): every library Iris-Slide builds against, first-party and third-party, prebuilt from vcpkg's binary cache; nothing is fetched at configure. The baseline is vcpkg's release 2026.10.16 (scripts/bootstrap_vcpkg.cmake checks vcpkg out at it). Each direct third-party dependency's version is stated by an override, equal to Iris-Headers' cmake/dependencies.cmake where vcpkg has that version; Iris-Headers and Iris-File-Extension are pinned by commit in their overlay ports (ports/). development/PIPELINE.md lists each pin, its source and every difference.",
+  "name": "iris-slide",
+  "version": "0.0.0",
+  "builtin-baseline": "9eec002df1cd109f8f104cd966a763daf9751489",
+  "dependencies": [
+    "glm",
+    {
+      "name": "highway",
+      "version>=": "1.2.0"
+    },
+    "iris-file-extension",
+    "iris-headers",
+    {
+      "name": "libavif",
+      "default-features": false,
+      "features": [
+        "aom"
+      ]
+    },
+    "libjpeg-turbo",
+    "libpng",
+    "vulkan-headers",
+    "vulkan-memory-allocator"
+  ],
+  "features": {
+    "encoder": {
+      "description": "IrisSlideEncoder and the Python encoder module (IRIS_BUILD_ENCODER=ON): libdicom",
+      "dependencies": [
+        "libdicom"
+      ]
+    },
+    "openslide": {
+      "description": "Encoding from vendor slide files (IRIS_USE_OPENSLIDE=ON): OpenSlide's prebuilt shared library (ports/openslide-bin)",
+      "dependencies": [
+        "openslide-bin"
+      ]
+    },
+    "python": {
+      "description": "The Python modules (IRIS_BUILD_PYTHON=ON): pybind11, its headers and CMake files only (ports/pybind11)",
+      "dependencies": [
+        "pybind11"
+      ]
+    },
+    "tests": {
+      "description": "The tests (TestHarness_1): Catch2",
+      "dependencies": [
+        "catch2"
+      ]
+    }
+  },
+  "overrides": [
+    {
+      "name": "catch2",
+      "version": "3.15.1"
+    },
+    {
+      "name": "glm",
+      "version": "1.0.3"
+    },
+    {
+      "name": "highway",
+      "version": "1.2.0"
+    },
+    {
+      "name": "libavif",
+      "version-semver": "1.4.2",
+      "port-version": 1
+    },
+    {
+      "name": "libjpeg-turbo",
+      "version": "3.2.0",
+      "port-version": 1
+    },
+    {
+      "name": "libpng",
+      "version": "1.6.50"
+    },
+    {
+      "name": "vulkan-headers",
+      "version": "1.4.363.0"
+    },
+    {
+      "name": "vulkan-memory-allocator",
+      "version": "3.4.0"
+    }
+  ]
+}

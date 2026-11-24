@@ -1,0 +1,6 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg-configuration.schema.json",
+  "$comment": "VcpkgCaching_2: Iris-Slide's own ports (the first-party Iris-Headers and Iris-File-Extension pinned by commit, and pybind11 without vcpkg's CPython) and triplets.",
+  "overlay-ports": ["./ports"],
+  "overlay-triplets": ["./triplets"]
+}

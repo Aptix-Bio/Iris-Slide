@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core>=0.10", "pybind11", "meson", "ninja", "setuptools-scm"]
+requires = ["scikit-build-core>=0.10", "ninja", "setuptools-scm"]
 build-backend = "scikit_build_core.build"
 
 
@@ -56,7 +56,6 @@ cmake.args = [
   "-D IRIS_BUILD_ENCODER=ON",
   "-D IRIS_BUILD_STATIC=OFF",
   "-D IRIS_BUILD_SHARED=OFF",
-  "-D IRIS_BUILD_DEPENDENCIES=ON",
 ]
 cmake.build-type = "Release"
 cmake.source-dir = "."

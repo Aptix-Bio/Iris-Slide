@@ -1,0 +1,8 @@
+{
+  "name": "openslide-bin",
+  "version": "4.0.1.2",
+  "description": "OpenSlide's own prebuilt shared library (openslide-bin), with its headers and a CMake config: OpenSlide::OpenSlide",
+  "homepage": "https://github.com/openslide/openslide-bin",
+  "license": "LGPL-2.1-only",
+  "supports": "(linux & (x64 | arm64)) | (osx & (x64 | arm64)) | (windows & x64 & !uwp)"
+}
