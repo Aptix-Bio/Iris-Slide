@@ -1,0 +1,112 @@
+# 2025 Copyright Ryan Landvater
+# Created 2025-08-09
+
+cmake_minimum_required(VERSION 3.27)
+include(FetchContent)
+include(ExternalProject)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# if(NOT DEFINED EMSCRIPTEN)
+#     message(FATAL_ERROR "This is a JavaScript build ONLY. It must be built with Emscripten.")
+# endif()
+
+function(get_codec_version)
+    set(slide_priv_header "${CMAKE_CURRENT_SOURCE_DIR}/../src/IrisSlidePriv.hpp")
+    if (NOT EXISTS ${slide_priv_header})
+        message(FATAL_ERROR "Could NOT locate Iris Slide Private Header (IrisSlidePriv.hpp)")
+    endif()
+
+    file(READ ${slide_priv_header} header)
+
+    if (header MATCHES "#define IRIS_SLIDE_MAJOR_VERSION[ ]*([0-9]+)")
+        set(MAJOR_VERSION "${CMAKE_MATCH_1}")
+    else () 
+        message(FATAL_ERROR "Couldn't parse the Iris Slide major version")
+    endif()
+
+    if (header MATCHES "#define IRIS_SLIDE_MINOR_VERSION[ ]*([0-9]+)")
+        set(MINOR_VERSION "${CMAKE_MATCH_1}")
+    else () 
+        message(FATAL_ERROR "Couldn't parse the Iris Slide minor version")
+    endif()
+
+    if (header MATCHES "#define IRIS_SLIDE_BUILD_NUMBER[ ]*([0-9]+)")
+        set(BUILD_NUMBER "${CMAKE_MATCH_1}")
+    else () 
+        message(FATAL_ERROR "Couldn't parse the Iris Slide build iteration")
+    endif()
+
+    set(IRIS_SLIDE_VERSION_STRING "${MAJOR_VERSION}.${MINOR_VERSION}.${BUILD_NUMBER}" PARENT_SCOPE)
+endfunction()
+
+get_codec_version()
+message(STATUS "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+message(STATUS "BUILDING IRIS SLIDE JS COMMUNITY MODULE VERSION v" ${IRIS_SLIDE_VERSION_STRING})
+message(STATUS "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+
+PROJECT (
+    IrisSlideJS
+    LANGUAGES CXX
+    VERSION ${IRIS_SLIDE_VERSION_STRING}
+)
+
+# Iris-Headers and Iris-File-Extension, from this repository's owner — the
+# same pair the native build fetches.
+include(${CMAKE_CURRENT_LIST_DIR}/../cmake/iris-repositories.cmake)
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Iris Slide Universal Object Build
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+set(IFE_SOURCE_DIR ${irisfileextension_SOURCE_DIR}/include)
+add_executable(
+    iris-slide
+    $<TARGET_OBJECTS:IrisFileExtensionLib>
+    IrisSlideJavascript.cpp
+)
+target_include_directories (
+    iris-slide PRIVATE 
+    ${irisheaders_SOURCE_DIR}/include
+    ${irisheaders_SOURCE_DIR}/priv
+    ${IFE_SOURCE_DIR}
+    # The generated layer lives outside include/ and is generated at IFE
+    # configure time; the root CMakeLists carries the same two directories.
+    ${irisfileextension_SOURCE_DIR}/generated_source
+)
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_link_options(
+        iris-slide PRIVATE
+        -sASYNCIFY
+        -sEXPORT_ES6=1
+        -sMODULARIZE=1
+        --emit-tsd iris-slide.d.ts
+        --bind
+        -O0
+        -gsource-map 
+        -sALLOW_MEMORY_GROWTH=1
+        -sASSERTIONS=2
+        -sSAFE_HEAP=1
+        -sSTACK_OVERFLOW_CHECK=2
+    )
+else () 
+    target_link_options(
+        iris-slide PRIVATE
+        -sASYNCIFY
+        -sEXPORT_ES6=1
+        -sMODULARIZE=1
+        --emit-tsd iris-slide.d.ts
+        --bind
+        -O3
+    )
+endif()
+install(
+    FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/iris-slide.js"
+        "${CMAKE_CURRENT_BINARY_DIR}/iris-slide.wasm"
+        "${CMAKE_CURRENT_BINARY_DIR}/iris-slide.d.ts"
+    DESTINATION
+        "."
+)

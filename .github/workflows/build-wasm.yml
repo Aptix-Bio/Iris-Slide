@@ -1,0 +1,62 @@
+name: Iris Slide WASM Build
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Cache Emscripten SDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/emsdk
+          # 'latest' moves, so rotate the key daily and fall back to the
+          # previous day's install on a miss.
+          key: emsdk-${{ runner.os }}-${{ github.run_date }}
+          restore-keys: |
+            emsdk-${{ runner.os }}-
+
+      - name: Setup Emscripten SDK
+        run: |
+          if [ ! -x "${{ github.workspace }}/emsdk/emsdk" ]; then
+            git clone https://github.com/emscripten-core/emsdk.git \
+              "${{ github.workspace }}/emsdk"
+            cd "${{ github.workspace }}/emsdk"
+            ./emsdk install latest
+          fi
+          cd "${{ github.workspace }}/emsdk"
+          ./emsdk activate latest
+        shell: bash
+
+      - name: Check out Iris-File-Extension (this owner's fork)
+        # This owner's fork, never IrisDigitalPathology: a fork's CI tests its own
+        # IFE, and a fork that has none fails here rather than quietly building
+        # against the Org's.
+        shell: bash
+        run: |
+          git clone --depth 1 "https://github.com/${{ github.repository_owner }}/Iris-File-Extension.git" "${RUNNER_TEMP}/ife"
+
+      - name: Configure & Build
+        working-directory: javascript
+        run: |
+          source ${{ github.workspace }}/emsdk/emsdk_env.sh
+          emcmake cmake -B build -DCMAKE_INSTALL_PREFIX=install -D FETCHCONTENT_SOURCE_DIR_IRISFILEEXTENSION="${{ runner.temp }}/ife" .
+          cmake --build build --config Release -j$CPU_COUNT
+          cmake --install build
+        shell: bash
+
+      - name: Package Artifact
+        working-directory: javascript
+        run: |
+          tar -czf iris-slide-javascript.tar.gz -C install .
+
+      - name: Upload WASM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: javascript
+          path: javascript/iris-slide-javascript.tar.gz
