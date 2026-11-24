@@ -27,6 +27,15 @@ same work twice. Modular reuse and frequent cache hits are the two levers.
   (`workflow_call`) per build, called once per OS; shared steps (fetching
   assets, signing in to a cloud) are a composite action every workflow calls.
   Never a second copy of steps that already exist.
+- **CMake does the work.** A `run:` step is one command: a CMake preset
+  (configure, build, test or workflow) or `cmake -P scripts/<name>.cmake`, at
+  most `MAX_RUN_LINES` lines (`tools/workflow_lint.py`, 2 in Iris-Slide); its
+  logic lives in the preset or the script, the same on every operating
+  system's shell, and tested. Composite actions are for what needs an action
+  (checkout, cache restore and save, cloud sign-in), with no shell logic
+  beyond one call (Ryan, 2026-11-24: "avoid lots of shell script in the
+  actions yamls instead leaning on unified workflows with good Cmake
+  subscripts as needed").
 - **Identical work runs once.** Work that doesn't depend on the platform (the
   assets, a toolchain archive covering every platform, generated data) is done
   by one job and handed on as an artifact, not repeated per platform.

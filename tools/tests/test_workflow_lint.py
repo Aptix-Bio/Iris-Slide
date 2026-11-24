@@ -1,6 +1,6 @@
 """tools/workflow_lint.py: each rule fails on the case it names and passes the corrected line.
 
-VcpkgCaches_16 (WorkflowLint_16.4; RTM Build_02). Run: python3 -m unittest discover -s tools/tests
+VcpkgCaching_2 (WorkflowLint_2.4; RTM Build_02). Run: python3 -m unittest discover -s tools/tests
 """
 
 import sys
@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from workflow_lint import Rule, lint_cmake, lint_tree, lint_yaml  # noqa: E402
+from workflow_lint import MAX_RUN_LINES, Rule, lint_cmake, lint_tree, lint_yaml  # noqa: E402
 
 _PATH = Path("ci.yml")
 _CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1"
@@ -107,6 +107,19 @@ class PullRequestBranchesRule(unittest.TestCase):
     def test_types_pass(self) -> None:
         text = "on:\n  pull_request:\n    types: [opened]\n" + _job("blacksmith-2vcpu-ubuntu-2404")
         self.assertEqual(_rules(text), [])
+
+
+class RunLengthRule(unittest.TestCase):
+    def test_long_block_refused(self) -> None:
+        body = "\n".join(f"          echo {n}" for n in range(MAX_RUN_LINES + 1))
+        steps = f"      - run: |\n{body}"
+        self.assertEqual(_rules(_job("blacksmith-2vcpu-ubuntu-2404", steps=steps)), [Rule.RUN_LENGTH])
+
+    def test_one_command_passes(self) -> None:
+        for steps in ("      - run: cmake --workflow --preset ci",
+                      "      - run: >\n          cmake -P scripts/cache_report.cmake\n          -DLOG=build/ci/vcpkg-install-history.log"):
+            with self.subTest(steps=steps):
+                self.assertEqual(_rules(_job("blacksmith-2vcpu-ubuntu-2404", steps=steps)), [])
 
 
 class CMakeRules(unittest.TestCase):

@@ -1,0 +1,106 @@
+# VcpkgCaching_2 (OneReusableBuild_2.5; RTM Build_06): what a CI job's caches supplied, one line each
+# on the run's summary page, and a failure when a cache looks broken instead of slow
+# (ci_runners.md, "Fail loudly"). Run after the build whatever its outcome.
+#
+# - vcpkg: reads the build folder's vcpkg-install-history.log (cmake/toolchains/vcpkg.cmake appends
+#   each configure's install log to it) and says which packages the binary cache restored and which
+#   were built. A binary-cache error (a refused upload, an HTTP 401, 403 or 5xx from the store), or a
+#   history that names no package, fails.
+# - sccache, when the job compiled through it (CMAKE_CXX_COMPILER_LAUNCHER=sccache): reads
+#   `sccache --show-stats` (or STATS, a file of its output, for the tests). No compile request, any
+#   read or write error, or lookup errors with no hit or above one compile in twenty fail; a few
+#   lookup errors among many hits are network blips sccache compiles through, and only warn.
+#
+# Usage: cmake -DLOG=<build>/vcpkg-install-history.log [-DSTATS=<file>] -P scripts/cache_report.cmake
+cmake_minimum_required(VERSION 3.27)
+set(errors "")
+set(lines "")
+
+# vcpkg
+if(NOT EXISTS "${LOG}")
+    list(APPEND errors "no vcpkg install log at '${LOG}': the configure never reached vcpkg")
+else()
+    file(STRINGS "${LOG}" log_lines)
+    set(installed "")
+    set(built "")
+    set(present "")
+    foreach(line IN LISTS log_lines)
+        if(line MATCHES "^Installing [0-9]+/[0-9]+ ([^@ :[]+)")
+            list(APPEND installed "${CMAKE_MATCH_1}")
+        elseif(line MATCHES "^Building ([^@ :[]+)")
+            list(APPEND built "${CMAKE_MATCH_1}")
+        elseif(line MATCHES "^ +(\\* )?([^@ :[]+)[^ ]*:[^ ]+@")
+            # Listed under "The following packages are already installed:" by a later configure.
+            list(APPEND present "${CMAKE_MATCH_2}")
+        endif()
+        string(TOLOWER "${line}" lower)
+        if(lower MATCHES "failed to store binary cache|failed to upload|http response code (401|403|5[0-9][0-9])")
+            list(APPEND errors "vcpkg's binary cache: ${line}")
+        endif()
+    endforeach()
+    list(REMOVE_DUPLICATES installed)
+    list(REMOVE_DUPLICATES built)
+    list(REMOVE_DUPLICATES present)
+    list(REMOVE_ITEM present ${installed})
+    if(NOT installed AND NOT present)
+        list(APPEND errors "the vcpkg log names no installed package: vcpkg did not run, or wrote nothing")
+    endif()
+    list(LENGTH installed total)
+    list(LENGTH built built_count)
+    math(EXPR restored "${total} - ${built_count}")
+    set(vcpkg_line "- vcpkg: ${restored} of ${total} packages from the binary cache")
+    if(built)
+        list(JOIN built ", " built_names)
+        string(APPEND vcpkg_line ", built: ${built_names}")
+    endif()
+    if(present)
+        list(LENGTH present present_count)
+        string(APPEND vcpkg_line ", ${present_count} already in the build folder")
+    endif()
+    list(APPEND lines "${vcpkg_line}")
+endif()
+
+# sccache
+if(DEFINED STATS OR "$ENV{CMAKE_CXX_COMPILER_LAUNCHER}" STREQUAL "sccache")
+    if(DEFINED STATS)
+        file(READ "${STATS}" stats)
+    else()
+        execute_process(COMMAND sccache --show-stats OUTPUT_VARIABLE stats RESULT_VARIABLE result)
+        if(NOT result EQUAL 0)
+            list(APPEND errors "`sccache --show-stats` failed (${result})")
+        endif()
+    endif()
+    foreach(field "Compile requests" "Cache hits" "Cache misses" "Cache errors" "Cache read errors" "Cache write errors")
+        string(REPLACE " " "_" name "${field}")
+        if(stats MATCHES "(^|\n)${field} +([0-9]+)")
+            set(${name} "${CMAKE_MATCH_2}")
+        else()
+            list(APPEND errors "sccache's statistics lack '${field}'")
+            set(${name} 0)
+        endif()
+    endforeach()
+    list(APPEND lines "- Compiler cache (sccache): ${Cache_hits} hits, ${Cache_misses} misses in ${Compile_requests} compile requests")
+    if(Compile_requests EQUAL 0)
+        list(APPEND errors "sccache saw no compile request: the build never reached it")
+    endif()
+    if(Cache_read_errors GREATER 0 OR Cache_write_errors GREATER 0)
+        list(APPEND errors "sccache: ${Cache_read_errors} read and ${Cache_write_errors} write errors in ${Compile_requests} compiles (sign-in or permissions?)")
+    endif()
+    math(EXPR lookup_scaled "${Cache_errors} * 20")
+    if(Cache_errors GREATER 0 AND (Cache_hits EQUAL 0 OR lookup_scaled GREATER Compile_requests))
+        list(APPEND errors "sccache: ${Cache_errors} lookup errors in ${Compile_requests} compiles, ${Cache_hits} hits")
+    elseif(Cache_errors GREATER 0)
+        message(WARNING "sccache: ${Cache_errors} lookup errors in ${Compile_requests} compiles (${Cache_hits} hits), compiled through")
+    endif()
+endif()
+
+foreach(line IN LISTS lines)
+    message(NOTICE "${line}")
+    if(DEFINED ENV{GITHUB_STEP_SUMMARY})
+        file(APPEND "$ENV{GITHUB_STEP_SUMMARY}" "${line}\n")
+    endif()
+endforeach()
+if(errors)
+    list(JOIN errors "\n  " text)
+    message(FATAL_ERROR "cache_report:\n  ${text}")
+endif()

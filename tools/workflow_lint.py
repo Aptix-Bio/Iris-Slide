@@ -1,6 +1,6 @@
 """The rules of development/ci_runners.md and PIPELINE.md that a file can be checked against.
 
-VcpkgCaches_16 (WorkflowLint_16.4; RTM Build_02, Build_05). Reads every workflow and composite
+VcpkgCaching_2 (WorkflowLint_2.4; RTM Build_02, Build_05). Reads every workflow and composite
 action under .github/, and the CMake files, line by line (the standard library has no YAML
 parser, and every rule here is a property of one line or of an indented block), and prints one
 line per violation with its file and line number. Exit status 1 when any is found.
@@ -22,6 +22,11 @@ Rules:
   prebuilt from its binary cache (ci_runners.md, "Prebuilt over built").
 - global-build-state: no directory-scope `include_directories(` or `add_compile_definitions(`
   in Iris-Slide's own CMake files (B7); settings are target-scoped.
+- run-length: a `run:` step is at most MAX_RUN_LINES lines (Ryan, 2026-11-24: "avoid lots of
+  shell script in the actions yamls instead leaning on unified workflows with good Cmake
+  subscripts as needed"): one `cmake --preset`, `cmake --build --preset`, `ctest --preset`,
+  `cmake --workflow --preset` or `cmake -P scripts/<name>.cmake` call, which is the same on every
+  operating system's shell. Logic lives in CMake presets and scripts, where it is tested.
 
 Usage: python3 tools/workflow_lint.py [repository root]
 """
@@ -43,6 +48,11 @@ class Rule(StrEnum):
     PR_BRANCHES = "pr-branches"
     EXTERNAL_PROJECT = "external-project"
     GLOBAL_BUILD_STATE = "global-build-state"
+    RUN_LENGTH = "run-length"
+
+
+# The longest `run:` step, in lines: one command, which may wrap once.
+MAX_RUN_LINES = 2
 
 
 @dataclass(frozen=True)
@@ -119,8 +129,24 @@ def lint_yaml(path: Path, text: str) -> list[Violation]:
             found.append(Violation(path, number, Rule.CACHE_KEY, f"cache key `{key.group(1).strip()}` has no content hash"))
         if _PARALLEL.search(line):
             found.append(Violation(path, number, Rule.PARALLEL, "a parallel build with no job count"))
+    found += _long_run_steps(path, lines)
     found += _jobs_without_timeout(path, lines)
     found += _filtered_pull_requests(path, lines)
+    return found
+
+
+def _long_run_steps(path: Path, lines: list[str]) -> list[Violation]:
+    found: list[Violation] = []
+    for index, line in enumerate(lines):
+        run = re.match(r"^\s*-?\s*run:\s*(.*)$", line)
+        if not run:
+            continue
+        if run.group(1).strip() and run.group(1).strip()[0] not in "|>":
+            continue
+        count = sum(1 for _, text in _block(lines, index) if text.strip() and not text.lstrip().startswith("#"))
+        if count > MAX_RUN_LINES:
+            found.append(Violation(path, index + 1, Rule.RUN_LENGTH,
+                                   f"a run step of {count} lines (at most {MAX_RUN_LINES}): move it into a CMake preset or scripts/*.cmake"))
     return found
 
 

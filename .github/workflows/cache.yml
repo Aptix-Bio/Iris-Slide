@@ -1,0 +1,78 @@
+# VcpkgCaching_2 (OneReusableBuild_2.5; RTM Build_06): the one writer of the cache store's main
+# objects (iris-slide/vcpkg/, iris-slide/sccache/). After each merge to main, and by hand on main to
+# seed it, every cell builds as ci.yml does and uploads vcpkg's packages and the compiler's objects,
+# so pull requests and releases read what main built. Google gives the writer account only to this
+# file on refs/heads/main (tools/cloud_federation.sh); a run anywhere else is skipped here, and
+# would be refused at sign-in if it were not.
+name: cache
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**/*.md"]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: cache-main
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: blacksmith-4vcpu-ubuntu-2404, cc: gcc, cxx: g++ }
+          - { runner: blacksmith-4vcpu-ubuntu-2404, cc: clang, cxx: clang++ }
+          - { runner: blacksmith-4vcpu-ubuntu-2404-arm, cc: clang, cxx: clang++ }
+    uses: ./.github/workflows/_build.yml
+    with:
+      runner: ${{ matrix.runner }}
+      preset: ci
+      cc: ${{ matrix.cc }}
+      cxx: ${{ matrix.cxx }}
+      access: write
+
+  javascript:
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/_build.yml
+    with:
+      runner: blacksmith-4vcpu-ubuntu-2404
+      source: javascript
+      preset: wasm
+      access: write
+
+  windows:
+    needs: linux
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/_build.yml
+    with:
+      runner: blacksmith-4vcpu-windows-2025
+      preset: ci
+      cc: cl
+      cxx: cl
+      access: write
+
+  macos:
+    needs: linux
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/_build.yml
+    with:
+      runner: blacksmith-6vcpu-macos-15
+      preset: ci
+      access: write

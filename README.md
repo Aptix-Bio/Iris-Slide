@@ -68,16 +68,19 @@ The Builder writes each block where the head is when it is asked, so the encoder
 
 ## Building From Source
 
-[![MacOS CI](https://img.shields.io/github/actions/workflow/status/Aptix-Bio/Iris-Slide/cmake-macos-CI.yml?style=for-the-badge&logo=github&label=MacOS)](https://github.com/Aptix-Bio/Iris-Slide/actions/workflows/cmake-macos-CI.yml)
-[![Ubuntu CI](https://img.shields.io/github/actions/workflow/status/Aptix-Bio/Iris-Slide/cmake-linux-CI.yml?style=for-the-badge&logo=github&label=Ubuntu)](https://github.com/Aptix-Bio/Iris-Slide/actions/workflows/cmake-linux-CI.yml)
-[![Windows CI](https://img.shields.io/github/actions/workflow/status/Aptix-Bio/Iris-Slide/cmake-win64-CI.yml?style=for-the-badge&logo=github&label=Windows)](https://github.com/Aptix-Bio/Iris-Slide/actions/workflows/cmake-win64-CI.yml)
+[![MacOS CI](https://img.shields.io/github/actions/workflow/status/Aptix-Bio/Iris-Slide/ci.yml?style=for-the-badge&logo=github&label=MacOS)](https://github.com/Aptix-Bio/Iris-Slide/actions/workflows/ci.yml)
+[![Ubuntu CI](https://img.shields.io/github/actions/workflow/status/Aptix-Bio/Iris-Slide/ci.yml?style=for-the-badge&logo=github&label=Ubuntu)](https://github.com/Aptix-Bio/Iris-Slide/actions/workflows/ci.yml)
+[![Windows CI](https://img.shields.io/github/actions/workflow/status/Aptix-Bio/Iris-Slide/ci.yml?style=for-the-badge&logo=github&label=Windows)](https://github.com/Aptix-Bio/Iris-Slide/actions/workflows/ci.yml)
 
-**Basic Build:**
+**Basic Build:** every dependency comes from `vcpkg.json`; the first configure
+fetches the pinned vcpkg into `dependencies/` and builds the packages once
+(`pkg-config` is needed on macOS and Linux). See
+[development/PIPELINE.md](development/PIPELINE.md).
 ```shell
 git clone --depth 1 https://github.com/Aptix-Bio/Iris-Slide.git
-cmake -B build -D IRIS_BUILD_SHARED=ON -D IRIS_BUILD_ENCODER=ON ./Iris-Slide
-cmake --build build --config Release -j$(nproc)
-cmake --install build
+cd Iris-Slide
+cmake --workflow --preset release
+cmake --install build/release
 ```
 
 ### Build Configuration Options
@@ -90,7 +93,7 @@ The build system provides several configurable options to customize your build:
 | `IRIS_BUILD_STATIC` | `ON` | Build static library (.a/.lib) |
 | `IRIS_BUILD_ENCODER` | `ON` | Build the encoder executable for converting WSI files |
 | `IRIS_BUILD_PYTHON` | `OFF` | Build Python bindings |
-| `IRIS_BUILD_DEPENDENCIES` | `OFF` | Build all dependencies from source and statically link |
+| `IRIS_SYSTEM_DEPENDENCIES` | `OFF` | Find the dependencies installed on the system instead of through vcpkg |
 | `IRIS_USE_OPENSLIDE` | `ON` | Enable OpenSlide support (required for most WSI formats) |
 
 ## Python
@@ -110,7 +113,7 @@ pip install iris-slide openslide-bin
 ## JavaScript
 [![NPM Version](https://img.shields.io/npm/v/iris-slide?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/iris-slide)
 [![jsDelivr](https://img.shields.io/jsdelivr/npm/hm/iris-slide?style=for-the-badge&color=orange&logo=jsdelivr)](https://www.jsdelivr.com/package/npm/iris-slide)
-[![JavaScript CI](https://img.shields.io/github/actions/workflow/status/Aptix-Bio/Iris-Slide/emcmake-wasm-CI.yml?style=for-the-badge&logo=javascript&label=JavaScript%20CI)](https://github.com/Aptix-Bio/Iris-Slide/actions/workflows/javascript-CI.yml)
+[![JavaScript CI](https://img.shields.io/github/actions/workflow/status/Aptix-Bio/Iris-Slide/ci.yml?style=for-the-badge&logo=javascript&label=JavaScript%20CI)](https://github.com/Aptix-Bio/Iris-Slide/actions/workflows/ci.yml)
 
 **Option 1: Iris RESTful Server** (recommended for server deployments)
 - Extremely high performance (multi-threaded with dual stack)

@@ -1,0 +1,88 @@
+# VcpkgCaching_2 (OneReusableBuild_2.5; RTM Build_02): the checks of a pull request into any branch
+# (Ryan, 2026-11-24: "use the vcpkg on all branches"), cheapest first (ci_runners.md): the tools'
+# tests and the workflow lint, then Linux and the JavaScript module, then Windows (2x a Linux
+# minute) and macOS (20x) only once Linux passes. Every build is one call of _build.yml.
+name: ci
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore: ["**/*.md"]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Tools' tests and the workflow lint
+    if: github.event.pull_request.draft != true
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The lint itself runs as the last of these tests (Repository.test_tree_is_clean).
+      - run: python3 -m unittest discover --start-directory tools/tests --verbose
+
+  linux:
+    needs: lint
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: blacksmith-4vcpu-ubuntu-2404, cc: gcc, cxx: g++ }
+          - { runner: blacksmith-4vcpu-ubuntu-2404, cc: clang, cxx: clang++ }
+          - { runner: blacksmith-4vcpu-ubuntu-2404-arm, cc: clang, cxx: clang++ }
+    uses: ./.github/workflows/_build.yml
+    with:
+      runner: ${{ matrix.runner }}
+      preset: ci
+      cc: ${{ matrix.cc }}
+      cxx: ${{ matrix.cxx }}
+      access: quarantine
+
+  javascript:
+    needs: lint
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/_build.yml
+    with:
+      runner: blacksmith-4vcpu-ubuntu-2404
+      source: javascript
+      preset: wasm
+      access: quarantine
+
+  windows:
+    needs: linux
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/_build.yml
+    with:
+      runner: blacksmith-4vcpu-windows-2025
+      preset: ci
+      cc: cl
+      cxx: cl
+      access: quarantine
+
+  macos:
+    needs: linux
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/_build.yml
+    with:
+      runner: blacksmith-6vcpu-macos-15
+      preset: ci
+      access: quarantine

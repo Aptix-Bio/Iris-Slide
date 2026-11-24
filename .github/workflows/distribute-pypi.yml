@@ -1,181 +1,71 @@
-name: Python Artifacts for PyPi
+# VcpkgCaching_2 (OneReusableBuild_2.5; RTM Build_03): the Python source distribution and wheels of a
+# published release, published to PyPI. cibuildwheel builds every Python version of a platform in
+# one job (pyproject.toml, [tool.cibuildwheel]), the dependencies through vcpkg once per job.
+name: pypi
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
-  generate_source:
-    runs-on: ubuntu-latest
+  sdist:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-        - uses: actions/checkout@v4
-        - uses: actions/setup-python@v5
-        
-        - name: Update Pip
-          shell: bash
-          run: |
-            python -m pip install --upgrade pip 
-            pip install build scikit-build-core setuptools-scm
-        - name: Record this owner in the source distribution
-          # An sdist builds with no git checkout and no GITHUB_REPOSITORY, and
-          # cmake/iris-repositories.cmake has no upstream fallback, so the sdist
-          # carries the owner whose Iris-Headers / Iris-File-Extension it builds
-          # against. Edits the working copy only; the grep fails the step if the
-          # anchor line ever moves.
-          shell: bash
-          run: |
-            sed -i 's|^  "-D IRIS_BUILD_DEPENDENCIES=ON",$|&\n  "-D IRIS_DEPS_OWNER=${{ github.repository_owner }}",|' pyproject.toml
-            grep -q '"-D IRIS_DEPS_OWNER=${{ github.repository_owner }}",' pyproject.toml
-        - name: Build Self-contained Python Module
-          shell: bash
-          run: |
-            if [ "${{ github.event_name }}" == "release" ]; then
-              VERSION=${{ github.event.release.tag_name }}
-              VERSION=${VERSION#v}
-              SETUPTOOLS_SCM_PRETEND_VERSION="$VERSION" python -m build . -s
-            else
-              SETUPTOOLS_SCM_PRETEND_VERSION="0.0.0" python -m build . -s
-            fi
-        - name: Upload Build Artifact
-          uses: actions/upload-artifact@v4
-          with:
-            name: source
-            path: ./dist
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0   # setuptools-scm reads the tag
+      - run: pipx run build==1.6.1 --sdist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
 
-  build_non_linux_python_module:
-    runs-on: ${{ matrix.os }}
-    strategy: 
+  wheels:
+    strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
-        python: ['3.11','3.12','3.13']
+        include:
+          - { runner: blacksmith-4vcpu-ubuntu-2404, name: linux-x86_64 }
+          - { runner: blacksmith-4vcpu-ubuntu-2404-arm, name: linux-aarch64 }
+          - { runner: blacksmith-4vcpu-windows-2025, name: windows-x86_64 }
+          - { runner: blacksmith-6vcpu-macos-15, name: macos-arm64 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
     steps:
-          - uses: actions/checkout@v4
-          - uses: ilammy/setup-nasm@v1
-          - uses: actions/setup-python@v5
-            with:
-                python-version: ${{ matrix.python }}
-              
-          - name: Update Pip
-            shell: bash
-            run: |
-                python -m pip install --upgrade pip 
-                pip install build scikit-build-core meson ninja setuptools-scm
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - run: pipx run cibuildwheel==4.3.5 --output-dir wheelhouse
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wheels-${{ matrix.name }}
+          path: wheelhouse/*.whl
+          if-no-files-found: error
 
-          - name: Check out Iris-File-Extension (this owner's fork)
-            # Same per-owner resolution as the reusable build workflows: the
-            # python module compiles against the fetched IFE, and the org's
-            # main still carries the pre-move layout without
-            # include/IrisFileExtension.hpp.
-            #
-            # IFE_FETCH_DIR is emitted in forward-slash form: CMAKE_ARGS goes
-            # through an escape-aware parse (shlex) on its way to CMake, which
-            # eats the backslashes of a native Windows path (D:\a\_temp became
-            # D:/a_temp and the source dir vanished). cygpath -m is Git Bash's
-            # forward-slash path conversion.
-            shell: bash
-            run: |
-                git clone --depth 1 "https://github.com/${{ github.repository_owner }}/Iris-File-Extension.git" "${RUNNER_TEMP}/ife"
-                if command -v cygpath >/dev/null; then
-                  echo "IFE_FETCH_DIR=$(cygpath -m "${RUNNER_TEMP}")/ife" >> "$GITHUB_ENV"
-                else
-                  echo "IFE_FETCH_DIR=${RUNNER_TEMP}/ife" >> "$GITHUB_ENV"
-                fi
-
-          - name: Build Self-contained Python Module
-            env:
-                # scikit-build-core honours CMAKE_ARGS, the standard pip
-                # convention, and passes it to the CMake configure.
-                CMAKE_ARGS: -DFETCHCONTENT_SOURCE_DIR_IRISFILEEXTENSION=${{ env.IFE_FETCH_DIR }}
-            shell: bash
-            run: |
-                if [ "${{ github.event_name }}" == "release" ]; then
-                  VERSION=${{ github.event.release.tag_name }}
-                  VERSION=${VERSION#v}
-                  SETUPTOOLS_SCM_PRETEND_VERSION="$VERSION" python -m build .
-                else
-                  SETUPTOOLS_SCM_PRETEND_VERSION="0.0.0" python -m build .
-                fi
-          - name: Upload Build Artifact
-            uses: actions/upload-artifact@v4
-            with:
-                name: ${{ matrix.os }}-${{ matrix.python }}
-                path: ./dist
-
-  build_many_linux_python_module:
-    runs-on: ${{ matrix.os }}
-    strategy: 
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm]
-        python: [cp311, cp312, cp313]
-
+  publish:
+    if: github.event_name == 'release'
+    needs: [sdist, wheels]
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    environment:
+      name: distribute pypi
+      url: https://pypi.org/project/Iris-Slide/
+    permissions:
+      id-token: write   # PyPI's trusted publishing
     steps:
-          - uses: actions/checkout@v4
-          - uses: ilammy/setup-nasm@v1
-          - uses: actions/setup-python@v5
-
-          - name: Update Pip
-            shell: bash
-            run: |
-                python -m pip install --upgrade pip 
-                pip install scikit-build-core uv cibuildwheel setuptools-scm
-
-          - name: Check out Iris-File-Extension (this owner's fork)
-            # Same per-owner resolution as the reusable build workflows. The
-            # clone lives inside the workspace because cibuildwheel mounts the
-            # project into the container, so /project/ife-checkout resolves
-            # there.
-            shell: bash
-            run: |
-                git clone --depth 1 "https://github.com/${{ github.repository_owner }}/Iris-File-Extension.git" "${{ github.workspace }}/ife-checkout"
-
-          - name: Build Self-contained Python Module
-            env:
-                CIBW_BUILD: "${{ matrix.python }}-*"
-                CIBW_SKIP: "*-manylinux_i686 *-musllinux_i686 *-musllinux_x86_64"
-                CIBW_BUILD_FRONTEND: "build"
-                CIBW_MANYLINUX_X86_64_IMAGE: quay.io/pypa/manylinux_2_34_x86_64
-                CIBW_MANYLINUX_AARCH64_IMAGE: quay.io/pypa/manylinux_2_34_aarch64
-                CIBW_MANYLINUX_PYPY_X86_64_IMAGE: quay.io/pypa/manylinux_2_34_x86_64
-                CIBW_MANYLINUX_PYPY_AARCH64_IMAGE: quay.io/pypa/manylinux_2_34_aarch64
-                CIBW_REPAIR_WHEEL_COMMAND_LINUX: "auditwheel repair -w {dest_dir} {wheel} --exclude libopenslide.so.*"
-                CIBW_ENVIRONMENT: "CMAKE_ARGS=-DFETCHCONTENT_SOURCE_DIR_IRISFILEEXTENSION=/project/ife-checkout"
-            shell: bash
-            run: |
-                if [ "${{ github.event_name }}" == "release" ]; then
-                  VERSION=${{ github.event.release.tag_name }}
-                  VERSION=${VERSION#v}
-                  SETUPTOOLS_SCM_PRETEND_VERSION="$VERSION" python -m cibuildwheel .
-                else
-                  SETUPTOOLS_SCM_PRETEND_VERSION="0.0.0" python -m cibuildwheel .
-                fi
-          - name: Upload Build Artifact
-            uses: actions/upload-artifact@v4
-            with:
-                name: ${{ matrix.os }}-${{matrix.python}}
-                path: ./wheelhouse
-
-  upload_to_pypi:
-        if: github.event_name == 'release'
-        runs-on: ubuntu-latest
-        needs: [generate_source, build_non_linux_python_module, build_many_linux_python_module]
-        environment:
-            name: 'distribute pypi'
-            url: https://pypi.org/project/Iris-Slide/
-        permissions:
-            id-token: write
-        steps:
-        - name: Retrieve Build Artifact
-          uses: actions/download-artifact@v4
-          with:
-            path: ./dist
-            merge-multiple: true
-
-        - name: Publish to PyPi 
-          uses: pypa/gh-action-pypi-publish@release/v1
-          with:
-            verbose: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
