@@ -16,3 +16,6 @@ src/IrisSlideTypes.hpp
 
 # macOS Finder metadata
 .DS_Store
+
+# Local toolchains fetched pinned (vcpkg, its binary archives): never committed.
+dependencies/
