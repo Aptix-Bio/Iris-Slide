@@ -30,6 +30,9 @@ jobs:
           persist-credentials: false
       # The lint itself runs as the last of these tests (Repository.test_tree_is_clean).
       - run: python3 -m unittest discover --start-directory tools/tests --verbose
+      # RTM Review_01: the review workflow keeps its safety properties and the steps every Aptix
+      # repository's review workflow shares.
+      - run: cmake -P cmake/check_review_configuration.cmake
 
   linux:
     needs: lint

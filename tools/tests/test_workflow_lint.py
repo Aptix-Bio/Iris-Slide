@@ -129,9 +129,18 @@ class RunLengthRule(unittest.TestCase):
 
     def test_one_command_passes(self) -> None:
         for steps in ("      - run: cmake --workflow --preset ci",
-                      "      - run: >\n          cmake -P scripts/cache_report.cmake\n          -DLOG=build/ci/vcpkg-install-history.log"):
+                      "      - run: >\n          cmake -P scripts/cache_report.cmake\n          -DLOG=build/ci/vcpkg-install-history.log",
+                      # The review step every Aptix repository shares: one command continued with a
+                      # backslash, then the check that it wrote its verdict.
+                      '      - run: |\n          "$PYTHON" "$SCRIPT" review --pr "$PR_NUMBER" \\\n'
+                      '            --out verdict.json\n          test -s verdict.json'):
             with self.subTest(steps=steps):
                 self.assertEqual(_rules(_job("blacksmith-2vcpu-ubuntu-2404", steps=steps)), [])
+
+    def test_continued_lines_still_count_their_commands(self) -> None:
+        body = "\n".join(f"          echo {n} \\\n            more" for n in range(MAX_RUN_LINES + 1))
+        steps = f"      - run: |\n{body}"
+        self.assertEqual(_rules(_job("blacksmith-2vcpu-ubuntu-2404", steps=steps)), [Rule.RUN_LENGTH])
 
 
 class CMakeRules(unittest.TestCase):
