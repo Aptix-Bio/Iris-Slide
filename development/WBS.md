@@ -802,10 +802,8 @@ pull request opened after ReviewBot_17.8 merges
   `.github/pull_request_template.md`; the bot's private repository checked out at a
   pinned commit with a read-only token confined to that checkout; a fork's pull
   request skipped with a notice (PIPELINE.md rule 10) [Review_01, Build_02]
-  - [ ] Red: `tools/tests/test_review_configuration.py` before the workflow exists,
-    and the lint's cache-key rule refusing the bot's content-addressed keys
-  - [ ] Green: the workflow, the rubric, the template, the code owners and
-    `tools/require_secrets.py`; `tools/workflow_lint.py` clean
+  - [x] Red: `python3 -m unittest discover -s tools/tests`: 22 errors in `test_review_configuration.py` (no workflow, rubric, template, code owners or `require_secrets.py`) and 2 failures of the cache-key rule on the bot's keys; the 39 earlier tests pass ([6227f3c](https://github.com/Aptix-Bio/Iris-Slide/commit/6227f3c7fe5636569de3fa9338853099663386f4))
+  - [x] Green: the same command, 63 tests pass; `tools/workflow_lint.py` 0 violations; the rubric and CODEOWNERS load with the bot's own `load_rubric` and `code_owners`; PIPELINE.md's two Mermaid diagrams render with mermaid-cli
   - [ ] The maintainer sets the repository secrets `ANTHROPIC_KEY` and
     `GOVERNANCE_READ_TOKEN`; until then both review jobs fail naming the missing one
   - [ ] First review: a pull request opened after this task merges carries the bot's
@@ -915,3 +913,10 @@ audit marked closed with its commit
   owner is needed; the DigitalSlideIdentifier (DSI) was renamed
   DigitalImageIdentifier (DII), its flag `DII_is_PHI`, an absent flag still
   meaning PHI.
+- **2026-11-24, ReviewBot_17.8.** The Aptix review bot reviews every pull
+  request from an Aptix-Bio branch against `.github/review/rubric.toml` (Goal_19).
+  GitHub lets only private repositories use an action kept in a private
+  repository, so each job checks the bot out at a pinned commit with a read-only
+  token and runs it from that path; a fork's pull request is left to a
+  maintainer, who pushes it to an Aptix-Bio branch (PIPELINE.md rule 10). The
+  lint's cache-key rule admits the bot's content-addressed conversation keys.

@@ -10,8 +10,10 @@ Rules:
   refused wherever it appears, in `runs-on` or in a matrix value passed to one.
 - action-pin: an action from another repository is pinned to a full commit SHA with its version
   in a trailing comment, since a tag can be moved to other code.
-- cache-key: an actions/cache key carries a content hash (`hashFiles(`), or reuses the primary key
-  a restore step computed (`cache-primary-key`), so a key changes exactly when its content does.
+- cache-key: an actions/cache key carries a content hash (`hashFiles(`), reuses the primary key
+  a restore step computed (`cache-primary-key`), or is the review bot's conversation key
+  (`review-transcript-<SHA-256 of the conversation>`, through its step outputs `restore-key` and
+  `save-key`; ReviewBot_17.8), so a key changes exactly when its content does.
 - timeout: every job that runs on a runner has `timeout-minutes`.
 - parallel: `-j` and `--parallel` name a job count (`-j$CPU_COUNT` with CPU_COUNT unset is
   unbounded and was in four workflows).
@@ -75,6 +77,8 @@ _BLACKSMITH_TOKEN = re.compile(r"blacksmith-[\w-]+")
 _USES = re.compile(r"^\s*-?\s*uses:\s*(\S+)(.*)$")
 _PINNED = re.compile(r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
 _KEY = re.compile(r"^\s*key:\s*(.+)$")
+# What a cache key may carry to change exactly when its content does (the cache-key rule).
+_CONTENT_KEYS = ("hashFiles(", "cache-primary-key", "steps.previous.outputs.restore-key", "steps.review.outputs.save-key")
 _PARALLEL = re.compile(r"(?:\s-j(?!\s*\d)(?:\$\w+|\s|$)|--parallel(?!\s+\d|=\d))")
 _EXTERNAL_PROJECT = re.compile(r"^\s*ExternalProject_Add\s*\(", re.IGNORECASE)
 _GLOBAL_STATE = re.compile(r"^\s*(include_directories|add_compile_definitions)\s*\(", re.IGNORECASE)
@@ -123,7 +127,7 @@ def lint_yaml(path: Path, text: str) -> list[Violation]:
         elif re.match(r"^\s*-\s", line):
             in_cache_step = False
         key = _KEY.match(line)
-        if key and in_cache_step and "hashFiles(" not in key.group(1) and "cache-primary-key" not in key.group(1):
+        if key and in_cache_step and not any(marker in key.group(1) for marker in _CONTENT_KEYS):
             found.append(Violation(path, number, Rule.CACHE_KEY, f"cache key `{key.group(1).strip()}` has no content hash"))
         if _PARALLEL.search(line):
             found.append(Violation(path, number, Rule.PARALLEL, "a parallel build with no job count"))

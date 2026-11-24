@@ -1,7 +1,8 @@
 # Pipeline
 
-How Iris-Slide's dependencies are pinned and built, and how CI caches them.
-Set by VcpkgCaching_2 (2026-11-24). The general CI rules are
+How Iris-Slide's dependencies are pinned and built, how CI caches them, and
+how pull requests are reviewed. Set by VcpkgCaching_2 (2026-11-24); rule 10 by
+ReviewBot_17.8 (2026-11-24). The general CI rules are
 [ci_runners.md](ci_runners.md); these are the rules specific to this
 repository, numbered so a commit or a comment can cite one.
 
@@ -86,6 +87,57 @@ flowchart LR
    most `MAX_RUN_LINES` (2) lines (`tools/workflow_lint.py`): a preset, or
    `cmake -P scripts/<name>.cmake`, which is the same on every operating
    system's shell and is tested in `tools/tests`.
+
+10. **Every pull request from an Aptix-Bio branch is reviewed by the review bot.**
+    `.github/workflows/review.yml` runs the Aptix review bot on every non-draft
+    pull request whose head branch is in this repository, against
+    `.github/review/rubric.toml`; the bot ticks the template's "Agent review"
+    boxes (`.github/pull_request_template.md`), posts one comment, and fails the
+    `code-review` check on a failed blocking item. The trigger is
+    `pull_request_target`, so GitHub runs the workflow, and the bot reads the
+    rubric, its reference files and `.github/CODEOWNERS`, as the default branch
+    holds them: a pull request cannot change the rules it is judged by. Since
+    that trigger gives the run the repository's secrets and a token that can
+    write, each job checks out only the default branch's commit and the bot's
+    pinned commit, and the bot reads the pull request's diff through the API as
+    data; nothing from the head is checked out or run. The job that holds the
+    model key reads only; the job that writes to the pull request never sees
+    the key. The bot is kept in a private repository, and GitHub lets only
+    private repositories use an action from a private repository
+    ([GitHub, "Allowing access to components in a private repository"](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository),
+    read 2026-11-24): each job checks the bot out at the commit
+    `GOVERNANCE_COMMIT` names with the secret `GOVERNANCE_READ_TOKEN`, a token
+    that can read that one repository's contents and nothing else, passed only
+    to that checkout step and not persisted. The model key is the secret
+    `ANTHROPIC_KEY`. A job whose secret is unset fails naming it
+    (`tools/require_secrets.py`).
+
+    **Forks.** A pull request from a fork is not reviewed by the model: under
+    `pull_request_target` its run would hold the secrets while the model reads
+    text the fork's author wrote. Both review jobs are skipped and the job
+    "Review skipped (fork pull request)" leaves a notice on the run. A
+    maintainer reviews such a change by pushing its commits to an Aptix-Bio
+    branch and opening a pull request from there, which the bot reviews.
+
+    **Where to read a review:** each job's log (every line starts
+    `review_bot:`), the run's summary page, the bot's comment on the pull
+    request, and the `review-verdict` artifact (the full record, kept 90 days).
+    `tools/tests/test_review_configuration.py` holds every property of this
+    rule.
+
+    ```mermaid
+    flowchart LR
+        PR["pull request<br/>from an Aptix-Bio branch"] -->|pull_request_target| W["review.yml<br/>as the default branch holds it"]
+        F["pull request<br/>from a fork"] -->|pull_request_target| N["notice only"]
+        W --> R["1. Aptix Review Agent<br/>ANTHROPIC_KEY · read-only"]
+        W --> C["2. Update PR from Agent<br/>no key · pull-requests: write"]
+        G[("review bot<br/>pinned commit")] -->|"GOVERNANCE_READ_TOKEN<br/>checkout only"| R
+        G -->|"GOVERNANCE_READ_TOKEN<br/>checkout only"| C
+        D[("default branch<br/>rubric · references · CODEOWNERS")] --> R
+        D --> C
+        R -->|"verdict artifact"| C
+        C -->|"boxes · comment · check"| PR
+    ```
 
 ## Pins
 

@@ -55,7 +55,11 @@ changed, with evidence) · Decisions (dated, each stated as a plain requirement)
 (when any were taken) · Test results (per cell, local and CI) · Red first ·
 Failures fixed (symptom, root cause, fix, commit) · Clinical impact (what a
 pathologist would see differently) · Security impact (new input parsed? new
-dependency? patient data in the diff, logs or fixtures?).
+dependency? patient data in the diff, logs or fixtures?) · AI authorship (which
+parts an AI agent wrote, with which tool, and what the maintainer did).
+`.github/pull_request_template.md` holds these sections, then the "Agent review"
+boxes the review bot ticks against `.github/review/rubric.toml`
+([PIPELINE.md](PIPELINE.md), rule 10).
 
 **Naming:** every ID says what it is. A WBS item is `PascalCaseName_<number>`
 (`DecodeSafety_3`, `JpegSizedFromHeader_3.1`); an RTM row is
