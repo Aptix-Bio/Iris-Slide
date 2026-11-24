@@ -209,7 +209,7 @@ packages; a second build folder restores all of them), and the pull request's
   (`scripts/cache_report.cmake`) [Build_02, Build_06]
   - [x] Red: the lint's 25 `runner` and 9 `timeout` violations
   - [x] Built: a742868
-  - [x] Green: PR #2's `ci` run 45441187867 at 38d4e12, every cell green on
+  - [x] Green: PR #2's `ci` run 45441187867 at [38d4e12](https://github.com/Aptix-Bio/Iris-Slide/commit/38d4e12b341dc2ac596e7f4843c166dfb19ca57f), every cell green on
     Blacksmith; the Linux, macOS and JavaScript cells restored every vcpkg package
     from the store (20 of 20; 4 of 4) with 13 of 13 sccache hits, each in under a
     minute; Windows built its packages cold in 4 min 36 s (6b9943e, 243621d, 38d4e12)
@@ -217,11 +217,11 @@ packages; a second build folder restores all of them), and the pull request's
   Iris-Slide's own admitting only repository 1470307364 of owner 353521923,
   a reader and a writer account, IAM bindings on gs://iris-vcpkg-cache
   confined to `iris-slide/`, a 7-day rule on `iris-slide/pr/` [Build_06]
-  - [x] Run by the maintainer 2026-11-24 and checked: the provider active, each account
+  - [x] Run by the maintainer 2026-11-24 and checked ([68f5773](https://github.com/Aptix-Bio/Iris-Slide/commit/68f577369fc299e8cd74e460b4bb5e02b40b4c93)): the provider active, each account
     with its one principal set and no keys, three conditioned bindings, the
-    lifecycle rule (68f5773)
-  - [ ] The repository variables `IRIS_SLIDE_GCP_PROVIDER` and
-    `IRIS_SLIDE_GCP_PROJECT` set; until then every cache step fails naming them
+    lifecycle rule
+  - [x] The repository variables `IRIS_SLIDE_GCP_PROVIDER` and `IRIS_SLIDE_GCP_PROJECT` set by the maintainer 2026-11-24 ([68f5773](https://github.com/Aptix-Bio/Iris-Slide/commit/68f577369fc299e8cd74e460b4bb5e02b40b4c93)); PR #2's `ci` run 45441187867
+    restored every package from the store, which needs both
 - [x] **FirstPartyPorts_2.7** — Iris-Headers and Iris-File-Extension as overlay
   ports pinned by commit and SHA-512 (closing B1 for these two, which were
   fetched at `origin/main`); `cmake/iris-repositories.cmake` deleted;
@@ -256,7 +256,7 @@ packages; a second build folder restores all of them), and the pull request's
   - [x] Green: the verdict script, run locally against that branch and IFE's,
     "change: green" (a742868)
 - [ ] **VERIFY:** the maintainer reviews `vcpkg.json`, the ports and `PIPELINE.md`
-- [x] **Gate:** CI green on the pull request (run 45441187867)
+- [x] **Gate:** CI green on the pull request (run 45441187867 at [38d4e12](https://github.com/Aptix-Bio/Iris-Slide/commit/38d4e12b341dc2ac596e7f4843c166dfb19ca57f))
 
 ## TestHarness_1 — every later sprint proves itself here `blocked` on X4 · needs VcpkgCaching_2
 
