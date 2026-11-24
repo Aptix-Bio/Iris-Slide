@@ -812,7 +812,7 @@ pull request opened after ReviewBot_17.8 merges
     items in the shared order, with AbiAndConsumers added; `cmake/check_review_configuration.cmake`
     in the `lint` job holds all of it
     - [x] Red: `cmake -P cmake/check_review_configuration.cmake` fails with 23 problems, each divergence named (jobs `fork;review;code-review`, no `fork-skipped`, the `_SET` flags, `tools/require_secrets.py`, `RUBRIC_COMMIT`, no `BOT_REF`, `run: >` without `test -s verdict.json`); `python3 -m unittest discover -s tools/tests` fails 5 and errors 1 of 51 (rubric order, template, settings step, run-length) ([5da42ff](https://github.com/Aptix-Bio/Iris-Slide/commit/5da42ff8f4508359bfc99273482dd021c2459ff3))
-    - [x] Green: the same check passes, and passes unchanged on Iris-Headers' main and on Iris-File-Extension's pull request 6; 51 tests pass; `tools/workflow_lint.py` 0 violations; actionlint 1.7.12 clean; the pinned bot's `load_rubric` reads 13 items in order and `code_owners` the catch-all's owner; review.yml equals the shared workflow apart from comments
+    - [x] Green: the same check passes, and passes unchanged on Iris-Headers' main and on Iris-File-Extension's pull request 6; 51 tests pass; `tools/workflow_lint.py` 0 violations; actionlint 1.7.12 clean; the pinned bot's `load_rubric` reads 13 items in order and `code_owners` the catch-all's owner; review.yml equals the shared workflow apart from comments [060a20a](https://github.com/Aptix-Bio/Iris-Slide/commit/060a20a55f1b9a7e8e43eaf6e2a0ef8c13d4d4d0)
   - [ ] The maintainer sets the repository secrets `ANTHROPIC_KEY` and
     `GOVERNANCE_READ_TOKEN`; until then both review jobs fail naming the missing one
   - [ ] First review: a pull request opened after this task merges carries the bot's
