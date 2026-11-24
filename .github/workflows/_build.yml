@@ -108,17 +108,21 @@ jobs:
           key: ${{ steps.tools.outputs.cache-primary-key }}
       - name: Build
         run: cmake --build --preset ${{ inputs.preset }}
+      # From the repository's root, with relative paths: a Windows workspace path loses its
+      # backslashes in bash (PR #2's second run).
       - name: Package
         if: inputs.artifact != ''
-        run: cmake -DBUILD=${{ github.workspace }}/build/${{ inputs.preset }} -DARCHIVE=iris-slide-${{ inputs.artifact }}.tar.gz -P ${{ github.workspace }}/scripts/package.cmake
+        working-directory: .
+        run: cmake -DBUILD=build/${{ inputs.preset }} -DARCHIVE=iris-slide-${{ inputs.artifact }}.tar.gz -P scripts/package.cmake
       - name: Upload the package
         if: inputs.artifact != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ inputs.artifact }}
-          path: ${{ inputs.source }}/iris-slide-${{ inputs.artifact }}.tar.gz
+          path: iris-slide-${{ inputs.artifact }}.tar.gz
           if-no-files-found: error
       # What each cache supplied, and a failure when one looks broken, whatever the build did.
       - name: Cache report
         if: always()
-        run: cmake -DLOG=${{ github.workspace }}/build/${{ inputs.preset }}/vcpkg-install-history.log -P ${{ github.workspace }}/scripts/cache_report.cmake
+        working-directory: .
+        run: cmake -DLOG=build/${{ inputs.preset }}/vcpkg-install-history.log -P scripts/cache_report.cmake

@@ -3,20 +3,19 @@
 # build's triplet (restored from the binary cache when built before) before the project
 # starts. CMakeLists.txt picks the manifest's features from its options.
 #
-# The vcpkg is, in order: -DIRIS_SLIDE_VCPKG=<dir>, the VCPKG_ROOT environment variable
-# (CI sets it), or dependencies/vcpkg, which scripts/bootstrap_vcpkg.cmake fetches when missing. It must
+# The vcpkg is -DIRIS_SLIDE_VCPKG=<dir>, or else dependencies/vcpkg, which
+# scripts/bootstrap_vcpkg.cmake fetches when missing. It must
 # be at vcpkg.json's builtin-baseline: a vcpkg at another commit hashes every package
 # differently, so the binary cache would miss and rebuild all of them.
 cmake_path(ABSOLUTE_PATH CMAKE_CURRENT_LIST_DIR NORMALIZE OUTPUT_VARIABLE iris_slide_toolchains)
 cmake_path(GET iris_slide_toolchains PARENT_PATH iris_slide_cmake)
 cmake_path(GET iris_slide_cmake PARENT_PATH iris_slide_root)
 
+# VCPKG_ROOT is not read: Visual Studio's developer environment sets it to the vcpkg Visual
+# Studio bundles, at another commit, which the bootstrap then refused to replace (PR #2's
+# second run, Windows).
 if(NOT DEFINED IRIS_SLIDE_VCPKG)
-    if(DEFINED ENV{VCPKG_ROOT} AND NOT "$ENV{VCPKG_ROOT}" STREQUAL "")
-        set(IRIS_SLIDE_VCPKG "$ENV{VCPKG_ROOT}")
-    else()
-        set(IRIS_SLIDE_VCPKG "${iris_slide_root}/dependencies/vcpkg")
-    endif()
+    set(IRIS_SLIDE_VCPKG "${iris_slide_root}/dependencies/vcpkg")
 endif()
 # The compiler checks' own projects read this file again.
 list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES IRIS_SLIDE_VCPKG)
