@@ -803,7 +803,7 @@ pull request opened after ReviewBot_17.8 merges
   pinned commit with a read-only token confined to that checkout; a fork's pull
   request skipped with a notice (PIPELINE.md rule 10) [Review_01, Build_02]
   - [x] Red: `python3 -m unittest discover -s tools/tests`: 22 errors in `test_review_configuration.py` (no workflow, rubric, template, code owners or `require_secrets.py`) and 2 failures of the cache-key rule on the bot's keys; the 39 earlier tests pass ([6227f3c](https://github.com/Aptix-Bio/Iris-Slide/commit/6227f3c7fe5636569de3fa9338853099663386f4))
-  - [x] Green: the same command, 63 tests pass; `tools/workflow_lint.py` 0 violations; the rubric and CODEOWNERS load with the bot's own `load_rubric` and `code_owners`; PIPELINE.md's two Mermaid diagrams render with mermaid-cli
+  - [x] Green: the same command, 63 tests pass; `tools/workflow_lint.py` 0 violations; the rubric and CODEOWNERS load with the bot's own `load_rubric` and `code_owners`; PIPELINE.md's two Mermaid diagrams render with mermaid-cli [d32cbe6](https://github.com/Aptix-Bio/Iris-Slide/commit/d32cbe6eb6bc6db37e365934ffaffb571929e310)
   - [ ] The maintainer sets the repository secrets `ANTHROPIC_KEY` and
     `GOVERNANCE_READ_TOKEN`; until then both review jobs fail naming the missing one
   - [ ] First review: a pull request opened after this task merges carries the bot's
