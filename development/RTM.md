@@ -53,6 +53,7 @@ flowchart LR
 | Goal_16 | CI builds Iris-Slide's dependencies prebuilt through vcpkg on the pull requests of every branch, every build cache shared, the compiler cache included, on Blacksmith runners |
 | Goal_17 | Every dependency comes from vcpkg; Iris-Slide's CMake fetches nothing itself |
 | Goal_18 | Workflows are few and unified; their logic lives in CMake presets and scripts, with little shell in the workflow files |
+| Goal_19 | Every pull request is code-reviewed by the Aptix review bot against Iris-Slide's own rules; the bot's repository stays private; a fork's pull request is reviewed by the model only after a maintainer pushes it to an Aptix-Bio branch |
 
 ## Requirements
 
@@ -107,6 +108,7 @@ flowchart LR
 | Build_04 | Build settings are scoped to targets; the version is parsed once | B3, B7, A4 | VcpkgCaching_2, WorkflowRunners_17 | Static (`tools/workflow_lint.py`) | Partial: target-scoped and `hwy.cmake` deleted; the version parse remains (VersionParsedOnce_17.2) |
 | Build_05 | Every dependency comes from `vcpkg.json`, prebuilt from vcpkg's binary cache, and is found by `find_package(... CONFIG REQUIRED)`; nothing is fetched at configure, for the library, the encoder, the Python modules and the JavaScript module | Goal_17, B5 | VcpkgCaching_2 | Static (`tools/workflow_lint.py`: no ExternalProject), Integration (the encoder round trip) | Implemented |
 | Build_06 | CI shares vcpkg's packages and the compiler's objects through one store on every branch: pull requests write a quarantine main never reads, only `cache.yml` on main writes main's, a fork builds without it, and a broken cache fails the job | Goal_16, Goal_18 | VcpkgCaching_2 | Unit (`tools/tests/test_ci_scripts.py`), Integration (the pull request's `ci` run) | Implemented |
+| Review_01 | Every non-draft pull request from an Aptix-Bio branch is reviewed by the review bot against `.github/review/rubric.toml` read from the default branch: `pull_request_target`; only the default branch and the bot's pinned commit checked out, the head read as data through the API; `permissions: {}` and each job's least privilege; the model key and the write token in separate jobs; the bot's read token confined to the step that checks the bot out; a missing secret fails the job naming it; a fork's pull request skipped with a notice | Goal_19 | WorkflowRunners_17 | Static (`tools/tests/test_review_configuration.py`, `tools/workflow_lint.py`) | Planned |
 | Performance_01 | Tile reads per second are measured against the paper's figure and held by a gate | audit §4 | ReadBenchmark_18 | Benchmark | Planned |
 | Performance_02 | The size and encode time of tile frames on single-plane layers are measured for Q8 | Q8 | ReadBenchmark_18 | Benchmark | Planned |
 | Release_01 | The documents describe the code, and a fresh audit finds no open finding | Goal_05, audit D1, audit D3 | PublicRelease_19 | Review | Planned |

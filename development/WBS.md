@@ -114,7 +114,7 @@ header every lane uses.
 | LicensedCodecInterface_14 | a test codec library loaded at run time decodes its encoding; without it, a refusal naming the encoding | Q3, Q4, X5 | `blocked` on Q3, Q4 |
 | PythonBinding_15 | `pytest` and `mypy --strict` green; a failed read raises | A8, C14 (Python) | `todo` |
 | WasmBinding_16 | the WASM module's prefix fetch passes against a 5 GiB window | C17, A4 (second `Slide_t`) | `todo` |
-| WorkflowRunners_17 | a release-candidate tag produces checked artifacts; the remaining pins and the cache identities' own project | B1 (the rest), B5 (wheels), B6, A4 (version parse) | `todo` |
+| WorkflowRunners_17 | a release-candidate tag produces checked artifacts; the remaining pins and the cache identities' own project; every pull request from an Aptix-Bio branch reviewed by the review bot against Iris-Slide's rubric | B1 (the rest), B5 (wheels), B6, A4 (version parse) | `doing` |
 | ReadBenchmark_18 | tiles per second measured against the paper, held by a gate | audit §4 (speed), Q8 | `todo` |
 | PublicRelease_19 | the documents match the code, a fresh audit finds nothing open, the maintainer makes the repository public | audit D1 (the rest), audit D3 (the rest) | `todo` |
 
@@ -749,7 +749,7 @@ Shown by: `ctest --preset asan -R RemotePrefix`
 - [ ] **VERIFY:** the maintainer opens a slide over HTTP in a browser
 - [ ] **Gate:** CI green on the pull request
 
-## WorkflowRunners_17 — releases checked, the remaining pins `todo` · needs VcpkgCaching_2
+## WorkflowRunners_17 — releases checked, the remaining pins, every pull request reviewed `doing` · needs VcpkgCaching_2
 
 Purpose: release artifacts are mislabelled and unchecked (B6); the Python build
 requirements and the version source are not yet pinned or single (B1, A4); the
@@ -760,7 +760,8 @@ DependencyPins_16's other two tasks moved here. Milestone: a release-candidate
 tag produces artifacts whose architecture, compression and first run are
 checked, from a tree whose every pin is recorded.
 
-Shown by: the run of a release-candidate tag
+Shown by: the run of a release-candidate tag; the review bot's comment on a
+pull request opened after ReviewBot_17.8 merges
 
 - [ ] **BuildRequirementsPinned_17.1** — moved from DependencyPins_16 (the
   rest of PinnedSources_16.1, whose Iris-Headers and IFE pins
@@ -794,6 +795,22 @@ Shown by: the run of a release-candidate tag
 - [ ] **DownstreamCached_17.7** — Iris-Headers' downstream cell builds
   Iris-Slide's dependencies from source on every run; give it the store, read
   only, or a binary cache of its own [Build_06]
+- [ ] **ReviewBot_17.8** — every non-draft pull request from an Aptix-Bio branch is
+  reviewed by the review bot against Iris-Slide's own rules (Goal_19):
+  `.github/workflows/review.yml` on `pull_request_target`, the rubric
+  `.github/review/rubric.toml` read from the default branch, `.github/CODEOWNERS`,
+  `.github/pull_request_template.md`; the bot's private repository checked out at a
+  pinned commit with a read-only token confined to that checkout; a fork's pull
+  request skipped with a notice (PIPELINE.md rule 10) [Review_01, Build_02]
+  - [ ] Red: `tools/tests/test_review_configuration.py` before the workflow exists,
+    and the lint's cache-key rule refusing the bot's content-addressed keys
+  - [ ] Green: the workflow, the rubric, the template, the code owners and
+    `tools/require_secrets.py`; `tools/workflow_lint.py` clean
+  - [ ] The maintainer sets the repository secrets `ANTHROPIC_KEY` and
+    `GOVERNANCE_READ_TOKEN`; until then both review jobs fail naming the missing one
+  - [ ] First review: a pull request opened after this task merges carries the bot's
+    comment and ticked boxes (`pull_request_target` runs the default branch's
+    workflow, so the pull request that adds it is not reviewed by it)
 - [ ] **VERIFY:** the maintainer reviews the release run
 - [ ] **Gate:** CI green on the pull request
 

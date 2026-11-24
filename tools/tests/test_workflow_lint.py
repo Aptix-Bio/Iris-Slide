@@ -74,6 +74,18 @@ class CacheKeyRule(unittest.TestCase):
         steps = self._CACHE + "          key: src-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}"
         self.assertEqual(_rules(_job("blacksmith-2vcpu-ubuntu-2404", steps=steps)), [])
 
+    def test_review_bot_content_keys_pass(self) -> None:
+        # ReviewBot_17.8: the review bot names the conversation it restores and saves
+        # `review-transcript-<SHA-256 of its content>`, through these two step outputs.
+        for key in ("${{ steps.previous.outputs.restore-key }}", "${{ steps.review.outputs.save-key }}"):
+            with self.subTest(key=key):
+                steps = self._CACHE + f"          key: {key}"
+                self.assertEqual(_rules(_job("blacksmith-2vcpu-ubuntu-2404", steps=steps)), [])
+
+    def test_another_step_output_refused(self) -> None:
+        steps = self._CACHE + "          key: ${{ steps.anything.outputs.key }}"
+        self.assertEqual(_rules(_job("blacksmith-2vcpu-ubuntu-2404", steps=steps)), [Rule.CACHE_KEY])
+
     def test_key_of_another_step_ignored(self) -> None:
         steps = "      - name: x\n        with:\n          key: anything"
         self.assertEqual(_rules(_job("blacksmith-2vcpu-ubuntu-2404", steps=steps)), [])
