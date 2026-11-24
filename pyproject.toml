@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core>=0.10", "pybind11", "meson", "ninja", "setuptools-scm"]
+requires = ["scikit-build-core>=0.10", "ninja", "setuptools-scm"]
 build-backend = "scikit_build_core.build"
 
 
@@ -56,7 +56,6 @@ cmake.args = [
   "-D IRIS_BUILD_ENCODER=ON",
   "-D IRIS_BUILD_STATIC=OFF",
   "-D IRIS_BUILD_SHARED=OFF",
-  "-D IRIS_BUILD_DEPENDENCIES=ON",
 ]
 cmake.build-type = "Release"
 cmake.source-dir = "."
@@ -68,4 +67,17 @@ fallback_version = "0.0.0"
 
 [tool.cibuildwheel]
 build-frontend = "build[uv]"
+# VcpkgCaching_2 (WheelsBuildDependenciesOnce_17.3): every Python version of one platform is built in
+# one job, so vcpkg builds the dependencies once (dependencies/vcpkg-archives) and each later
+# version restores them. The toolchain fetches the pinned vcpkg itself.
+build = ["cp311-*", "cp312-*", "cp313-*"]
+skip = ["*-musllinux_*", "*_i686"]
+
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "quay.io/pypa/manylinux_2_34_x86_64"
+manylinux-aarch64-image = "quay.io/pypa/manylinux_2_34_aarch64"
+# vcpkg's own requirements on a manylinux image (learn.microsoft.com/vcpkg/get_started/get-started).
+before-all = "dnf install -y zip unzip tar pkgconf-pkg-config"
+# The encoder's OpenSlide is the openslide-bin package this project depends on at run time.
+repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel} --exclude libopenslide.so.1"
 

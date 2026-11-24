@@ -1,0 +1,128 @@
+# VcpkgCaching_2 (OneReusableBuild_2.5; RTM Build_02, Build_06): configure, build and, for a
+# release, package one cell of Iris-Slide: the one reusable build every workflow calls, once per
+# platform. Each step is one CMake preset or script call; the logic is in CMakePresets.json,
+# javascript/CMakePresets.json and scripts/.
+#
+# The toolchain (cmake/toolchains/vcpkg.cmake) fetches the pinned vcpkg, and for the JavaScript
+# module the pinned Emscripten SDK, into dependencies/, which is restored by content key first and
+# saved right after the configure that fills it. vcpkg's packages and the compiler's objects come
+# from the GCS store (.github/actions/caches).
+name: _build
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: a Blacksmith runner label
+        required: true
+        type: string
+      source:
+        description: "the CMake project: `.` (the library and the encoder) or `javascript`"
+        required: false
+        type: string
+        default: "."
+      preset:
+        description: the configure and build preset (`ci`, or `wasm` for javascript)
+        required: true
+        type: string
+      cc:
+        description: the C compiler (CC), empty for the runner's default
+        required: false
+        type: string
+        default: ""
+      cxx:
+        description: the C++ compiler (CXX), empty for the runner's default
+        required: false
+        type: string
+        default: ""
+      access:
+        description: "the cache store access: `quarantine`, `read` or `write` (.github/actions/caches)"
+        required: true
+        type: string
+      artifact:
+        description: a name to package the install as an artifact under, empty for none
+        required: false
+        type: string
+        default: ""
+
+permissions: {}
+
+jobs:
+  build:
+    name: ${{ inputs.preset }} (${{ inputs.runner }}${{ inputs.cxx && format(', {0}', inputs.cxx) || '' }})
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write   # the cache store's sign-in
+    env:
+      CC: ${{ inputs.cc }}
+      CXX: ${{ inputs.cxx }}
+      VCPKG_MAX_CONCURRENCY: "4"   # the 4-vCPU runners (ci_runners.md: bound everything)
+      # vcpkg downloads no CMake or Ninja for arm64 Linux and uses the runner's (measured: "unable
+      # to detect the active compiler's information" without it, PR #2's first run).
+      VCPKG_FORCE_SYSTEM_BINARIES: ${{ endsWith(inputs.runner, '-arm') && '1' || '' }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.source }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Restore the pinned vcpkg and Emscripten SDK
+        id: tools
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            dependencies/vcpkg
+            dependencies/emsdk
+          key: tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.preset }}-${{ hashFiles('vcpkg.json', 'scripts/bootstrap_vcpkg.cmake', 'scripts/bootstrap_emsdk.cmake') }}
+      # The system tools vcpkg's ports need and cannot fetch on these hosts: NASM for aom on x64
+      # Linux ("Could not find nasm", PR #2's first run), Ninja on arm64 Linux, pkg-config and
+      # Ninja on macOS.
+      - name: Build tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update --quiet && sudo apt-get install --yes --no-install-recommends nasm ninja-build pkg-config
+      - name: Build tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja pkgconf
+      - name: The compiler's environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+      - uses: ./.github/actions/caches
+        with:
+          access: ${{ inputs.access }}
+          compiler-cache: ${{ inputs.source == '.' }}
+          provider: ${{ vars.IRIS_SLIDE_GCP_PROVIDER }}
+          project: ${{ vars.IRIS_SLIDE_GCP_PROJECT }}
+      - name: Configure
+        run: cmake --preset ${{ inputs.preset }}
+      - name: Save the pinned vcpkg and Emscripten SDK
+        if: steps.tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            dependencies/vcpkg
+            dependencies/emsdk
+          key: ${{ steps.tools.outputs.cache-primary-key }}
+      - name: Build
+        run: cmake --build --preset ${{ inputs.preset }}
+      # From the repository's root, with relative paths: a Windows workspace path loses its
+      # backslashes in bash (PR #2's second run).
+      - name: Package
+        if: inputs.artifact != ''
+        working-directory: .
+        run: cmake -DBUILD=build/${{ inputs.preset }} -DARCHIVE=iris-slide-${{ inputs.artifact }}.tar.gz -P scripts/package.cmake
+      - name: Upload the package
+        if: inputs.artifact != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.artifact }}
+          path: iris-slide-${{ inputs.artifact }}.tar.gz
+          if-no-files-found: error
+      # What each cache supplied, and a failure when one looks broken, whatever the build did.
+      - name: Cache report
+        if: always()
+        working-directory: .
+        run: cmake -DLOG=build/${{ inputs.preset }}/vcpkg-install-history.log -P scripts/cache_report.cmake

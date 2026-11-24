@@ -1,54 +1,53 @@
-name: Publish to npm
+# VcpkgCaching_2 (OneReusableBuild_2.5; RTM Build_03): the JavaScript module of a published release,
+# built by _build.yml and published to npm.
+name: npm
 
 on:
   release:
     types: [published]
-  workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
-  build_wasm:
-    uses: ./.github/workflows/build-wasm.yml
+  javascript:
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/_build.yml
+    with:
+      runner: blacksmith-4vcpu-ubuntu-2404
+      source: javascript
+      preset: wasm
+      access: read
+      artifact: javascript
 
   publish:
-    runs-on: ubuntu-latest
-    needs: [build_wasm]
+    needs: javascript
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: javascript
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Download WASM artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: javascript
-          path: ${{ github.workspace }}
-
-      - name: Copy WASM artifacts and README into package folder
-        run: |
-          tar -xf iris-slide-javascript.tar.gz -C ${{ github.workspace }}/javascript/
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+          path: javascript
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
-          
-      - name: Set package version from GitHub tag
-        working-directory: javascript
-        run: |
-          VERSION=${{ github.event.release.tag_name }}
-          VERSION=${VERSION#v}
-          npm version $VERSION --no-git-tag-version
-
-      - name: Install npm dependencies
-        working-directory: javascript
-        run: |
-          npm install
-
-      - name: Publish to npm
-        working-directory: javascript
-        run: npm publish --access public
-        env:
+          node-version: "20"
+          registry-url: https://registry.npmjs.org
+      - run: cmake -E tar xf iris-slide-javascript.tar.gz
+      # npm reads the version from the tag; a leading v is dropped (semver.clean).
+      - env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: npm version "$TAG" --no-git-tag-version
+      - run: npm install
+      - env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

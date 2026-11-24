@@ -2,8 +2,6 @@
 # Created 3/3/2025
 
 cmake_minimum_required(VERSION 3.27)
-include(FetchContent)
-include(ExternalProject)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,8 +12,27 @@ option(IRIS_BUILD_SHARED "Build IrisSlide Shared Library" ON)
 option(IRIS_BUILD_STATIC "Build IrisSlide Static Library" ON)
 option(IRIS_BUILD_ENCODER "Build the IrisSlide Encoder executable" ON)
 option(IRIS_BUILD_PYTHON "Build IrisSlide Python modules" OFF)
-option(IRIS_BUILD_DEPENDENCIES "Build all dependencies and statically link into self-contained binary" OFF)
 option(IRIS_USE_OPENSLIDE "Use openslide in the encoder (currently not supported on Windows Arm64)" ON)
+option(IRIS_SYSTEM_DEPENDENCIES "Find the third-party libraries installed on the system instead of through vcpkg" OFF)
+
+# VcpkgCaching_2 (RTM Build_01, Build_05): every dependency, first-party and third-party, comes
+# from vcpkg.json through cmake/toolchains/vcpkg.cmake, prebuilt from vcpkg's binary cache,
+# unless another toolchain is named or IRIS_SYSTEM_DEPENDENCIES is on. Nothing is fetched at
+# configure. The manifest's features follow the options, and are read when project() loads the
+# toolchain, so they are set before it.
+if (NOT DEFINED CMAKE_TOOLCHAIN_FILE AND NOT IRIS_SYSTEM_DEPENDENCIES)
+    set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_LIST_DIR}/cmake/toolchains/vcpkg.cmake")
+endif()
+set(VCPKG_MANIFEST_FEATURES library)
+if (IRIS_BUILD_ENCODER)
+    list(APPEND VCPKG_MANIFEST_FEATURES encoder)
+    if (IRIS_USE_OPENSLIDE)
+        list(APPEND VCPKG_MANIFEST_FEATURES openslide)
+    endif()
+endif()
+if (IRIS_BUILD_PYTHON)
+    list(APPEND VCPKG_MANIFEST_FEATURES python)
+endif()
 
 function(get_codec_version)
     set(slide_priv_header "${CMAKE_CURRENT_SOURCE_DIR}/src/IrisSlidePriv.hpp")
@@ -50,9 +67,6 @@ get_codec_version()
 message(STATUS "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 message(STATUS "BUILDING IRIS SLIDE COMMUNITY MODULE VERSION v" ${IRIS_SLIDE_VERSION_STRING})
 message(STATUS "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-if (IRIS_BUILD_DEPENDENCIES)
-    message(STATUS "Iris Slide is configured to build all dependencies and statically link into a single self-contained binary.")
-endif()
 if (IRIS_BUILD_PYTHON)
     message(STATUS "Iris Slide is configured to build Python Module")
 endif()
@@ -66,59 +80,55 @@ PROJECT (
     VERSION ${IRIS_SLIDE_VERSION_STRING}
 )
 
-# Iris-Headers and Iris-File-Extension, from this repository's owner; shared
-# with the JavaScript build.
-include(${CMAKE_CURRENT_LIST_DIR}/cmake/iris-repositories.cmake)
+# The install layout (lib/, include/, bin/), which Iris-Headers' FetchContent used to bring in.
+include(GNUInstallDirs)
 
-FetchContent_Declare (
-    VulkanHeaders
-    URL https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/${IRIS_DEP_VULKAN_SDK}.tar.gz
-)
-FetchContent_Declare (
-    VkMemoryAllocator
-    URL https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/refs/tags/${IRIS_DEP_VMA}.tar.gz
-    URL_HASH SHA256=${IRIS_DEP_VMA_SHA256}
-)
-set(GLM_BUILD_LIBRARY OFF)
-set(GLM_BUILD_INSTALL OFF)
-set(GLM_BUILD_TESTS   OFF)
-FetchContent_Declare (
-    GLM
-    URL https://github.com/g-truc/glm/archive/refs/tags/${IRIS_DEP_GLM}.tar.gz
-    URL_HASH SHA256=${IRIS_DEP_GLM_SHA256}
-)
-FetchContent_MakeAvailable(
-    VulkanHeaders 
-    VkMemoryAllocator
-    GLM
-)
+# Iris-Headers and Iris-File-Extension (ports/, each pinned by commit and SHA-512). Iris-Slide
+# compiles some of Iris-Headers' sources and private headers into its own binaries; the port
+# installs them beside its config (ports/iris-headers).
+find_package(IrisHeaders CONFIG REQUIRED)
+find_package(IrisFileExtension CONFIG REQUIRED)
+set(irisheaders_SOURCE_DIR "${IrisHeaders_DIR}/source")
 
 # Threading
 set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package(Threads)
+find_package(Threads REQUIRED)
 
-# Include external projects
-include(./cmake/hwy.cmake)
-include(./cmake/turbo-jpeg.cmake)
-include(./cmake/avif.cmake)
-include(./cmake/png.cmake)
-include(./cmake/dicom.cmake)
-# Include Encoder-required external projects
+# The third-party libraries (vcpkg.json), each as its imported target. Highway's floor (1.1:
+# Iris-Headers' SIMD kernels use SumsOf2 / SumsOf4 / RepartitionToWideX2) is vcpkg.json's.
+find_package(hwy CONFIG REQUIRED)
+find_package(libjpeg-turbo CONFIG REQUIRED)
+find_package(libavif CONFIG REQUIRED)
+find_package(PNG REQUIRED)
+# Iris-Headers' Vulkan types (priv/IrisCoreVulkan.hpp, included by IrisSlideContext.cpp): headers only.
+find_package(VulkanHeaders CONFIG REQUIRED)
+find_package(VulkanMemoryAllocator CONFIG REQUIRED)
+find_package(glm CONFIG REQUIRED)
+set (
+    IrisSlideDependencies
+    Vulkan::Headers
+    GPUOpen::VulkanMemoryAllocator
+    glm::glm-header-only
+    hwy::hwy
+    $<IF:$<TARGET_EXISTS:libjpeg-turbo::turbojpeg-static>,libjpeg-turbo::turbojpeg-static,libjpeg-turbo::turbojpeg>
+    avif
+    PNG::PNG
+)
+set (IrisSlideEncoderDependencies ${IrisSlideDependencies} Threads::Threads)
 if (IRIS_BUILD_ENCODER)
+    find_package(unofficial-libdicom CONFIG REQUIRED)
+    list(APPEND IrisSlideEncoderDependencies unofficial::libdicom::dicom)
     if (IRIS_USE_OPENSLIDE)
-        add_compile_definitions(IRIS_INCLUDE_OPENSLIDE=1)
         message(STATUS "BUILDING IRIS SLIDE ENCODER: Encoding from vendor files requires Openslide")
-        include(./cmake/openslide.cmake)
-        message(STATUS "Found OPENSLIDE_LIB: ${OPENSLIDE_LIB}")
-    else ()
-        add_compile_definitions(IRIS_INCLUDE_OPENSLIDE=0)
+        find_package(openslide-bin CONFIG REQUIRED)
+        message(STATUS "Found OpenSlide (openslide-bin ${openslide-bin_VERSION})")
+        list(APPEND IrisSlideEncoderDependencies OpenSlide::OpenSlide)
     endif()
-    
-endif(IRIS_BUILD_ENCODER)
+endif()
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Iris Slide Universal Object Build
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-set(IFE_SOURCE_DIR ${irisfileextension_SOURCE_DIR}/include)
 set(SLIDE_SOURCE_DIR ${PROJECT_SOURCE_DIR}/src)
 set (
     IrisSlideSources
@@ -137,61 +147,32 @@ set (
 set (
     IrisSlideInclude
     ${SLIDE_SOURCE_DIR}
-    ${IFE_SOURCE_DIR}
-    # IFE's generated layer: the public umbrella includes IFE_Blocks.hpp and
-    # friends from generated_source/, which is not part of the include/
-    # layout — it is generated at IFE configure time.
-    ${irisfileextension_SOURCE_DIR}/generated_source
-    ${glm_SOURCE_DIR}
     ${irisheaders_SOURCE_DIR}/priv
-    ${vkmemoryallocator_SOURCE_DIR}/include
-    ${vulkanheaders_SOURCE_DIR}/include
 )
-set (
-    IrisSlideDependencies
-    ${TURBOJPEG_LIBRARY}
-    ${AVIF_LIBRARY}
-    ${PNG_LIBRARY}
-)
-set (
-    IrisSlideEncoderDependencies
-    ${IrisSlideDependencies}
-    ${OPENSLIDE_LIB}
-    ${DICOM_LIBRARY}
-    Threads::Threads
-)
+# The compile settings every target that compiles Iris-Slide's sources takes, on the
+# target (B7): the include paths; IFE_EXPORT blank, since IFE's static library is linked into
+# these binaries and none imports IFE from a DLL; whether the encoder reads OpenSlide.
+function(iris_slide_compile_settings target)
+    target_include_directories(${target} PRIVATE ${IrisSlideInclude})
+    target_compile_definitions(${target} PRIVATE
+        IRIS_EXPORT_API=true
+        IFE_EXPORT=
+        IRIS_INCLUDE_OPENSLIDE=$<BOOL:${IRIS_USE_OPENSLIDE}>)
+endfunction()
 add_library(
     IrisSlideLib OBJECT
     ${IrisSlideSources}
 )
-target_include_directories (
-    IrisSlideLib PRIVATE
-    ${IrisSlideInclude}
-)
-target_compile_definitions (
-    IrisSlideLib
-    PRIVATE IRIS_EXPORT_API=true 
-)
+iris_slide_compile_settings(IrisSlideLib)
 set_target_properties(
     IrisSlideLib 
     PROPERTIES CXX_VISIBILITY_PRESET hidden
 )
 target_link_libraries (
     IrisSlideLib
-    PUBLIC IrisHeaders
+    PUBLIC Iris::IrisHeaders
+    PRIVATE ${IrisSlideDependencies} IrisFileExtensionStatic
 )
-if (hwy_EXTERNAL_PROJECT_ADD)
-    add_dependencies(IrisSlideLib hwy)
-endif()
-if (TURBOJPEG_EXTERNAL_PROJECT_ADD) 
-    add_dependencies(IrisSlideLib TurboJpeg)
-endif()
-if (AVIF_EXTERNAL_PROJECT_ADD) 
-    add_dependencies(IrisSlideLib Avif)
-endif()
-if (PNG_EXTERNAL_PROJECT_ADD)
-    add_dependencies(IrisSlideLib Png)
-endif()
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Iris Slide Targets (ie what we are installing)
@@ -203,12 +184,11 @@ set (
 if (IRIS_BUILD_SHARED)
     add_library(
         IrisSlide SHARED 
-        $<TARGET_OBJECTS:IrisFileExtensionLib>
         $<TARGET_OBJECTS:IrisSlideLib>
     )
     target_link_libraries(
         IrisSlide
-        PRIVATE ${IrisSlideDependencies}
+        PRIVATE ${IrisSlideDependencies} IrisFileExtensionStatic
     )
     set(IrisSlideTargets ${IrisSlideTargets} IrisSlide)
 endif()
@@ -216,12 +196,11 @@ endif()
 if (IRIS_BUILD_STATIC)
     add_library(
         IrisSlideStatic STATIC 
-        $<TARGET_OBJECTS:IrisFileExtensionLib>
         $<TARGET_OBJECTS:IrisSlideLib>
     )
     target_link_libraries(
         IrisSlideStatic
-        PRIVATE ${IrisSlideDependencies}
+        PRIVATE ${IrisSlideDependencies} IrisFileExtensionStatic
     )
     set(IrisSlideTargets ${IrisSlideTargets} IrisSlideStatic)
 endif(IRIS_BUILD_STATIC)
@@ -229,29 +208,17 @@ endif(IRIS_BUILD_STATIC)
 if (IRIS_BUILD_ENCODER AND (IRIS_BUILD_SHARED OR IRIS_BUILD_STATIC))
     add_executable (
         IrisSlideEncoder
-        $<TARGET_OBJECTS:IrisFileExtensionLib>
         $<TARGET_OBJECTS:IrisSlideLib>
         ${IrisSlideEncoderSources}
         ${SLIDE_SOURCE_DIR}/EncoderMain.cpp
     )
-    target_include_directories(
-        IrisSlideEncoder 
-        PRIVATE ${IrisSlideInclude}
-        PRIVATE ${OPENSLIDE_DIR}
-    )
-    target_compile_definitions (
-        IrisSlideEncoder
-        PRIVATE IRIS_EXPORT_API=true 
-    )
+    iris_slide_compile_settings(IrisSlideEncoder)
     target_link_libraries (
         IrisSlideEncoder
-        PRIVATE IrisHeaders
+        PRIVATE Iris::IrisHeaders IrisFileExtensionStatic
         PRIVATE ${IrisSlideEncoderDependencies}
     )
     set(IrisSlideTargets ${IrisSlideTargets} IrisSlideEncoder)
-    if (DICOM_EXTERNAL_PROJECT_ADD)
-        add_dependencies(IrisSlideEncoder libdicom)
-    endif()
 endif()
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -259,17 +226,6 @@ endif()
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 if (${PROJECT_IS_TOP_LEVEL} AND (IRIS_BUILD_SHARED OR IRIS_BUILD_STATIC))
-    install(
-        TARGETS IrisHeaders
-        EXPORT IrisHeadersConfig
-        FILE_SET HEADERS DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/Iris
-    )
-    install(
-        EXPORT IrisHeadersConfig
-        FILE IrisHeadersConfig.cmake
-        NAMESPACE "Iris::"
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Iris
-    )
     install(
         TARGETS ${IrisSlideTargets}
         EXPORT IrisSlideConfig
@@ -288,17 +244,10 @@ endif(${PROJECT_IS_TOP_LEVEL} AND (IRIS_BUILD_SHARED OR IRIS_BUILD_STATIC))
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 if(IRIS_BUILD_PYTHON)
+    # pybind11 from vcpkg (ports/pybind11: headers and CMake files, no CPython); the modules
+    # compile against the interpreter running the build.
     set(PYBIND11_FINDPYTHON ON)
-    FetchContent_Declare (
-        Pybind11
-        GIT_REPOSITORY https://github.com/pybind/pybind11.git
-        GIT_TAG "${IRIS_DEP_PYBIND11}"
-        GIT_SHALLOW ON
-        FETCHCONTENT_QUIET ON
-    )
-    FetchContent_MakeAvailable (
-        Pybind11
-    )
+    find_package(pybind11 CONFIG REQUIRED)
     if (NOT CMAKE_INSTALL_PYTHON_LIBDIR)
         set(CMAKE_INSTALL_PYTHON_LIBDIR
         "${CMAKE_INSTALL_LIBDIR}/python${Python_VERSION_MAJOR}.${Python_VERSION_MINOR}/site-packages")
@@ -315,25 +264,17 @@ if(IRIS_BUILD_PYTHON)
     # Then build the Python module
     pybind11_add_module(
         IrisSlidePython
-        $<TARGET_OBJECTS:IrisFileExtensionLib>
         $<TARGET_OBJECTS:IrisSlideLib>
         ${PROJECT_SOURCE_DIR}/python/IrisSlidePython.cpp
     )
-    target_include_directories (
-        IrisSlidePython 
-        PRIVATE ${IrisSlideInclude}
-    )
+    iris_slide_compile_settings(IrisSlidePython)
     set_property(
         TARGET IrisSlidePython
         PROPERTY OUTPUT_NAME iris_core
     )
-    target_compile_definitions (
-        IrisSlidePython
-        PRIVATE IRIS_EXPORT_API=true 
-    )
     target_link_libraries (
         IrisSlidePython
-        PRIVATE IrisHeaders
+        PRIVATE Iris::IrisHeaders IrisFileExtensionStatic
         PRIVATE ${IrisSlideDependencies}
     )
     install(
@@ -347,32 +288,20 @@ if(IRIS_BUILD_PYTHON)
         )
         pybind11_add_module(
             IrisSlideEncoderPython
-            $<TARGET_OBJECTS:IrisFileExtensionLib>
-            $<TARGET_OBJECTS:IrisSlideLib>
+                $<TARGET_OBJECTS:IrisSlideLib>
             ${IrisSlideEncoderSources}
             ${PROJECT_SOURCE_DIR}/python/IrisEncoderPython.cpp
         )
-        target_include_directories (
-            IrisSlideEncoderPython 
-            PRIVATE ${IrisSlideInclude}
-            PRIVATE ${OPENSLIDE_DIR}
-        )
+        iris_slide_compile_settings(IrisSlideEncoderPython)
         set_property(
             TARGET IrisSlideEncoderPython
             PROPERTY OUTPUT_NAME encoder
         )
-        target_compile_definitions (
-            IrisSlideEncoderPython
-            PRIVATE IRIS_EXPORT_API=true 
-        )
         target_link_libraries (
             IrisSlideEncoderPython
-            PRIVATE IrisHeaders
+            PRIVATE Iris::IrisHeaders IrisFileExtensionStatic
             PRIVATE ${IrisSlideEncoderDependencies}
         )
-        if (DICOM_EXTERNAL_PROJECT_ADD)
-            add_dependencies(IrisSlideEncoderPython libdicom)
-        endif()
         install(
             TARGETS IrisSlideEncoderPython
             DESTINATION ${IRIS_INSTALL_PYTHON_LIBDIR}/Iris/Encoder

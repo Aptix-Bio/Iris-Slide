@@ -46,68 +46,76 @@ ARCHITECTURE.md's defects, open questions and external dependencies.
 
 ## Sprint plan
 
-Twenty sprints. Each audit finding is closed by one sprint; a finding with
+Twenty sprints. VcpkgCaching_2 runs first, before TestHarness_1 (Ryan,
+2026-11-24: "Make sure to work on Iris-Slide's CI to use the vcpkg on all
+branches like how ../Eclipse2 does it with ccaching of everything"): every
+later sprint's pull request then builds from prebuilt dependencies and a shared
+compiler cache. It took over DependencyPins_16 and the first two tasks of
+WorkflowRunners_17, and the sprints that followed TestHarness_1 were numbered
+up by one (DecodeSafety_2 became DecodeSafety_3, through WasmBinding_15 to
+WasmBinding_16); the IDs DependencyPins_16 and WorkflowLint_17.1 are retired.
+Each audit finding is closed by one sprint; a finding with
 several independent parts (A1, A4, C14, C16, audit D1, audit D3) names the
 part each sprint closes. B8 needed no work: the audit searched an IFE checkout
 without the rename (X4).
 
 ```mermaid
 flowchart LR
-    S0["DevelopmentDirectory_0"] --> S1["TestHarness_1"]
-    S1 --> S2["DecodeSafety_2"]
-    S2 --> S3["PngRemoved_3"]
-    S2 --> S4["CallerBufferDecode_4"]
-    S1 --> S5["PatientIdentity_5"]
-    S1 --> S6["EncoderCorrectness_6"]
-    S6 --> S7["SourceInterface_7"]
-    S7 --> S8["EncoderConcurrency_8"]
-    S7 --> S9["DicomBridge_9"]
-    S3 --> S10["ApiSurface_10"]
-    S4 --> S10
-    S8 --> S10
-    S10 --> S11["ResultBoundaries_11"]
-    S11 --> S12["CodeHygiene_12"]
-    S11 --> S13["LicensedCodecInterface_13"]
-    S11 --> S14["PythonBinding_14"]
-    S1 --> S15["WasmBinding_15"]
-    S1 --> S16["DependencyPins_16"]
-    S16 --> S17["WorkflowRunners_17"]
-    S4 --> S18["ReadBenchmark_18"]
-    S5 --> S19["PublicRelease_19"]
-    S9 --> S19
-    S12 --> S19
+    S0["DevelopmentDirectory_0"] --> S2["VcpkgCaching_2"]
+    S2 --> S1["TestHarness_1"]
+    S1 --> S3["DecodeSafety_3"]
+    S3 --> S4["PngRemoved_4"]
+    S3 --> S5["CallerBufferDecode_5"]
+    S1 --> S6["PatientIdentity_6"]
+    S1 --> S7["EncoderCorrectness_7"]
+    S7 --> S8["SourceInterface_8"]
+    S8 --> S9["EncoderConcurrency_9"]
+    S8 --> S10["DicomBridge_10"]
+    S4 --> S11["ApiSurface_11"]
+    S5 --> S11
+    S9 --> S11
+    S11 --> S12["ResultBoundaries_12"]
+    S12 --> S13["CodeHygiene_13"]
+    S12 --> S14["LicensedCodecInterface_14"]
+    S12 --> S15["PythonBinding_15"]
+    S1 --> S16["WasmBinding_16"]
+    S2 --> S17["WorkflowRunners_17"]
+    S5 --> S18["ReadBenchmark_18"]
+    S6 --> S19["PublicRelease_19"]
+    S10 --> S19
     S13 --> S19
     S14 --> S19
     S15 --> S19
+    S16 --> S19
     S17 --> S19
     S18 --> S19
 ```
 
 Four lanes run in parallel once TestHarness_1 is merged, since they touch
-different files: decode (2, 3, 4, 18), identity (5), encoder (6, 7, 8, 9) and
-build (15, 16, 17). The lanes meet at ApiSurface_10, which changes the public
+different files: decode (3, 4, 5, 18), identity (6), encoder (7, 8, 9, 10) and
+build (16, 17). The lanes meet at ApiSurface_11, which changes the public
 header every lane uses.
 
 | Sprint | Milestone (what is shown working) | Closes | Status |
 |---|---|---|---|
 | DevelopmentDirectory_0 | this folder reviewed: block governance, sprints, requirements | audit D3 (the design contract) | `doing` |
+| VcpkgCaching_2 | every dependency prebuilt from vcpkg.json and nothing fetched at configure; CI on every branch's pull requests on Blacksmith, vcpkg's packages and the compiler's objects shared through one GCS store | B1 (first-party pins), B3, B5 (runners, caches), B7, X4 (pins the rename branches) | `doing` |
 | TestHarness_1 | `ctest` green under AddressSanitizer on macOS and Linux, with a slide built, opened and decoded in the test | B4 | `blocked` on X4 |
-| DecodeSafety_2 | hostile JPEG and AVIF streams refused naming both sizes under AddressSanitizer; every valid stream decoded into a buffer sized from its own header | C1, C6, C13, C15, E3, A4 (pixel layout, destination rule) | `todo` |
-| PngRemoved_3 | the library builds without libpng and refuses a PNG image naming its encoding | C2, X6 | `todo` |
-| CallerBufferDecode_4 | a program decodes a stream it read through IFE's `Parser` into its own buffer and receives a `Result` | A1 (decode call, GPU types) | `todo` |
-| PatientIdentity_5 | a slide encoded from a source with patient fields reads back with none in its attributes, from the command line, C++ and Python; a DSI flagged as PHI is scrambled on de-identification | C3, E1, E2, audit D1 (metadata claims) | `todo`; three tasks `blocked` on Q2, Q6, X3 |
-| EncoderCorrectness_6 | `IrisSlideEncoder` run end to end: every output tile decodes with the declared encoding, every failure exits non-zero | C5, C9, C14 (encoder), C16 (scratch file, zero concurrency), E4 | `todo` |
-| SourceInterface_7 | one source type per input; a read error from any source fails the encode with that error; every handle closed | C10, A4 (sources, pyramid loops) | `todo` |
-| EncoderConcurrency_8 | the encoder's lifecycle suite clean under ThreadSanitizer | C7, C8, C16 (destructor), A5, A6 | `todo` |
-| DicomBridge_9 | DICOM fixtures encode correctly or are refused by name under AddressSanitizer | C4, C11, C12 | `todo` |
-| ApiSurface_10 | every declaration in `IrisSlideCore.hpp` links against the installed decoder and encoder libraries | A2, A3, B2 | `todo`; one task `blocked` on Q7 |
-| ResultBoundaries_11 | every public call returns a `Result`; no test writes to stderr | C14 (API), A1 (`create_` form), A4 (boundary helper), A9 | `todo` |
-| CodeHygiene_12 | clang-tidy and warnings-as-errors silent over the tree | A7, audit D2 | `todo` |
-| LicensedCodecInterface_13 | a test codec library loaded at run time decodes its encoding; without it, a refusal naming the encoding | Q3, Q4, X5 | `blocked` on Q3, Q4 |
-| PythonBinding_14 | `pytest` and `mypy --strict` green; a failed read raises | A8, C14 (Python) | `todo` |
-| WasmBinding_15 | the WASM module's prefix fetch passes against a 5 GiB window | C17, A4 (second `Slide_t`) | `todo` |
-| DependencyPins_16 | a clean configure fetches every dependency at a recorded commit or hash | B1, B3, B7, A4 (version parse), X4 | `todo` |
-| WorkflowRunners_17 | a workflow lint passes; a release-candidate tag produces checked artifacts | B5, B6 | `todo` |
+| DecodeSafety_3 | hostile JPEG and AVIF streams refused naming both sizes under AddressSanitizer; every valid stream decoded into a buffer sized from its own header | C1, C6, C13, C15, E3, A4 (pixel layout, destination rule) | `todo` |
+| PngRemoved_4 | the library builds without libpng and refuses a PNG image naming its encoding | C2, X6 | `todo` |
+| CallerBufferDecode_5 | a program decodes a stream it read through IFE's `Parser` into its own buffer and receives a `Result` | A1 (decode call, GPU types) | `todo` |
+| PatientIdentity_6 | a slide encoded from a source with patient fields reads back with none in its attributes, from the command line, C++ and Python; a DSI flagged as PHI is scrambled on de-identification | C3, E1, E2, audit D1 (metadata claims) | `todo`; three tasks `blocked` on Q2, Q6, X3 |
+| EncoderCorrectness_7 | `IrisSlideEncoder` run end to end: every output tile decodes with the declared encoding, every failure exits non-zero | C5, C9, C14 (encoder), C16 (scratch file, zero concurrency), E4 | `todo` |
+| SourceInterface_8 | one source type per input; a read error from any source fails the encode with that error; every handle closed | C10, A4 (sources, pyramid loops) | `todo` |
+| EncoderConcurrency_9 | the encoder's lifecycle suite clean under ThreadSanitizer | C7, C8, C16 (destructor), A5, A6 | `todo` |
+| DicomBridge_10 | DICOM fixtures encode correctly or are refused by name under AddressSanitizer | C4, C11, C12 | `todo` |
+| ApiSurface_11 | every declaration in `IrisSlideCore.hpp` links against the installed decoder and encoder libraries | A2, A3, B2 | `todo`; one task `blocked` on Q7 |
+| ResultBoundaries_12 | every public call returns a `Result`; no test writes to stderr | C14 (API), A1 (`create_` form), A4 (boundary helper), A9 | `todo` |
+| CodeHygiene_13 | clang-tidy and warnings-as-errors silent over the tree | A7, audit D2 | `todo` |
+| LicensedCodecInterface_14 | a test codec library loaded at run time decodes its encoding; without it, a refusal naming the encoding | Q3, Q4, X5 | `blocked` on Q3, Q4 |
+| PythonBinding_15 | `pytest` and `mypy --strict` green; a failed read raises | A8, C14 (Python) | `todo` |
+| WasmBinding_16 | the WASM module's prefix fetch passes against a 5 GiB window | C17, A4 (second `Slide_t`) | `todo` |
+| WorkflowRunners_17 | a release-candidate tag produces checked artifacts; the remaining pins and the cache identities' own project | B1 (the rest), B5 (wheels), B6, A4 (version parse) | `todo` |
 | ReadBenchmark_18 | tiles per second measured against the paper, held by a gate | audit §4 (speed), Q8 | `todo` |
 | PublicRelease_19 | the documents match the code, a fresh audit finds nothing open, Ryan makes the repository public | audit D1 (the rest), audit D3 (the rest) | `todo` |
 
@@ -140,7 +148,118 @@ Milestone: this folder, reviewed. Branch `feature/DevelopmentDirectory_0`.
 - [ ] **Gate:** the pull request merged (documents only, so no CI runs, by
   `ci_runners.md`)
 
-## TestHarness_1 — every later sprint proves itself here `blocked` on X4 · needs DevelopmentDirectory_0
+## VcpkgCaching_2 — prebuilt dependencies and shared caches on every branch `doing` · needs DevelopmentDirectory_0
+
+Purpose: every CI run built every dependency from source (Aptix-Bio/Iris-Headers
+run 45422510046, job 138562152373, Iris-Slide on ubuntu-24.04: Highway,
+libjpeg-turbo, libavif, libpng and libdicom each "NOT FOUND. Set to clone and
+build during the build process"). Ryan, 2026-11-24: "Make sure to work on
+Iris-Slide's CI to use the vcpkg on all branches like how ../Eclipse2 does it
+with ccaching of everything"; "We should be using blacksmith for our CI
+runners"; "I would like to remove the fetch content cmake elements in
+Iris-Slide and rely solely on vcpkg for them"; "Simplified streamlined
+workflows are key. Also I want to avoid lots of shell script in the actions
+yamls instead leaning on unified workflows with good Cmake subscripts as
+needed". Milestone: a clean configure restores every dependency from vcpkg's
+binary cache and fetches nothing else; every pull request into any branch
+builds on Blacksmith through one reusable workflow, reading main's store and
+writing its own quarantine. The rules this sprint set are
+[PIPELINE.md](PIPELINE.md).
+
+The sprint grew past six tasks when Ryan added the first-party ports, Python,
+WASM and the downstream cell to it on 2026-11-24 and asked for them in the
+same pull request.
+
+Shown by: `cmake --workflow --preset release` (the first run builds the
+packages; a second build folder restores all of them), and the pull request's
+`ci` run.
+
+- [x] **VcpkgManifest_2.1** — `vcpkg.json` in manifest mode at vcpkg's release
+  2026.10.16 (`9eec002df1cd109f8f104cd966a763daf9751489`), overrides equal to
+  Iris-Headers' pins; triplets that build release libraries and OpenSlide
+  shared; `cmake/toolchains/vcpkg.cmake`, which fetches the pinned vcpkg itself
+  (`scripts/bootstrap_vcpkg.cmake`, a treeless partial clone, since overrides
+  read old port trees a shallow clone lacks); `CMakePresets.json` [Build_05]
+  - [x] Red: the Iris-Headers run above, each library built from source
+  - [x] Green: `cmake --preset release` on arm64 macOS installed 20 packages;
+    a fresh build folder (`cmake --preset ci`) restored 20 of 20 from the
+    binary cache in 2.0 s; `IrisSlideEncoder` encoded a synthetic 8192 × 6144
+    tiled TIFF and all 1028 tiles of its 9 layers decoded (tile 0 mean absolute
+    error 7.68) (05043cb)
+- [x] **HighwayModule_2.2** — moved from DependencyPins_16 (was 16.2):
+  `cmake/hwy.cmake`, a half-renamed copy of `avif.cmake` (B3), deleted with
+  the other ExternalProject modules; Highway comes from vcpkg [Build_04]
+  - [x] Red: `tools/workflow_lint.py` found 6 `ExternalProject_Add` calls
+  - [x] Green: none (05043cb)
+- [x] **BuildStateScoped_2.3** — moved from DependencyPins_16 (was 16.3):
+  include paths and definitions on the targets (B7) [Build_04]
+  - [x] Red: the lint found 8 directory-scope `include_directories(` and
+    `add_compile_definitions(` calls
+  - [x] Green: none (05043cb)
+- [x] **WorkflowLint_2.4** — moved from WorkflowRunners_17 (was 17.1):
+  `tools/workflow_lint.py` over the workflows, the composite actions and the
+  CMake files: Blacksmith labels, actions pinned by commit SHA, content-hashed
+  cache keys, timeouts, bounded parallelism, pull requests of every branch,
+  no ExternalProject, no directory-scope build state, and `run:` steps of at
+  most `MAX_RUN_LINES` (2) lines [Build_02]
+  - [x] Red: 91 violations on the tree (fcfd368), then 16 more `run-length`
+    once that rule was added
+  - [x] Green: 0 violations; 38 tests in `tools/tests` pass (a742868)
+- [x] **OneReusableBuild_2.5** — moved from WorkflowRunners_17 (was 17.2):
+  `_build.yml`, called once per platform by `ci.yml`, `cache.yml` and the
+  release workflows, each step one CMake preset or `cmake -P` call; Linux
+  first, Windows and macOS after it; the composite action `caches`
+  (`scripts/ci_caches.cmake`) and the report that fails a broken cache
+  (`scripts/cache_report.cmake`) [Build_02, Build_06]
+  - [x] Red: the lint's 25 `runner` and 9 `timeout` violations
+  - [x] Built: a742868
+  - [ ] Green: the pull request's `ci` run
+- [x] **CacheIdentities_2.6** — `tools/cloud_federation.sh`: a provider of
+  Iris-Slide's own admitting only repository 1470307364 of owner 353521923,
+  a reader and a writer account, IAM bindings on gs://iris-vcpkg-cache
+  confined to `iris-slide/`, a 7-day rule on `iris-slide/pr/` [Build_06]
+  - [x] Run by Ryan 2026-11-24 and checked: the provider active, each account
+    with its one principal set and no keys, three conditioned bindings, the
+    lifecycle rule (68f5773)
+  - [ ] The repository variables `IRIS_SLIDE_GCP_PROVIDER` and
+    `IRIS_SLIDE_GCP_PROJECT` set; until then every cache step fails naming them
+- [x] **FirstPartyPorts_2.7** — Iris-Headers and Iris-File-Extension as overlay
+  ports pinned by commit and SHA-512 (closing B1 for these two, which were
+  fetched at `origin/main`); `cmake/iris-repositories.cmake` deleted;
+  OpenSlide as `openslide-bin` 4.0.1.2 prebuilt and libdicom with a CMake
+  config, so every dependency is found by `find_package(... CONFIG REQUIRED)`
+  [Build_01, Build_05]
+  - [x] Red: vcpkg's openslide port needs autoconf, automake and libtool on the
+    system (its gperf dependency, measured on macOS)
+  - [x] Green: as VcpkgManifest_2.1; the IFE port pins the paired branch
+    (Aptix-Bio/Iris-File-Extension `feature/VcpkgCaching_2`, 45845fb), which
+    installs `IFE_Window.hpp` for Emscripten (05043cb, c0f42a7)
+- [x] **PythonThroughVcpkg_2.8** — pybind11 from an overlay port without vcpkg's
+  CPython; the wheels build every Python version of a platform in one job
+  [Build_05]
+  - [x] Red: vcpkg's pybind11 port depends on its python3 port
+  - [x] Built: 05043cb, a742868
+  - [ ] Green: a release-candidate run of `distribute-pypi.yml` *(not run: it
+    runs on a release or by hand from main)*
+- [x] **WasmThroughVcpkg_2.9** — the JavaScript module from the same
+  `vcpkg.json`, triplet `wasm32-emscripten`, the Emscripten SDK 6.0.13 pinned
+  by commit (`scripts/bootstrap_emsdk.cmake`) [Build_05]
+  - [x] Red: "'IFE_Window.hpp' file not found" against IFE's install
+  - [x] Green: `cmake --workflow --preset wasm` (javascript/) wrote
+    `iris-slide.wasm` (356,394 bytes) (c0f42a7)
+- [x] **DownstreamThroughPorts_2.10** — `scripts/local_ports.cmake` writes
+  overlay ports from local checkouts, and Iris-Headers' downstream cell
+  builds Iris-Slide through them with its verdict in
+  `cmake/downstream_verdict.cmake` (Aptix-Bio/Iris-Headers
+  `feature/VcpkgCaching_2`, 6d4be31) [Build_05]
+  - [x] Red: `-DFETCHCONTENT_SOURCE_DIR_IRISHEADERS` reported unused, and the
+    pinned port built instead of the change
+  - [x] Green: the verdict script, run locally against that branch and IFE's,
+    "change: green" (a742868)
+- [ ] **VERIFY:** Ryan reviews `vcpkg.json`, the ports and `PIPELINE.md`
+- [ ] **Gate:** CI green on the pull request
+
+## TestHarness_1 — every later sprint proves itself here `blocked` on X4 · needs VcpkgCaching_2
 
 Purpose: the repository has no tests (B4). Milestone: `ctest` green under
 AddressSanitizer on macOS and Linux, including a slide built by IFE's
@@ -150,14 +269,15 @@ only against them.
 
 Shown by: `cmake --preset asan && cmake --build --preset asan && ctest --preset asan`
 
-- [ ] **TestTarget_1.1** — `tests/` with Catch2 at the version Iris-Headers
-  pins *(to confirm)*, `enable_testing()`, `IRIS_SLIDE_BUILD_TESTS`
+- [ ] **TestTarget_1.1** — `tests/` with Catch2 from `vcpkg.json`'s `tests`
+  feature (3.15.1, Iris-Headers' pin), `enable_testing()`, `IRIS_SLIDE_BUILD_TESTS`
   [Testing_01]
   - [ ] Red: `ctest --test-dir build` reports "No tests were found"
   - [ ] Green: one test runs
-- [ ] **Presets_1.2** — `CMakePresets.json`: `debug`, `release`, `asan`
-  (AddressSanitizer and UndefinedBehaviorSanitizer), `tsan`, each in
-  `build/<preset>` [Testing_02]
+- [ ] **Presets_1.2** — `asan` (AddressSanitizer and
+  UndefinedBehaviorSanitizer) and `tsan` added to the `CMakePresets.json`
+  VcpkgCaching_2 made (`debug`, `release`, `ci`), each in `build/<preset>`, with
+  test presets [Testing_02]
   - [ ] Red: `cmake --preset asan` reports no such preset
 - [ ] **FixtureSlide_1.3** — a 2 × 2-tile JPEG slide with attributes and one
   associated image, written in the test through IFE's `Builder` from
@@ -168,16 +288,14 @@ Shown by: `cmake --preset asan && cmake --build --preset asan && ctest --preset 
   under a named bound) [Testing_03]
   - [ ] Red: the comparison run against a fixture whose tile 0 was replaced
     by another tile's pixels fails, which shows the test can fail
-- [ ] **CiRunsTests_1.5** — the Linux workflow runs `ctest --preset asan` on
-  Blacksmith (`blacksmith-2vcpu-ubuntu-2404`; Ryan, 2026-11-24: "We should be
-  using blacksmith for our CI runners", since GitHub-hosted jobs in Aptix-Bio's
-  private repositories stopped starting over billing that day); macOS and
-  Windows run only after Linux passes (`ci_runners.md`, cheapest first). The remaining workflow rules are WorkflowRunners_17 [Testing_04]
+- [ ] **CiRunsTests_1.5** — `_build.yml` (VcpkgCaching_2) runs the tests
+  through a test preset, `ctest --preset asan` on Linux; macOS and Windows run
+  only after Linux passes (`ci_runners.md`, cheapest first) [Testing_04]
   - [ ] Red: the pull request's Linux job shows no test step
 - [ ] **VERIFY:** Ryan reads the round-trip test
 - [ ] **Gate:** CI green on the pull request
 
-## DecodeSafety_2 — a stream cannot write past its buffer `todo` · needs TestHarness_1
+## DecodeSafety_3 — a stream cannot write past its buffer `todo` · needs TestHarness_1
 
 Purpose: decoding trusts declared sizes (C1, C13) and a fixed 256-pixel tile
 (E3). Ryan, 2026-11-24: "It should capture the size of the buffer based upon
@@ -188,28 +306,28 @@ decodes into a buffer sized from its own header.
 
 Shown by: `ctest --preset asan -R Decode`
 
-- [ ] **JpegSizedFromHeader_2.1** — `tj3DecompressHeader` first; the
+- [ ] **JpegSizedFromHeader_3.1** — `tj3DecompressHeader` first; the
   destination is sized from the stream's own width, height and the requested
   format; `TJPARAM_MAXPIXELS` set; `tj3Init` and every `tj3Set` checked; a
   tile whose stream is not the tile's extent is refused naming both sizes
   [Decode_01]
   - [ ] Red: the 512 × 512 stream in a 256 tile reports a heap-buffer-overflow
     under AddressSanitizer
-- [ ] **TileLengthFromTheFile_2.2** — a tile's expected extent is the file's
+- [ ] **TileLengthFromTheFile_3.2** — a tile's expected extent is the file's
   TILE_LENGTH in place of the constant 256 (E3) [Decode_08]
   - [ ] Red: a fixture with 512-pixel tiles overflows a 256 × 256 buffer
     under AddressSanitizer
-- [ ] **OneDestinationRule_2.3** — one function decides the destination for
+- [ ] **OneDestinationRule_3.3** — one function decides the destination for
   every decoder: capacity checked, size set, a destination too small refused
   naming both sizes; `avifRGBImageSetDefaults` from the decoded image after
   its extent is checked (C13, A4) [Decode_01, Decode_04]
   - [ ] Red: a caller's AVIF destination is replaced by another buffer; a
     512 × 300 AVIF associated image fails to decode
-- [ ] **PixelLayoutOnce_2.4** — one `bytes_per_pixel(Format)`, throwing on
+- [ ] **PixelLayoutOnce_3.4** — one `bytes_per_pixel(Format)`, throwing on
   `FORMAT_UNDEFINED`, in place of seven switches (C6, A4) [Decode_05]
   - [ ] Red: deriving layers from an `R8G8B8` source over-reads under
     AddressSanitizer
-- [ ] **EncoderBuffersOwned_2.5** — `TJPARAM_NOREALLOC` on compression;
+- [ ] **EncoderBuffersOwned_3.5** — `TJPARAM_NOREALLOC` on compression;
   libavif's output copied into a `Buffer` or freed with libavif's own
   allocator (C15) [Decode_06]
   - [ ] Red: a test that compresses into a buffer one byte too small expects
@@ -217,36 +335,36 @@ Shown by: `ctest --preset asan -R Decode`
 - [ ] **VERIFY:** Ryan reviews the hostile-stream tests
 - [ ] **Gate:** CI green on the pull request
 
-## PngRemoved_3 — one fewer codec to defend `todo` · needs DecodeSafety_2
+## PngRemoved_4 — one fewer codec to defend `todo` · needs DecodeSafety_3
 
 Purpose: Ryan, 2026-11-24: "SVG preferred and let's just cut the PNG then.
 Simple is better" (ARCHITECTURE D7). Removing the PNG decoder closes C2.
 Milestone: the library builds with no libpng and refuses a PNG associated
-image naming its encoding. Follows DecodeSafety_2 because both edit
+image naming its encoding. Follows DecodeSafety_3 because both edit
 `src/IrisSlideContext.cpp`.
 
 Shown by: `ctest --preset asan -R Png`, and `cmake --build --preset release`
 with no libpng on the link line
 
-- [ ] **PngRefusedByName_3.1** — reading a PNG associated image or
+- [ ] **PngRefusedByName_4.1** — reading a PNG associated image or
   annotation returns a failure naming the image and `IMAGE_ENCODING_PNG`;
   re-encoding a source that carries one is refused the same way (Ryan,
   2026-11-24: "Yes, refuse PNG on re-encode too.") [Decode_03]
   - [ ] Red: a fixture with a PNG associated image decodes today, and
     re-encodes with the PNG passed through
-- [ ] **AssociatedImagesAsJpegOrAvif_3.2** — the encoder writes associated
+- [ ] **AssociatedImagesAsJpegOrAvif_4.2** — the encoder writes associated
   images as JPEG or AVIF only [Decode_03]
   - [ ] Red: an encode that requests a PNG associated image succeeds today
-- [ ] **LibpngLeavesTheBuild_3.3** — `cmake/png.cmake`, zlib-ng and the PNG
+- [ ] **LibpngLeavesTheBuild_4.3** — `cmake/png.cmake`, zlib-ng and the PNG
   codec removed from every target, the wheels and `licenses/` [Decode_03]
   - [ ] Red: a static check finds `png` in the link line of the decoder
-- [ ] **EnumerationsFollowIfe_3.4** — Iris-Slide's enumerations follow IFE's
+- [ ] **EnumerationsFollowIfe_4.4** — Iris-Slide's enumerations follow IFE's
   retirement of the PNG values once it lands (X6) — `blocked` on that IFE
   change; the three tasks above do not wait on it
 - [ ] **VERIFY:** Ryan reviews the refusal's message
 - [ ] **Gate:** CI green on the pull request
 
-## CallerBufferDecode_4 — a viewer decodes the streams it fetched `todo` · needs DecodeSafety_2
+## CallerBufferDecode_5 — a viewer decodes the streams it fetched `todo` · needs DecodeSafety_3
 
 Purpose: decoding is reachable only through a slide opened from a path (A1).
 Milestone: a program reads a tile stream through IFE's `Parser`, hands the
@@ -256,24 +374,24 @@ buffer.
 Shown by: `ctest --preset asan -R DecompressTile`, and the example program
 in `examples/` decoding tile 0 of the fixture
 
-- [ ] **DecompressTilePublic_4.1** — `[[nodiscard]] Result
+- [ ] **DecompressTilePublic_5.1** — `[[nodiscard]] Result
   decompress_tile(const DecompressTileDesc&, Buffer& decoded) noexcept` over
   `std::span<const std::byte>`, JPEG and AVIF, RGB and RGBA [Decode_07]
   - [ ] Red: the contract test that the returned buffer is the caller's, its
     size set, for every encoding and format, fails to compile until the call
     exists
-- [ ] **NoGpuTypesInCpuLibrary_4.2** — `Iris::Instance`, `Device` and `Queue`
+- [ ] **NoGpuTypesInCpuLibrary_5.2** — `Iris::Instance`, `Device` and `Queue`
   removed from `IrisSlideTypes.hpp`, in the paired Iris-Headers branch
   [Decode_07]
   - [ ] Red: a translation unit that declares its own `Iris::Device` and
     includes `IrisSlideTypes.hpp` fails to compile
-- [ ] **DecodeExample_4.3** — a 30-line example that maps a file with IFE's
+- [ ] **DecodeExample_5.3** — a 30-line example that maps a file with IFE's
   `Parser` and decodes one tile, built and run by `ctest` [Decode_07]
   - [ ] Red: the example's test is registered before the example exists
 - [ ] **VERIFY:** Ryan reviews the public signature
 - [ ] **Gate:** CI green on both pull requests, Iris-Headers' first
 
-## PatientIdentity_5 — patient identity lives only in the clinical stream `todo` · needs TestHarness_1
+## PatientIdentity_6 — patient identity lives only in the clinical stream `todo` · needs TestHarness_1
 
 Purpose: asking to strip identifiers does nothing (C3). Ryan, 2026-11-24:
 "The idea I have is that the patient info does NOT go in the metadata block
@@ -285,31 +403,31 @@ Python, reads back with attributes that hold no identity, and a
 Shown by: `ctest --preset asan -R Identity`, and the encoder's report listing
 the properties it dropped
 
-- [ ] **AttributesNeverIdentify_5.1** — the encoder writes attributes only as
+- [ ] **AttributesNeverIdentify_6.1** — the encoder writes attributes only as
   `METADATA_I2S`, from an allow-list of acquisition keys, for OpenSlide and
   DICOM sources alike; a source property off the list is dropped and counted
   in the encoder's report. This closes E1 on the writing side (no
   `METADATA_FREE_TEXT` is written) and E2 (no `METADATA_DICOM` keys are
   written). The allow-list is Q5's proposal and is the subject of this
-  sprint's VERIFY, and it stands in for I2S's generated keys until 5.7
+  sprint's VERIFY, and it stands in for I2S's generated keys until 6.7
   [Identity_01, Identity_05]
   - [ ] Red: an OpenSlide-style source with `aperio.Filename` and a patient
     name property encodes both into its attributes
-- [ ] **OneSwitchEveryPath_5.2** — the command line, C++ and Python reach the
+- [ ] **OneSwitchEveryPath_6.2** — the command line, C++ and Python reach the
   same behaviour; the dead `-sm` local and Python's unused `strip_metadata`
   removed [Identity_02]
   - [ ] Red: the same fixture encoded three ways gives three different
     attribute sets
-- [ ] **ReadmeTruthful_5.3** — the README's metadata claims match the code
+- [ ] **ReadmeTruthful_6.3** — the README's metadata claims match the code
   (audit D1, the metadata claims) [Identity_02]
   - [ ] Red: a documentation test that runs the README's "strip metadata"
     example finds the patient property in the output
-- [ ] **AssociatedImagesWithIdentity_5.4** — the label and macro images
+- [ ] **AssociatedImagesWithIdentity_6.4** — the label and macro images
   handled as Ryan's answer to Q2 says [Identity_03] — `blocked` on Q2
-- [ ] **ClinicalStreamWritten_5.5** — the clinical stream written as Ryan's
+- [ ] **ClinicalStreamWritten_6.5** — the clinical stream written as Ryan's
   answer to Q6 says, through IFE's block tier (X1) [Identity_04] — `blocked`
   on Q6
-- [ ] **DigitalSlideIdentifier_5.6** — Ryan, 2026-11-24: "We'll call the
+- [ ] **DigitalSlideIdentifier_6.6** — Ryan, 2026-11-24: "We'll call the
   accessioning number DigitalSlideIdentifier(DSI)"; "We can add in the
   description that DSI has a separate DSI_is_PHI:bool so we know if it needs
   to be scrambled during deidentification" (ARCHITECTURE D8). The encoder
@@ -323,7 +441,7 @@ the properties it dropped
     so does a fixture with a DSI and no flag. Green when both de-identify
     to a different DSI and a fixture with the flag false keeps its DSI
     unchanged
-- [ ] **AttributesFromI2S_5.7** — the allow-list of 5.1 replaced by the keys
+- [ ] **AttributesFromI2S_6.7** — the allow-list of 6.1 replaced by the keys
   in the C++ source that I2S's generator emits from its JSON specification
   (Ryan, 2026-11-24: "let's have I2S be a JSON specification that gets
   compiled into C++ source like the IFE"), pinned by commit (X3)
@@ -331,7 +449,7 @@ the properties it dropped
 - [ ] **VERIFY:** Ryan reviews the allow-list and the fixture
 - [ ] **Gate:** CI green on the pull request
 
-## EncoderCorrectness_6 — the encoder writes what it declares `todo` · needs TestHarness_1
+## EncoderCorrectness_7 — the encoder writes what it declares `todo` · needs TestHarness_1
 
 Purpose: the encoder can label JPEG tiles AVIF (C5), exit 0 on failure (C9),
 drop an associated image with a printed line (C14), and lose a source's
@@ -342,29 +460,29 @@ and every failure exits non-zero.
 
 Shown by: `ctest --preset asan -R EncoderEndToEnd`
 
-- [ ] **EndToEndSuite_6.1** — the suite itself: the encoder run as a process,
+- [ ] **EndToEndSuite_7.1** — the suite itself: the encoder run as a process,
   its exit code, its output file opened and every tile decoded [Encode_01,
   Encode_02]
   - [ ] Red: a failing encode exits 0
-- [ ] **EncodingsAgree_6.2** — a stream passes through only when the source's
+- [ ] **EncodingsAgree_7.2** — a stream passes through only when the source's
   encoding equals the requested one; otherwise it is decoded and recompressed
   (C5) [Encode_01]
   - [ ] Red: JPEG `.iris` source, AVIF requested, with and without
     derivation: tiles fail to decode
-- [ ] **CommandLineHonest_6.3** — one `try` in `main`, a non-zero exit on
+- [ ] **CommandLineHonest_7.3** — one `try` in `main`, a non-zero exit on
   every failure, an argument table, case-insensitive values, no locale
   assumed, `ioctl` checked (C9) [Encode_02]
   - [ ] Red: `-e avif` is refused; the tool aborts under the `C` locale
-- [ ] **AssociatedImageFailuresReported_6.4** — a failed associated image
+- [ ] **AssociatedImageFailuresReported_7.4** — a failed associated image
   fails the encode with its label and the reason (C14) [Encode_02]
   - [ ] Red: an image that cannot be compressed is skipped and the encode
     succeeds
-- [ ] **ScratchBesideDestination_6.5** — the scratch file in the
+- [ ] **ScratchBesideDestination_7.5** — the scratch file in the
   destination's directory, renamed into place; a concurrency of 0 refused by
   name (C16) [Encode_05]
   - [ ] Red: with the temp directory on another volume the slide is written
     twice; a concurrency of 0 fails with a message about unappended tiles
-- [ ] **ReencodeRefusesWhatItWouldDrop_6.6** — re-encoding an `.iris` source
+- [ ] **ReencodeRefusesWhatItWouldDrop_7.6** — re-encoding an `.iris` source
   that has annotations or a clinical stream is refused naming the blocks
   (E4). Passing them through waits on Q6 and Q7 [Encode_06]
   - [ ] Red: a source with one annotation re-encodes to a file with none and
@@ -373,37 +491,37 @@ Shown by: `ctest --preset asan -R EncoderEndToEnd`
   command line
 - [ ] **Gate:** CI green on the pull request
 
-## SourceInterface_7 — one source type per input `todo` · needs EncoderCorrectness_6
+## SourceInterface_8 — one source type per input `todo` · needs EncoderCorrectness_7
 
 Purpose: five places switch on the source kind, raw handles are copied into
 every thread, and a read error from OpenSlide is encoded as a black tile
 (A4, C10). Milestone: OpenSlide, DICOM and `.iris` inputs each sit behind one
 source type that owns its handle, and a read error from any of them fails
-the encode with that error. The end-to-end suite of EncoderCorrectness_6
+the encode with that error. The end-to-end suite of EncoderCorrectness_7
 stays green throughout, which is what makes this refactor safe.
 
 Shown by: `ctest --preset asan -R Source`
 
-- [ ] **SourceType_7.1** — one type per input with `extent`, `encoding`,
+- [ ] **SourceType_8.1** — one type per input with `extent`, `encoding`,
   `stream`, `pixels`, `metadata`, `images`, each owning its handle through
   RAII (A4, C10) [Encode_03]
   - [ ] Red: a leak check shows the OpenSlide handle open after an encode
-- [ ] **OnePyramidLoop_7.2** — the pass-through loop and the derive loop
+- [ ] **OnePyramidLoop_8.2** — the pass-through loop and the derive loop
   merged into one claim, read, hand-on loop (A4) [Encode_03]
   - [ ] Red: none; the end-to-end suite is the proof that behaviour is kept,
     and the pull request reports the lines removed
-- [ ] **SourceErrorsReported_7.3** — the source's error is checked after each
+- [ ] **SourceErrorsReported_8.3** — the source's error is checked after each
   read and fails the encode (C10) [Encode_03]
   - [ ] Red: a fake source whose read reports an error produces a slide with
     a black tile and a successful exit
-- [ ] **TransparentRegionsWhite_7.4** — pre-multiplied ARGB composited on
+- [ ] **TransparentRegionsWhite_8.4** — pre-multiplied ARGB composited on
   white before compression (C10) [Encode_04] *(to confirm against a sparse
   vendor slide)*
   - [ ] Red: a source tile with zero alpha encodes black
 - [ ] **VERIFY:** Ryan reviews the source type's interface
 - [ ] **Gate:** CI green on the pull request
 
-## EncoderConcurrency_8 — every encoder thread has an owner `todo` · needs SourceInterface_7
+## EncoderConcurrency_9 — every encoder thread has an owner `todo` · needs SourceInterface_8
 
 Purpose: reuse terminates the process and shared state races (C7, C8).
 Milestone: a lifecycle suite under ThreadSanitizer: dispatch twice, poll
@@ -412,63 +530,63 @@ handle mid-encode.
 
 Shown by: `ctest --preset tsan -R EncoderLifecycle`
 
-- [ ] **LifecycleSuite_8.1** — the four cases above [Concurrency_01]
+- [ ] **LifecycleSuite_9.1** — the four cases above [Concurrency_01]
   - [ ] Red: each case reports a data race under ThreadSanitizer or ends in
     `std::terminate`
-- [ ] **WorkersOwnedByTheirThread_8.2** — the dispatching thread creates and
+- [ ] **WorkersOwnedByTheirThread_9.2** — the dispatching thread creates and
   joins its workers in a local container, or one `Iris::Async` pool serves
   readers and workers; the choice follows a benchmark at real tile cost (A6)
   [Concurrency_02] *(to measure)*
   - [ ] Red: the second dispatch on one encoder terminates the process
-- [ ] **ProgressPublishedAtomically_8.3** — the error text published once by
+- [ ] **ProgressPublishedAtomically_9.3** — the error text published once by
   an atomic state change; the destination path fixed before dispatch (C8)
   [Concurrency_01]
-  - [ ] Red: the poll-while-failing case of 8.1
-- [ ] **CatchAtEveryEncoderBoundary_8.4** — `const std::exception&` then
+  - [ ] Red: the poll-while-failing case of 9.1
+- [ ] **CatchAtEveryEncoderBoundary_9.4** — `const std::exception&` then
   `...` through one helper; the null-encoder dereference removed (C7)
   [Concurrency_03]
   - [ ] Red: a source that throws `std::logic_error` terminates the process;
     `dispatch_encoder` on a null encoder crashes
-- [ ] **DropInterrupts_8.5** — dropping the last handle interrupts the encode
+- [ ] **DropInterrupts_9.5** — dropping the last handle interrupts the encode
   (C16); a `std::weak_ptr` test drops every owner in each order and shows
   everything freed (A5) [Concurrency_02]
   - [ ] Red: dropping the handle blocks until the encode completes
 - [ ] **VERIFY:** Ryan reviews the ThreadSanitizer run
 - [ ] **Gate:** CI green on the pull request, the `tsan` preset included
 
-## DicomBridge_9 — DICOM series read correctly or refused `todo` · needs SourceInterface_7
+## DicomBridge_10 — DICOM series read correctly or refused `todo` · needs SourceInterface_8
 
 Purpose: the DICOM bridge recurses, leaks, and writes wrong positions and
 scales (C4, C11, C12). Milestone: the fixtures below encode correctly or are
 refused by name, under AddressSanitizer. Fixtures are generated in the test,
 or come from public test data once Ryan approves the download. Runs in
-parallel with EncoderConcurrency_8.
+parallel with EncoderConcurrency_9.
 
 Shown by: `ctest --preset asan -R Dicom`
 
-- [ ] **NoIccProfile_9.1** — a series with no ICC profile encodes with none
+- [ ] **NoIccProfile_10.1** — a series with no ICC profile encodes with none
   (C4) [Dicom_01]
   - [ ] Red: the series crashes at the metadata step
-- [ ] **SequencesQueued_9.2** — the sequence walk is a loop over an explicit
+- [ ] **SequencesQueued_10.2** — the sequence walk is a loop over an explicit
   queue with a bound (C11) [Dicom_02]
   - [ ] Red: a sequence 10,000 deep overflows the stack
-- [ ] **DicomHandlesOwned_9.3** — RAII for file handles and libdicom strings;
+- [ ] **DicomHandlesOwned_10.3** — RAII for file handles and libdicom strings;
   iterators taken from `erase`; the empty check ahead of `back()` (C11)
   [Dicom_02]
   - [ ] Red: LeakSanitizer reports the handles of a series whose thumbnail
     level was dropped
-- [ ] **SparseSeriesRefused_9.4** — frame positions read per frame, or a
+- [ ] **SparseSeriesRefused_10.4** — frame positions read per frame, or a
   sparse series refused by name; one-tile levels kept; 12-bit and lossless
   transfer syntaxes refused by name (C12) [Dicom_03]
   - [ ] Red: a sparse fixture encodes with tiles at the wrong positions
-- [ ] **OneScaleNormalization_9.5** — microns per pixel and magnification
+- [ ] **OneScaleNormalization_10.5** — microns per pixel and magnification
   normalized by one function every source uses (C12) [Dicom_03]
   - [ ] Red: a fixture with a known pixel spacing reads back with a different
     microns per pixel from DICOM than from the same pixels as a tiled TIFF
 - [ ] **VERIFY:** Ryan encodes a DICOM series he trusts
 - [ ] **Gate:** CI green on the pull request
 
-## ApiSurface_10 — the API offers what is built `todo` · needs PngRemoved_3, CallerBufferDecode_4, EncoderConcurrency_8
+## ApiSurface_11 — the API offers what is built `todo` · needs PngRemoved_4, CallerBufferDecode_5, EncoderConcurrency_9
 
 Purpose: declarations with no definition, a library that cannot encode, and
 a CPU decoder that needs Vulkan (A2, A3, B2). Milestone: every declaration in
@@ -477,31 +595,31 @@ three sprints above because each of them edits the public header.
 
 Shown by: `ctest --preset release -R ExportedSymbols`
 
-- [ ] **ExportedSymbols_10.1** — the test, modelled on IFE's
+- [ ] **ExportedSymbols_11.1** — the test, modelled on IFE's
   `tests/exported_symbols.cmake` [Api_01]
   - [ ] Red: `read_cache_entry`, `cache_store_entry`, `set_encoder_src_cache`
     and every encoder function fail to link against the installed library
-- [ ] **UnbuiltSurfaceRemoved_10.2** — the cache, the GPU fields, the stream
+- [ ] **UnbuiltSurfaceRemoved_11.2** — the cache, the GPU fields, the stream
   encoder and the ignored fields deleted, in the paired Iris-Headers branch
   (A2) [Api_01]
   - [ ] Red: 10.1
-- [ ] **DecoderAndEncoderLibraries_10.3** — two targets, the encoder linking
+- [ ] **DecoderAndEncoderLibraries_11.3** — two targets, the encoder linking
   the decoder; Vulkan, VMA and GLM dropped; libdicom only in the encoder
   (A3, B2) [Api_02]
   - [ ] Red: a static check finds Vulkan headers on the decoder's include
     path
-- [ ] **HeadersTakeIfeEnumerations_10.4** — `MetadataType` and
+- [ ] **HeadersTakeIfeEnumerations_11.4** — `MetadataType` and
   `ImageOrientation` take IFE 1.1's values in the paired Iris-Headers branch
   (E1 on the reading side, Q9's proposal, X2) [Api_05]
   - [ ] Red: a static assertion that each Iris-Headers value equals IFE's
     fails for `METADATA_FREE_TEXT` and `ORIENTATION_minus_90`
-- [ ] **AnnotationSurface_10.5** — the annotation stubs removed, or replaced
+- [ ] **AnnotationSurface_11.5** — the annotation stubs removed, or replaced
   by a read call over IFE's lifted annotations, as Ryan's answer to Q7 says
   [Api_01] — `blocked` on Q7
 - [ ] **VERIFY:** Ryan reviews the public header's diff
 - [ ] **Gate:** CI green on both pull requests, Iris-Headers' first
 
-## ResultBoundaries_11 — every public call returns a `Result` `todo` · needs ApiSurface_10
+## ResultBoundaries_12 — every public call returns a `Result` `todo` · needs ApiSurface_11
 
 Purpose: failures are returned as null with the reason on stderr (C14), and
 objects are created outside the `create_<name>(Desc, out) -> Result` form
@@ -511,26 +629,26 @@ path, and no test writes to stderr.
 Shown by: `ctest --preset asan -R Boundary`, with the suite's stderr capture
 empty
 
-- [ ] **BoundaryHelper_11.1** — one helper wraps every public function: it
+- [ ] **BoundaryHelper_12.1** — one helper wraps every public function: it
   catches by type, then `...`, and returns a `Result` with the place (A4)
   [Api_03]
   - [ ] Red: a decoder that throws `std::bad_alloc` terminates the process
-- [ ] **CreateForm_11.2** — `create_slide`, `create_context` and
+- [ ] **CreateForm_12.2** — `create_slide`, `create_context` and
   `create_encoder` in the `create_<name>(const <Name>Desc&, <Name>& out) ->
   Result` form, `[[nodiscard]]`; the encoder's description taken by const
   reference; the optional derivation a `std::optional` (A1) [Api_03]
   - [ ] Red: opening a missing file returns null and writes to stderr
-- [ ] **ReadsReturnResult_11.3** — tile and associated-image reads return a
+- [ ] **ReadsReturnResult_12.3** — tile and associated-image reads return a
   `Result` and write into an output `Buffer`; the `assert(false)` paths
   return a failure naming the encoding (C14) [Api_03]
   - [ ] Red: reading tile 9 of a 4-tile layer returns null
-- [ ] **ZStackRead_11.4** — a plane on the tile read description, or a
+- [ ] **ZStackRead_12.4** — a plane on the tile read description, or a
   refusal of multi-plane streams naming the plane count (A9) [Api_04]
   - [ ] Red: a two-plane fixture's tile decodes as one image
 - [ ] **VERIFY:** Ryan reviews the public header's diff
 - [ ] **Gate:** CI green on both pull requests, Iris-Headers' first
 
-## CodeHygiene_12 — the tree passes its own rules `todo` · needs ResultBoundaries_11
+## CodeHygiene_13 — the tree passes its own rules `todo` · needs ResultBoundaries_12
 
 Purpose: macros, reserved names, `goto`, bare numbers (A7); comments that
 state the opposite of the code (audit D2). Milestone: clang-tidy and
@@ -539,23 +657,23 @@ so that it renames code once.
 
 Shown by: `cmake --build --preset tidy`
 
-- [ ] **ClangTidy_12.1** — `.clang-tidy` with `bugprone-reserved-identifier`;
+- [ ] **ClangTidy_13.1** — `.clang-tidy` with `bugprone-reserved-identifier`;
   warnings as errors; a `tidy` preset [Hygiene_01]
   - [ ] Red: the reserved identifiers the audit lists
-- [ ] **MacrosAndNumbersNamed_12.2** — `constexpr` in place of the cast
+- [ ] **MacrosAndNumbersNamed_13.2** — `constexpr` in place of the cast
   macros and `#define _Float16`; named constants for every bare number; no
   `goto`; no assignment inside a condition (A7) [Hygiene_01]
-  - [ ] Red: 12.1's run
-- [ ] **NamesToTheGuide_12.3** — functions in `snake_case`, accessors without
+  - [ ] Red: 13.1's run
+- [ ] **NamesToTheGuide_13.3** — functions in `snake_case`, accessors without
   `get_`, `using namespace` out of headers, each private header including
   what it uses (A7) [Hygiene_01]
   - [ ] Red: a test that compiles each private header alone fails
-- [ ] **CommentsTrue_12.4** — every comment the audit lists made true or
+- [ ] **CommentsTrue_13.4** — every comment the audit lists made true or
   deleted (audit D2) [Hygiene_02]
 - [ ] **VERIFY:** Ryan skims the diff
 - [ ] **Gate:** CI green on the pull request
 
-## LicensedCodecInterface_13 — the proprietary codec, loaded at run time `blocked` on Q3, Q4 · needs ResultBoundaries_11
+## LicensedCodecInterface_14 — the proprietary codec, loaded at run time `blocked` on Q3, Q4 · needs ResultBoundaries_12
 
 Purpose: Ryan, 2026-11-24: "We can reference the proprietary codec but it's
 use will be runtime linked for those that pay royalties to use it. The other
@@ -566,12 +684,12 @@ the licensed module itself is outside this repository (X5).
 
 Shown by: `ctest --preset asan -R LicensedCodec`
 
-- [ ] **AbsentCodecRefused_13.1** — without a module, decode and encode of
+- [ ] **AbsentCodecRefused_14.1** — without a module, decode and encode of
   that encoding return a `Result` naming the encoding, in place of today's
   `assert(false)` [Licensing_01]
   - [ ] Red: decoding a `TILE_ENCODING_IRIS` fixture in a release build
     reports "nonsense encoding"
-- [ ] **LoaderInterface_13.2** — the smallest interface that loads a codec
+- [ ] **LoaderInterface_14.2** — the smallest interface that loads a codec
   library the caller names and asks it to decode one encoding, as Ryan's
   answers to Q3 and Q4 say [Licensing_01]
   - [ ] Red: the test codec's encoding is refused with the module loaded
@@ -579,9 +697,9 @@ Shown by: `ctest --preset asan -R LicensedCodec`
 - [ ] **Gate:** CI green on the pull request
 
 13.1 does not depend on Q3 or Q4 beyond the encoding's name; if the answers
-are late, it moves into ResultBoundaries_11 and this sprint keeps 13.2.
+are late, it moves into ResultBoundaries_12 and this sprint keeps 14.2.
 
-## PythonBinding_14 — Python fails loudly `todo` · needs ResultBoundaries_11
+## PythonBinding_15 — Python fails loudly `todo` · needs ResultBoundaries_12
 
 Purpose: the binding swallows failures, holds the interpreter lock, and
 ships hand-written stubs (A8, C14). Milestone: `pytest` and `mypy --strict`
@@ -589,23 +707,28 @@ green, with a failed read raising.
 
 Shown by: `pytest python/tests && mypy --strict python/Iris`
 
-- [ ] **PythonTests_14.1** — `pytest` over the installed module, run by CI
+- [ ] **PythonTests_15.1** — `pytest` over the installed module, run by CI
   [Bindings_01]
   - [ ] Red: reading an out-of-range tile returns an uninitialized array
-- [ ] **PythonRaises_14.2** — every `Result` becomes a specific exception;
+- [ ] **PythonRaises_15.2** — every `Result` becomes a specific exception;
   `encode_slide_file` raises in place of printing (A8, C14) [Bindings_01]
-  - [ ] Red: 14.1; opening a missing file returns `None`
-- [ ] **PythonReleasesLock_14.3** — the interpreter lock released during
+  - [ ] Red: 15.1; opening a missing file returns `None`
+- [ ] **PythonReleasesLock_15.3** — the interpreter lock released during
   decode; one extension module; slide information read once per slide
   [Bindings_01]
   - [ ] Red: four Python threads decode no faster than one *(to measure)*
-- [ ] **StubsGenerated_14.4** — stubs generated from the module; `mypy
+- [ ] **StubsGenerated_15.4** — stubs generated from the module; `mypy
   --strict` [Bindings_02]
   - [ ] Red: `mypy --strict` over the hand-written stubs
+- [ ] **ModuleRenamed_15.5** — the module and its texts named for Iris-Slide:
+  the extension is still `iris_core`, and `python/IrisTypesPython.hpp`,
+  `IrisSlidePython.cpp`, `IrisSlidePython.hpp` and `python/Iris/*.pyi` still
+  say "Iris Core" (found 2026-11-24, VcpkgCaching_2) [Bindings_02]
+  - [ ] Red: a search of `python/` for `iris_core` and "Iris Core"
 - [ ] **VERIFY:** Ryan runs the Python example from the README
 - [ ] **Gate:** CI green on the pull request
 
-## WasmBinding_15 — the browser module opens large files `todo` · needs TestHarness_1
+## WasmBinding_16 — the browser module opens large files `todo` · needs TestHarness_1
 
 Purpose: the WASM module carries file sizes in 32 bits and fails in three
 different ways (C17). Milestone: the module's prefix fetch tested natively
@@ -614,82 +737,70 @@ IFE alone.
 
 Shown by: `ctest --preset asan -R RemotePrefix`
 
-- [ ] **PrefixFetchTested_15.1** — the prefix fetch moved to a function a
+- [ ] **PrefixFetchTested_16.1** — the prefix fetch moved to a function a
   native test can call with a fake window [Bindings_03]
   - [ ] Red: a 5 GiB window is opened with a wrapped size
-- [ ] **SixtyFourBitSizes_15.2** — file sizes carried as 64-bit values across
+- [ ] **SixtyFourBitSizes_16.2** — file sizes carried as 64-bit values across
   the JavaScript boundary (C17) [Bindings_03]
-  - [ ] Red: 15.1
-- [ ] **OneFailurePath_15.3** — `NULL_TILE` entries answered without a range
+  - [ ] Red: 16.1
+- [ ] **OneFailurePath_16.3** — `NULL_TILE` entries answered without a range
   request; every failure returned the same way; the range probe's timeout a
   named constant; validate and open share one fetch (C17) [Bindings_03]
   - [ ] Red: a `NULL_TILE` entry requests the range `bytes=o-(o-1)`
-- [ ] **OneSlideType_15.4** — the module's own `Slide_t` renamed so that one
+- [ ] **OneSlideType_16.4** — the module's own `Slide_t` renamed so that one
   class name has one definition across the repository (A4) [Bindings_03]
 - [ ] **VERIFY:** Ryan opens a slide over HTTP in a browser
 - [ ] **Gate:** CI green on the pull request
 
-## DependencyPins_16 — what is fetched is recorded `todo` · needs TestHarness_1
+## WorkflowRunners_17 — releases checked, the remaining pins `todo` · needs VcpkgCaching_2
 
-Purpose: Iris-Headers and IFE are fetched at the tip of a branch, and build
-settings are global (B1, B3, B7). Milestone: a clean configure fetches every
-dependency at a commit or hash recorded in one file, and a second configure
-a day later fetches the same bytes.
+Purpose: release artifacts are mislabelled and unchecked (B6); the Python build
+requirements and the version source are not yet pinned or single (B1, A4); the
+CI's cache identities live in a host project for now. VcpkgCaching_2 took this
+sprint's lint (was WorkflowLint_17.1) and reusable build (was
+OneReusableBuild_17.2), and DependencyPins_16's Highway and build-scope tasks;
+DependencyPins_16's other two tasks moved here. Milestone: a release-candidate
+tag produces artifacts whose architecture, compression and first run are
+checked, from a tree whose every pin is recorded.
 
-Shown by: `ctest --preset release -R Pins`
+Shown by: the run of a release-candidate tag
 
-- [ ] **PinnedSources_16.1** — Iris-Headers and IFE fetched by commit SHA
-  from one pin file, at revisions that carry the rename (X4); hashes on
-  every archive; `pyproject.toml` build requirements pinned (B1) [Build_01]
-  - [ ] Red: a static check finds `origin/main` and an archive with no hash
-- [ ] **HighwayModule_16.2** — `cmake/hwy.cmake` rewritten for highway, or
-  removed if only its headers are used (B3) [Build_04]
-  - [ ] Red: a static check finds `libavif` in `hwy.cmake`
-- [ ] **BuildStateScoped_16.3** — target-scoped include paths and
-  definitions (B7) [Build_04]
-  - [ ] Red: a static check finds `include_directories(` at directory scope
-- [ ] **VersionParsedOnce_16.4** — one version source for CMake, Python and
-  the WASM build (A4) [Build_04]
-  - [ ] Red: a test that compares the three reported versions after a bump of
-    one of them
-- [ ] **VERIFY:** Ryan reviews the pin file
-- [ ] **Gate:** CI green on the pull request
-
-## WorkflowRunners_17 — runners follow `ci_runners.md` `todo` · needs DependencyPins_16
-
-Purpose: unpinned images, no timeouts, four ungated workflows, mislabelled
-and uncompressed artifacts (B5, B6); every job on Blacksmith (Ryan,
-2026-11-24: "We should be using blacksmith for our CI runners"). Labels read
-2026-11-24 from https://docs.blacksmith.sh/blacksmith-runners/overview:
-`blacksmith-{2,4,8,16,32}vcpu-ubuntu-2404` (and `-arm`),
-`blacksmith-{2..32}vcpu-windows-2025` (public beta), `blacksmith-{6,12}vcpu-macos-{15,26,27}`
-(Apple M4; a macOS minute costs twenty 2-vCPU Linux minutes, so macOS runs last). Milestone: a workflow lint passes and a
-release-candidate tag produces artifacts whose architecture, compression and
-first run are checked.
-
-Shown by: `python tools/lint_workflows.py`, and the run of a release-candidate
-tag
-
-- [ ] **WorkflowLint_17.1** — a lint over `.github/workflows/` [Build_02]
-  - [ ] Red: it fails on a runner label that is not Blacksmith's, on `-latest`,
-    on a job with no `timeout-minutes`, on an unbounded `-j`, and on a cache
-    key with no content hash
-- [ ] **OneReusableBuild_17.2** — one reusable build workflow called per
-  operating system, Linux first; pinned images and actions; timeouts;
-  bounded parallelism; content-keyed caches saved as soon as filled (B5)
-  [Build_02]
-  - [ ] Red: 17.1
-- [ ] **WheelsBuildDependenciesOnce_17.3** — the wheels' dependencies built
-  once per platform and reused for every Python version (B5) [Build_02]
-  *(to measure: runner minutes before and after)*
+- [ ] **BuildRequirementsPinned_17.1** — moved from DependencyPins_16 (the
+  rest of PinnedSources_16.1, whose Iris-Headers and IFE pins
+  FirstPartyPorts_2.7 made): `pyproject.toml`'s build requirements pinned
+  (B1) [Build_01]
+  - [ ] Red: a static check finds an unpinned requirement
+- [ ] **VersionParsedOnce_17.2** — moved from DependencyPins_16 (was 16.4): one
+  version source for CMake, Python, the WASM build and `vcpkg.json` (A4)
+  [Build_04]
+  - [ ] Red: a test that compares the reported versions after a bump of one
+- [ ] **WheelsBuildDependenciesOnce_17.3** — the wheels' first release-candidate
+  run (VcpkgCaching_2 builds every Python version of a platform in one job, the
+  dependencies once); the manylinux jobs bootstrap vcpkg inside the container
+  and read no GCS store yet (B5) [Build_02] *(to measure: runner minutes
+  before and after)*
 - [ ] **ArtifactsChecked_17.4** — each archive's architecture matches its
-  name; archives compressed; each binary run once; a release reads what CI
-  saved and also runs on a release-candidate tag (B6) [Build_03]
+  name; each binary run once; the archives carry the public headers and the
+  OpenSlide library the encoder needs (`scripts/package.cmake` installs
+  neither today); a release also runs on a release-candidate tag (B6)
+  [Build_03]
   - [ ] Red: `file` on the binary inside `ubuntu-aarch64` reports x86-64
-- [ ] **VERIFY:** Ryan reviews the workflows
+- [ ] **CacheProjectMoved_17.5** — move the cache identities to Iris-Slide's own
+  CI project: re-run `tools/cloud_federation.sh` with `PROJECT` set to it, and
+  update the repository variables `IRIS_SLIDE_GCP_PROJECT` and
+  `IRIS_SLIDE_GCP_PROVIDER` [Build_06] `blocked` on the project's billing
+- [ ] **PortsPinMain_17.6** — re-pin the iris-headers and iris-file-extension
+  ports to their main commits once the rename and IFE's `feature/VcpkgCaching_2`
+  merge (X4), and remove the duplicate third-party pins in Iris-Headers'
+  `cmake/dependencies.cmake`, whose versions `vcpkg.json` now states, by a
+  paired change there [Build_01] `blocked` on X4
+- [ ] **DownstreamCached_17.7** — Iris-Headers' downstream cell builds
+  Iris-Slide's dependencies from source on every run; give it the store, read
+  only, or a binary cache of its own [Build_06]
+- [ ] **VERIFY:** Ryan reviews the release run
 - [ ] **Gate:** CI green on the pull request
 
-## ReadBenchmark_18 — the speed the paper reports, held `todo` · needs CallerBufferDecode_4
+## ReadBenchmark_18 — the speed the paper reports, held `todo` · needs CallerBufferDecode_5
 
 Purpose: the paper reports 6,400 to 8,100 tiles a second through Python on
 an M1; nothing here measures it (audit §4). Milestone: a benchmark of JPEG
@@ -737,25 +848,25 @@ audit marked closed with its commit
 
 | Item | Task |
 |---|---|
-| Q1 | resolved by ARCHITECTURE D7; built by PngRemoved_3 |
-| Q2 | AssociatedImagesWithIdentity_5.4 (`blocked`) |
-| Q3, Q4 | LicensedCodecInterface_13 (`blocked`) |
-| Q5 | AttributesNeverIdentify_5.1, answered at that sprint's VERIFY; AttributesFromI2S_5.7 (`blocked`) |
-| Q6 | ClinicalStreamWritten_5.5 (`blocked`); ReencodeRefusesWhatItWouldDrop_6.6 until then |
-| Q7 | AnnotationSurface_10.5 (`blocked`); ReencodeRefusesWhatItWouldDrop_6.6 until then |
+| Q1 | resolved by ARCHITECTURE D7; built by PngRemoved_4 |
+| Q2 | AssociatedImagesWithIdentity_6.4 (`blocked`) |
+| Q3, Q4 | LicensedCodecInterface_14 (`blocked`) |
+| Q5 | AttributesNeverIdentify_6.1, answered at that sprint's VERIFY; AttributesFromI2S_6.7 (`blocked`) |
+| Q6 | ClinicalStreamWritten_6.5 (`blocked`); ReencodeRefusesWhatItWouldDrop_7.6 until then |
+| Q7 | AnnotationSurface_11.5 (`blocked`); ReencodeRefusesWhatItWouldDrop_7.6 until then |
 | Q8 | TileFrameCost_18.3 |
-| Q9 | HeadersTakeIfeEnumerations_10.4 |
-| Q10 | DigitalSlideIdentifier_5.6 (who sets the flag at encode time) |
-| X1 | ClinicalStreamWritten_5.5, AnnotationSurface_10.5 |
-| X2 | HeadersTakeIfeEnumerations_10.4 |
-| X3 | AttributesFromI2S_5.7 (`blocked`), DigitalSlideIdentifier_5.6 |
-| X4 | TestHarness_1 (waits on it), PinnedSources_16.1 |
-| X5 | LicensedCodecInterface_13 |
-| X6 | EnumerationsFollowIfe_3.4 (`blocked`) |
-| E1 | AttributesNeverIdentify_5.1 (writing), HeadersTakeIfeEnumerations_10.4 (values) |
-| E2 | AttributesNeverIdentify_5.1 |
-| E3 | TileLengthFromTheFile_2.2 |
-| E4 | ReencodeRefusesWhatItWouldDrop_6.6 |
+| Q9 | HeadersTakeIfeEnumerations_11.4 |
+| Q10 | DigitalSlideIdentifier_6.6 (who sets the flag at encode time) |
+| X1 | ClinicalStreamWritten_6.5, AnnotationSurface_11.5 |
+| X2 | HeadersTakeIfeEnumerations_11.4 |
+| X3 | AttributesFromI2S_6.7 (`blocked`), DigitalSlideIdentifier_6.6 |
+| X4 | TestHarness_1 (waits on it), FirstPartyPorts_2.7 (pins the rename branches), PortsPinMain_17.6 |
+| X5 | LicensedCodecInterface_14 |
+| X6 | EnumerationsFollowIfe_4.4 (`blocked`) |
+| E1 | AttributesNeverIdentify_6.1 (writing), HeadersTakeIfeEnumerations_11.4 (values) |
+| E2 | AttributesNeverIdentify_6.1 |
+| E3 | TileLengthFromTheFile_3.2 |
+| E4 | ReencodeRefusesWhatItWouldDrop_7.6 |
 
 ## Session log
 
@@ -773,3 +884,12 @@ audit marked closed with its commit
   CI green). 15 sprints became 20, every task that changes code gained a red step, every sprint
   a command that shows its milestone, and ARCHITECTURE's E1–E4, Q2–Q10 and
   X1–X6 each gained a task.
+- **2026-11-24, VcpkgCaching_2.** An Iris-Headers downstream run of
+  Iris-Slide built every dependency from source; Ryan asked for vcpkg and
+  compiler caching on every branch, on Blacksmith, first in the order. The
+  sprint was placed before TestHarness_1 (the later sprints numbered up by
+  one), took DependencyPins_16's and WorkflowRunners_17's build tasks, and
+  grew as Ryan added the first-party ports, Python, WASM, the downstream cell
+  and CMake-only workflow steps. vcpkg's openslide port needs system
+  autotools, so OpenSlide stays the prebuilt openslide-bin, now a port.
+  Ryan ran `tools/cloud_federation.sh` himself.

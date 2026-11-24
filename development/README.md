@@ -14,6 +14,7 @@ documentation lives next to the code.
 | [RTM.md](RTM.md) | trace each requirement back to Ryan's goals and forward to code and tests, with status |
 | [style_guide.md](style_guide.md) | the binding conventions for code, plans and prose |
 | [ci_runners.md](ci_runners.md) | the rules every workflow follows: when a runner runs, reuse, caches, robustness |
+| [PIPELINE.md](PIPELINE.md) | the dependency pins, the vcpkg ports and triplets, the cache store and who may write it, and the numbered pipeline rules |
 | [analysis/](analysis/) | dated analyses the plan was built from, kept as written: the design audit of 2026-11-24 |
 
 ```mermaid
@@ -31,7 +32,7 @@ flowchart LR
 A sprint is one work package of the WBS: a few days of work that ends in a
 milestone someone can see working, and one pull request.
 
-1. The branch is named after the sprint (`feature/DecodeSafety_2`), chosen
+1. The branch is named after the sprint (`feature/DecodeSafety_3`), chosen
    before the first push, since renaming a pull request's head branch closes
    the pull request.
 2. Each task starts with a test shown red, recorded with its failure; then the
@@ -57,7 +58,7 @@ pathologist would see differently) · Security impact (new input parsed? new
 dependency? patient data in the diff, logs or fixtures?).
 
 **Naming:** every ID says what it is. A WBS item is `PascalCaseName_<number>`
-(`DecodeSafety_2`, `JpegSizedFromHeader_2.1`); an RTM row is
+(`DecodeSafety_3`, `JpegSizedFromHeader_3.1`); an RTM row is
 `PascalCaseArea_<nn>` (`Decode_01`); a goal is `Goal_<nn>`. No abbreviations.
 
 **Update rule:** a commit that changes code updates the WBS steps it completes

@@ -1,0 +1,11 @@
+{
+  "name": "iris-headers",
+  "version-date": "2026-11-24",
+  "description": "Iris-Headers (Aptix-Bio): the shared Iris types and codec API, and the sources Iris-Slide compiles from it",
+  "homepage": "https://github.com/Aptix-Bio/Iris-Headers",
+  "license": "MIT",
+  "dependencies": [
+    { "name": "vcpkg-cmake", "host": true },
+    { "name": "vcpkg-cmake-config", "host": true }
+  ]
+}

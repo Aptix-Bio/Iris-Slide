@@ -1,7 +1,7 @@
 # Iris Slide Javascript API
 [![NPM Version](https://img.shields.io/npm/v/iris-slide?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/iris-slide)
 [![jsDelivr](https://img.shields.io/jsdelivr/npm/hm/iris-slide?style=for-the-badge&color=orange&logo=jsdelivr)](https://www.jsdelivr.com/package/npm/iris-slide)
-[![JavaScript CI](https://img.shields.io/github/actions/workflow/status/Aptix-Bio/Iris-Slide/emcmake-wasm-CI.yml?style=for-the-badge&logo=javascript&label=JavaScript%20CI)](https://github.com/Aptix-Bio/Iris-Slide/actions/workflows/javascript-CI.yml)
+[![JavaScript CI](https://img.shields.io/github/actions/workflow/status/Aptix-Bio/Iris-Slide/ci.yml?style=for-the-badge&logo=javascript&label=JavaScript%20CI)](https://github.com/Aptix-Bio/Iris-Slide/actions/workflows/ci.yml)
 
 Copyright &copy; 2025 Iris Developers; MIT Software License
 

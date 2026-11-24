@@ -1,0 +1,12 @@
+{
+  "name": "iris-file-extension",
+  "version-date": "2026-11-24",
+  "description": "Iris-File-Extension (Aptix-Bio): the Iris File Extension's Parser and Builder, a static library",
+  "homepage": "https://github.com/Aptix-Bio/Iris-File-Extension",
+  "license": "MIT",
+  "dependencies": [
+    "iris-headers",
+    { "name": "vcpkg-cmake", "host": true },
+    { "name": "vcpkg-cmake-config", "host": true }
+  ]
+}
