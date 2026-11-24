@@ -2,8 +2,6 @@
 # Created 2025-08-09
 
 cmake_minimum_required(VERSION 3.27)
-include(FetchContent)
-include(ExternalProject)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -54,28 +52,23 @@ PROJECT (
     VERSION ${IRIS_SLIDE_VERSION_STRING}
 )
 
-# Iris-Headers and Iris-File-Extension, from this repository's owner — the
-# same pair the native build fetches.
-include(${CMAKE_CURRENT_LIST_DIR}/../cmake/iris-repositories.cmake)
+# Iris-Headers and Iris-File-Extension, built for wasm32-emscripten from the repository's one
+# vcpkg.json (javascript/CMakePresets.json; VcpkgCaching_2, WasmThroughVcpkg_2.9).
+find_package(IrisHeaders CONFIG REQUIRED)
+find_package(IrisFileExtension CONFIG REQUIRED)
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Iris Slide Universal Object Build
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-set(IFE_SOURCE_DIR ${irisfileextension_SOURCE_DIR}/include)
 add_executable(
     iris-slide
-    $<TARGET_OBJECTS:IrisFileExtensionLib>
     IrisSlideJavascript.cpp
 )
 target_include_directories (
-    iris-slide PRIVATE 
-    ${irisheaders_SOURCE_DIR}/include
-    ${irisheaders_SOURCE_DIR}/priv
-    ${IFE_SOURCE_DIR}
-    # The generated layer lives outside include/ and is generated at IFE
-    # configure time; the root CMakeLists carries the same two directories.
-    ${irisfileextension_SOURCE_DIR}/generated_source
+    iris-slide PRIVATE
+    ${IrisHeaders_DIR}/source/priv
 )
+target_link_libraries(iris-slide PRIVATE Iris::IrisHeaders IrisFileExtensionStatic)
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_link_options(
         iris-slide PRIVATE

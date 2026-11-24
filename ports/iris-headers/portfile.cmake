@@ -15,6 +15,7 @@ vcpkg_cmake_config_fixup(PACKAGE_NAME IrisHeaders CONFIG_PATH lib/cmake/Iris)
 # Iris-Headers' install carries its public headers only. Iris-Slide and Iris-File-Extension
 # also compile its private headers and sources (priv/, src/) into their own binaries, so the
 # source tree goes beside the package's config, where both find it: ${IrisHeaders_DIR}/source.
-file(INSTALL "${SOURCE_PATH}/" DESTINATION "${CURRENT_PACKAGES_DIR}/share/IrisHeaders/source" PATTERN ".github" EXCLUDE)
+file(INSTALL "${SOURCE_PATH}/" DESTINATION "${CURRENT_PACKAGES_DIR}/share/IrisHeaders/source"
+     PATTERN ".git" EXCLUDE PATTERN ".github" EXCLUDE)
 file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/lib")
 vcpkg_install_copyright(FILE_LIST "${SOURCE_PATH}/LICENSE")

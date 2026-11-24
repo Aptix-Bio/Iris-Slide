@@ -1,30 +1,35 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
-  "$comment": "VcpkgCaching_2 (RTM Build_01, Build_05): every library Iris-Slide builds against, first-party and third-party, prebuilt from vcpkg's binary cache; nothing is fetched at configure. The baseline is vcpkg's release 2026.10.16 (scripts/bootstrap_vcpkg.cmake checks vcpkg out at it). Each direct third-party dependency's version is stated by an override, equal to Iris-Headers' cmake/dependencies.cmake where vcpkg has that version; Iris-Headers and Iris-File-Extension are pinned by commit in their overlay ports (ports/). development/PIPELINE.md lists each pin, its source and every difference.",
+  "$comment": "VcpkgCaching_2 (RTM Build_01, Build_05): every library Iris-Slide builds against, first-party and third-party, prebuilt from vcpkg's binary cache; nothing is fetched at configure. The core is what every build needs, the JavaScript module's included: Iris-Headers and Iris-File-Extension. The baseline is vcpkg's release 2026.10.16 (scripts/bootstrap_vcpkg.cmake checks vcpkg out at it). Each direct third-party dependency's version is stated by an override, equal to Iris-Headers' cmake/dependencies.cmake where vcpkg has that version; Iris-Headers and Iris-File-Extension are pinned by commit in their overlay ports (ports/). development/PIPELINE.md lists each pin, its source and every difference.",
   "name": "iris-slide",
   "version": "0.0.0",
   "builtin-baseline": "9eec002df1cd109f8f104cd966a763daf9751489",
   "dependencies": [
-    "glm",
-    {
-      "name": "highway",
-      "version>=": "1.2.0"
-    },
     "iris-file-extension",
-    "iris-headers",
-    {
-      "name": "libavif",
-      "default-features": false,
-      "features": [
-        "aom"
-      ]
-    },
-    "libjpeg-turbo",
-    "libpng",
-    "vulkan-headers",
-    "vulkan-memory-allocator"
+    "iris-headers"
   ],
   "features": {
+    "library": {
+      "description": "The Iris-Slide library, the decoder (CMakeLists.txt): the image codecs, Highway, and the Vulkan, VMA and GLM headers Iris-Headers' private headers include",
+      "dependencies": [
+        "glm",
+        {
+          "name": "highway",
+          "version>=": "1.2.0"
+        },
+        {
+          "name": "libavif",
+          "default-features": false,
+          "features": [
+            "aom"
+          ]
+        },
+        "libjpeg-turbo",
+        "libpng",
+        "vulkan-headers",
+        "vulkan-memory-allocator"
+      ]
+    },
     "encoder": {
       "description": "IrisSlideEncoder and the Python encoder module (IRIS_BUILD_ENCODER=ON): libdicom",
       "dependencies": [

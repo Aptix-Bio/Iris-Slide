@@ -1,0 +1,31 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 27, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "wasm",
+      "displayName": "The JavaScript module: wasm32-emscripten, its packages from vcpkg.json",
+      "description": "VcpkgCaching_2 (WasmThroughVcpkg_2.9): the toolchain installs the pinned Emscripten SDK (scripts/bootstrap_emsdk.cmake) and vcpkg builds Iris-Headers and Iris-File-Extension for wasm32-emscripten",
+      "generator": "Ninja",
+      "toolchainFile": "${sourceDir}/../cmake/toolchains/vcpkg.cmake",
+      "binaryDir": "${sourceDir}/../build/wasm",
+      "installDir": "${sourceDir}/../build/wasm/install",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VCPKG_TARGET_TRIPLET": "wasm32-emscripten"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "wasm", "configurePreset": "wasm", "jobs": 4 }
+  ],
+  "workflowPresets": [
+    {
+      "name": "wasm",
+      "steps": [
+        { "type": "configure", "name": "wasm" },
+        { "type": "build", "name": "wasm" }
+      ]
+    }
+  ]
+}

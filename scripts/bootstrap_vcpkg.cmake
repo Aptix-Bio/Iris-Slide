@@ -44,6 +44,14 @@ if(EXISTS "${iris_slide_bootstrap_tool}" AND iris_slide_bootstrap_head STREQUAL 
     message(STATUS "vcpkg ${iris_slide_bootstrap_commit} already in ${IRIS_SLIDE_VCPKG}")
 else()
     message(STATUS "Fetching vcpkg ${iris_slide_bootstrap_commit} into ${IRIS_SLIDE_VCPKG}")
+    # Replaced only inside the repository's dependencies/ folder, or when empty: a directory named
+    # from outside (-DIRIS_SLIDE_VCPKG) may hold another project's copy, which this never deletes.
+    set(z_dependencies "${iris_slide_bootstrap_root}/dependencies")
+    file(GLOB z_existing "${IRIS_SLIDE_VCPKG}/*")
+    cmake_path(IS_PREFIX z_dependencies "${IRIS_SLIDE_VCPKG}" NORMALIZE z_inside)
+    if(z_existing AND NOT z_inside)
+        message(FATAL_ERROR "bootstrap_vcpkg: ${IRIS_SLIDE_VCPKG} is not at the pinned commit and is outside dependencies/; refusing to replace it")
+    endif()
     file(REMOVE_RECURSE "${IRIS_SLIDE_VCPKG}")
     file(MAKE_DIRECTORY "${IRIS_SLIDE_VCPKG}")
     iris_slide_bootstrap_run("${IRIS_SLIDE_GIT}" init --quiet)

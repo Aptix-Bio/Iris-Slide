@@ -47,7 +47,16 @@ if(iris_slide_host_triplet STREQUAL "")
     message(FATAL_ERROR "no vcpkg triplet for host ${CMAKE_HOST_SYSTEM_NAME} on ${CMAKE_HOST_SYSTEM_PROCESSOR} (triplets/)")
 endif()
 set(VCPKG_HOST_TRIPLET "${iris_slide_host_triplet}" CACHE STRING "vcpkg's triplet for tools run during the build")
+# A preset that cross-builds names its target triplet (javascript/CMakePresets.json: wasm32-emscripten).
 set(VCPKG_TARGET_TRIPLET "${iris_slide_host_triplet}" CACHE STRING "vcpkg's triplet for the libraries Iris-Slide links")
+if(VCPKG_TARGET_TRIPLET STREQUAL "wasm32-emscripten")
+    # The pinned Emscripten SDK, for the project and for every port.
+    include("${iris_slide_root}/scripts/bootstrap_emsdk.cmake")
+    set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE "${IRIS_SLIDE_EMSCRIPTEN_TOOLCHAIN}")
+    list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES IRIS_SLIDE_EMSDK)
+endif()
+# One manifest for every project in the repository: the JavaScript module's (javascript/) too.
+set(VCPKG_MANIFEST_DIR "${iris_slide_root}" CACHE PATH "vcpkg.json's folder")
 
 # Built packages are kept in dependencies/vcpkg-archives beside the vcpkg, instead of
 # vcpkg's default in the home directory. CI names its own sources, the GCS store
@@ -61,7 +70,7 @@ set(VCPKG_INSTALL_OPTIONS "--no-print-usage" CACHE STRING "")
 include("${IRIS_SLIDE_VCPKG}/scripts/buildsystems/vcpkg.cmake")
 
 # vcpkg rewrites its install log at every configure, so each configure's log is appended
-# to a history, which CI's cache report reads (tools/cache_report.py).
+# to a history, which CI's cache report reads (scripts/cache_report.cmake).
 if(NOT iris_slide_in_try_compile AND EXISTS "${CMAKE_BINARY_DIR}/vcpkg-manifest-install.log")
     file(READ "${CMAKE_BINARY_DIR}/vcpkg-manifest-install.log" iris_slide_vcpkg_log)
     file(APPEND "${CMAKE_BINARY_DIR}/vcpkg-install-history.log" "${iris_slide_vcpkg_log}")

@@ -23,7 +23,7 @@ option(IRIS_SYSTEM_DEPENDENCIES "Find the third-party libraries installed on the
 if (NOT DEFINED CMAKE_TOOLCHAIN_FILE AND NOT IRIS_SYSTEM_DEPENDENCIES)
     set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_LIST_DIR}/cmake/toolchains/vcpkg.cmake")
 endif()
-set(VCPKG_MANIFEST_FEATURES "")
+set(VCPKG_MANIFEST_FEATURES library)
 if (IRIS_BUILD_ENCODER)
     list(APPEND VCPKG_MANIFEST_FEATURES encoder)
     if (IRIS_USE_OPENSLIDE)
@@ -79,6 +79,9 @@ PROJECT (
     LANGUAGES CXX
     VERSION ${IRIS_SLIDE_VERSION_STRING}
 )
+
+# The install layout (lib/, include/, bin/), which Iris-Headers' FetchContent used to bring in.
+include(GNUInstallDirs)
 
 # Iris-Headers and Iris-File-Extension (ports/, each pinned by commit and SHA-512). Iris-Slide
 # compiles some of Iris-Headers' sources and private headers into its own binaries; the port
