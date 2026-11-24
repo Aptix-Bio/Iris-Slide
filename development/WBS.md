@@ -185,26 +185,26 @@ packages; a second build folder restores all of them), and the pull request's
     a fresh build folder (`cmake --preset ci`) restored 20 of 20 from the
     binary cache in 2.0 s; `IrisSlideEncoder` encoded a synthetic 8192 × 6144
     tiled TIFF and all 1028 tiles of its 9 layers decoded (tile 0 mean absolute
-    error 7.68) (171560b)
+    error 7.68) (05043cb)
 - [x] **HighwayModule_2.2** — moved from DependencyPins_16 (was 16.2):
   `cmake/hwy.cmake`, a half-renamed copy of `avif.cmake` (B3), deleted with
   the other ExternalProject modules; Highway comes from vcpkg [Build_04]
   - [x] Red: `tools/workflow_lint.py` found 6 `ExternalProject_Add` calls
-  - [x] Green: none (171560b)
+  - [x] Green: none (05043cb)
 - [x] **BuildStateScoped_2.3** — moved from DependencyPins_16 (was 16.3):
   include paths and definitions on the targets (B7) [Build_04]
   - [x] Red: the lint found 8 directory-scope `include_directories(` and
     `add_compile_definitions(` calls
-  - [x] Green: none (171560b)
+  - [x] Green: none (05043cb)
 - [x] **WorkflowLint_2.4** — moved from WorkflowRunners_17 (was 17.1):
   `tools/workflow_lint.py` over the workflows, the composite actions and the
   CMake files: Blacksmith labels, actions pinned by commit SHA, content-hashed
   cache keys, timeouts, bounded parallelism, pull requests of every branch,
   no ExternalProject, no directory-scope build state, and `run:` steps of at
   most `MAX_RUN_LINES` (2) lines [Build_02]
-  - [x] Red: 91 violations on the tree (d8e60b6), then 16 more `run-length`
+  - [x] Red: 91 violations on the tree (fcfd368), then 16 more `run-length`
     once that rule was added
-  - [x] Green: 0 violations; 38 tests in `tools/tests` pass
+  - [x] Green: 0 violations; 38 tests in `tools/tests` pass (a742868)
 - [x] **OneReusableBuild_2.5** — moved from WorkflowRunners_17 (was 17.2):
   `_build.yml`, called once per platform by `ci.yml`, `cache.yml` and the
   release workflows, each step one CMake preset or `cmake -P` call; Linux
@@ -212,6 +212,7 @@ packages; a second build folder restores all of them), and the pull request's
   (`scripts/ci_caches.cmake`) and the report that fails a broken cache
   (`scripts/cache_report.cmake`) [Build_02, Build_06]
   - [x] Red: the lint's 25 `runner` and 9 `timeout` violations
+  - [x] Built: a742868
   - [ ] Green: the pull request's `ci` run
 - [x] **CacheIdentities_2.6** — `tools/cloud_federation.sh`: a provider of
   Iris-Slide's own admitting only repository 1470307364 of owner 353521923,
@@ -219,7 +220,7 @@ packages; a second build folder restores all of them), and the pull request's
   confined to `iris-slide/`, a 7-day rule on `iris-slide/pr/` [Build_06]
   - [x] Run by Ryan 2026-11-24 and checked: the provider active, each account
     with its one principal set and no keys, three conditioned bindings, the
-    lifecycle rule
+    lifecycle rule (68f5773)
   - [ ] The repository variables `IRIS_SLIDE_GCP_PROVIDER` and
     `IRIS_SLIDE_GCP_PROJECT` set; until then every cache step fails naming them
 - [x] **FirstPartyPorts_2.7** — Iris-Headers and Iris-File-Extension as overlay
@@ -232,11 +233,12 @@ packages; a second build folder restores all of them), and the pull request's
     system (its gperf dependency, measured on macOS)
   - [x] Green: as VcpkgManifest_2.1; the IFE port pins the paired branch
     (Aptix-Bio/Iris-File-Extension `feature/VcpkgCaching_2`, 45845fb), which
-    installs `IFE_Window.hpp` for Emscripten
+    installs `IFE_Window.hpp` for Emscripten (05043cb, c0f42a7)
 - [x] **PythonThroughVcpkg_2.8** — pybind11 from an overlay port without vcpkg's
   CPython; the wheels build every Python version of a platform in one job
   [Build_05]
   - [x] Red: vcpkg's pybind11 port depends on its python3 port
+  - [x] Built: 05043cb, a742868
   - [ ] Green: a release-candidate run of `distribute-pypi.yml` *(not run: it
     runs on a release or by hand from main)*
 - [x] **WasmThroughVcpkg_2.9** — the JavaScript module from the same
@@ -244,7 +246,7 @@ packages; a second build folder restores all of them), and the pull request's
   by commit (`scripts/bootstrap_emsdk.cmake`) [Build_05]
   - [x] Red: "'IFE_Window.hpp' file not found" against IFE's install
   - [x] Green: `cmake --workflow --preset wasm` (javascript/) wrote
-    `iris-slide.wasm` (356,394 bytes)
+    `iris-slide.wasm` (356,394 bytes) (c0f42a7)
 - [x] **DownstreamThroughPorts_2.10** — `scripts/local_ports.cmake` writes
   overlay ports from local checkouts, and Iris-Headers' downstream cell
   builds Iris-Slide through them with its verdict in
@@ -253,7 +255,7 @@ packages; a second build folder restores all of them), and the pull request's
   - [x] Red: `-DFETCHCONTENT_SOURCE_DIR_IRISHEADERS` reported unused, and the
     pinned port built instead of the change
   - [x] Green: the verdict script, run locally against that branch and IFE's,
-    "change: green"
+    "change: green" (a742868)
 - [ ] **VERIFY:** Ryan reviews `vcpkg.json`, the ports and `PIPELINE.md`
 - [ ] **Gate:** CI green on the pull request
 
