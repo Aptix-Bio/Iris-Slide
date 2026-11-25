@@ -352,7 +352,7 @@ Shown by: `ctest --preset asan -R Decode`
   - [ ] The encoder's source refusal (an `.iris` source whose table declares
     AV1) gains its test with EndToEndSuite_7.1, which runs the encoder on a
     fixture slide
-- [ ] **TileEncodingBlocksRefused_3.7** — decided 2026-11-25 (ARCHITECTURE
+- [x] **TileEncodingBlocksRefused_3.7** — decided 2026-11-25 (ARCHITECTURE
   D11): tile encodings 4 and 5 are the GPU block-compressed
   `TILE_ENCODING_UASTC` and `TILE_ENCODING_XUASTC`, and a tile table declaring
   either is refused naming the encoding on decode, on encode and as an encoder
@@ -365,7 +365,7 @@ Shown by: `ctest --preset asan -R Decode`
     format in DecompressTileInfo", which names neither, and the build warns
     that neither is handled in `compress_tile`'s or `decompress_tile`'s switch
     ([e718bd2](https://github.com/Aptix-Bio/Iris-Slide/commit/e718bd221901ca227ea237e9fede4208a2248b38))
-  - [x] Green: the same command, 5 of 5 pass; `cmake --build --preset debug` (library, encoder, tests) with no warning, and the Python modules with only the known `METADATA_FREE_TEXT` warning, `Encoding.TILE_ENCODING_UASTC` 4 and `TILE_ENCODING_XUASTC` 5 from Python; `tools/tests` 51 pass, `tools/workflow_lint.py` 0 violations
+  - [x] Green: the same command, 5 of 5 pass; `cmake --build --preset debug` (library, encoder, tests) with no warning, and the Python modules with only the known `METADATA_FREE_TEXT` warning, `Encoding.TILE_ENCODING_UASTC` 4 and `TILE_ENCODING_XUASTC` 5 from Python; `tools/tests` 51 pass, `tools/workflow_lint.py` 0 violations [fb00bec](https://github.com/Aptix-Bio/Iris-Slide/commit/fb00becc97da74bb0d1dbf0a980f769a16203e9d)
   - [ ] The encoder's source refusal gains its test with EndToEndSuite_7.1,
     as AV1's does
 - [ ] **VERIFY:** the maintainer reviews the hostile-stream tests
