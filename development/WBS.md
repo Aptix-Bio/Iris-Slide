@@ -348,6 +348,7 @@ Shown by: `ctest --preset asan -R Decode`
   - [x] Green: the same command, 2 of 2 pass; `cmake --build --preset debug`
     (library, encoder, tests) and the Python modules build with no new warning;
     `tools/tests` 51 pass, `tools/workflow_lint.py` 0 violations
+    [bed76a7](https://github.com/Aptix-Bio/Iris-Slide/commit/bed76a753b09cb1e59b2609e0c8eeaf06ca4237b)
   - [ ] The encoder's source refusal (an `.iris` source whose table declares
     AV1) gains its test with EndToEndSuite_7.1, which runs the encoder on a
     fixture slide
