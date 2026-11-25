@@ -109,6 +109,10 @@ class EncoderStatus:
 def create_encoder(source: str, outdir: str = '', desired_encoding: Encoding = ..., desired_byte_format: Format = ..., anonymize: bool = False, derivation: EncoderDerivation = ..., concurrency: int = 8, codec_context: Context = None, i2s_attributes: dict[str, str] = ..., i2s_version: int = 0) -> Encoder:
     """
     Iris Slide encoding context for GPU based compression
+
+    i2s_version: the I2S version i2s_attributes conform to, as IFE's 16-bit
+    ATTRIBUTES.VERSION holds it: major << 8 | minor, so I2S 0.1 is 1 and I2S 1.0
+    is 256. Required with i2s_attributes; dispatch refuses 0, an unversioned claim.
     """
 def dispatch_encoder(encoder: Encoder) -> Result:
     """

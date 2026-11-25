@@ -150,7 +150,7 @@ PYBIND11_MODULE(encoder, m)
           py::arg("i2s_attributes") = std::map<std::string, std::string>(),
           "The slide's Iris Interoperability Specification (I2S) attributes as key and value text (what I2S's Attributes.to_pairs gives). When given, they are written as the slide's METADATA_I2S attributes in place of the source's; dispatch refuses a key that is not ASCII or a value past IFE's sizes, naming it",
           py::arg("i2s_version") = uint16_t{0},
-          "The I2S version the attributes conform to, as IFE's 16-bit ATTRIBUTES.VERSION holds it. Required with i2s_attributes: dispatch refuses version 0. How an I2S major and minor version pack into it is not yet specified");
+          "The I2S version the attributes conform to, as IFE's 16-bit ATTRIBUTES.VERSION holds it: major << 8 | minor, so I2S 0.1 is 1 and I2S 1.0 is 256. Required with i2s_attributes: dispatch refuses version 0, an unversioned claim");
     
     m.def("dispatch_encoder",           &IrisSlide::dispatch_encoder,
           "This method dispatches the Encoder asynchrounously and returns immediately. The encoder will immediately begin encoding the slide data based upon the set encoder parameters, which cannot be changed onced dispatched. The progress of the encoding can be checked by calling get_encoder_status on the encoder",

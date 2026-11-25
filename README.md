@@ -177,7 +177,7 @@ they become the slide's `METADATA_I2S` attributes in place of the source's:
 ```cpp
 IrisSlide::EncodeSlideInfo info {.srcFilePath = "input.svs"};
 info.attributes.type    = IrisSlide::METADATA_I2S;
-info.attributes.version = i2s_version;   // the I2S version, as the caller packs it
+info.attributes.version = i2s_version;   // the I2S version, major << 8 | minor: I2S 0.1 is 1
 for (const auto& [key, value] : i2s_pairs)
     info.attributes[key] = std::u8string(value.begin(), value.end());
 auto encoder = IrisSlide::create_encoder(info);
@@ -506,7 +506,7 @@ result = Encoder.encode_slide_file(
 - `concurrency`: Number of threads (default: CPU count)
 - `codec_context`: Optional codec context for advanced usage
 - `i2s_attributes`: the slide's Iris Interoperability Specification (I2S) attributes as key and value text, written as its `METADATA_I2S` attributes in place of the source's; a key that is not ASCII or a value that is not UTF-8 is refused naming it
-- `i2s_version`: the I2S version those attributes conform to, as the attribute block's 16-bit VERSION holds it; required with `i2s_attributes` (0 is refused), since the packing of an I2S version into 16 bits is not yet specified
+- `i2s_version`: the I2S version those attributes conform to, as the attribute block's 16-bit VERSION holds it: `major << 8 | minor`, so I2S 0.1 is 1 and I2S 1.0 is 256; required with `i2s_attributes` (0, an unversioned claim, is refused)
 
 ## JavaScript Detailed Examples
 

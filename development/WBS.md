@@ -494,6 +494,13 @@ the properties it dropped
     generated source (6.7), a `--i2s key=value` typed at the command line
     would be written under the I2S claim with no vocabulary check, which the
     C++ and Python callers make with I2S's own `Attributes`
+- [x] **I2sVersionPacked_6.9** — decided 2026-11-25 (ARCHITECTURE D10,
+  amended; Q12 resolved): IFE's 16-bit `ATTRIBUTES.VERSION` holds the I2S
+  version as `major << 8 | minor` (I2S 0.1 is 1). The encoder already writes
+  the caller's u16 and refuses 0, and a half above 255 cannot be passed in a
+  u16 the caller packs, so no code changes: the README, the Python binding's
+  `i2s_version` docstring and the stubs say how the caller packs it
+  [Identity_07]
 - [ ] **VERIFY:** the maintainer reviews the allow-list and the fixture
 - [ ] **Gate:** CI green on the pull request
 
@@ -1021,3 +1028,9 @@ audit marked closed with its commit
   and version 0 is refused. The first end-to-end test writes its fixture
   through IFE's Builder, which FixtureSlide_1.3 can grow from
   (EncoderTakesI2S_6.8).
+- **2026-11-25, the I2S version's packing decided.** Q12 is resolved (D10,
+  amended): IFE's `ATTRIBUTES.VERSION` holds the I2S version as
+  `major << 8 | minor`, so I2S 0.1 is 1. The encoder's behaviour is
+  unchanged (it writes the caller's value and refuses 0); the README, the
+  Python docstring and the stubs now say how the caller packs it
+  (I2sVersionPacked_6.9).
