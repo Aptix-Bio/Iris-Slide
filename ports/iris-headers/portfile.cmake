@@ -2,14 +2,15 @@
 # archive's SHA-512, in place of FetchContent at the tip of a branch. The commit is the tip of
 # the paired branch feature/TileEncodingAv1_1 (on main, which holds the merged rename, X4): tile
 # encoding 3 is TILE_ENCODING_AV1 in place of TILE_ENCODING_AVIF (decided 2026-11-25, X7), and
-# EncodeSlideInfo::attributes carries the caller's attribute pairs (decided 2026-11-25, X3), until
-# that branch merges (PortsPinMain_17.6).
+# EncodeSlideInfo::attributes carries the caller's attribute pairs (decided 2026-11-25, X3), and
+# tile encodings 4 and 5 are TILE_ENCODING_UASTC and TILE_ENCODING_XUASTC (decided 2026-11-25,
+# X8), until that branch merges (PortsPinMain_17.6).
 set(VCPKG_BUILD_TYPE release)   # headers and sources only: nothing is compiled here
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO Aptix-Bio/Iris-Headers
-    REF 9fa8a26fd94dc7ac31b80ae00cc7285c409a90df
-    SHA512 71ea2b11819ed5cde3bd1a1dcc9e07437ede05095086c50cf4bb5ae83cf02f3061594dd64bdad80bb249a0b30ce2685a89e30fbeebb20f995ce2a4c3693e9b62
+    REF 635afbb5638bee2d29d8024ca4c9418d4ea7c77d
+    SHA512 9b735baf2b6144c0987610f5775ef5c1875d9c850e5b82baa97bc042128a4966c3f04370da4cb88b81beeeb3fa4adb23a5640d38a3ee4d8c5ad2d161086c2f4a
     HEAD_REF main
 )
 vcpkg_cmake_configure(SOURCE_PATH "${SOURCE_PATH}" OPTIONS -DIRIS_HEADERS_CHECK_STANDALONE=OFF)
