@@ -12,7 +12,6 @@ using namespace Iris;
 class Context_t {
     Device                              _device         = NULL;
     bool                                _gpuAV1Decode   = false;
-    bool                                _gpuAV1Encode   = false;
 public:
     explicit Context_t        (const ContextCreateInfo&);
     Context_t                 (const Context_t&) = delete;

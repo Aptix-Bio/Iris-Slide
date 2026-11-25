@@ -1,0 +1,12 @@
+# Who must review what (WorkflowRunners_17, ReviewBot_17.8; RTM Review_01).
+# GitHub applies the last line whose pattern matches a file, so the catch-all comes first and the
+# narrower lines after it. The review bot reads the logins on the last `*` line as the code owners
+# whose replies in a pull request's conversation may grant an exception to a rubric item; a team or
+# an email there fails the review by name. The review bot is never a code owner.
+
+*                       @ryanlandvater
+
+# The rules a pull request is judged by and the workflows that judge it: named explicitly so that a
+# later, narrower owner line cannot take them from the maintainer.
+/.github/review/        @ryanlandvater
+/.github/workflows/     @ryanlandvater

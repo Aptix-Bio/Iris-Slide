@@ -39,7 +39,7 @@ Arugments:\n \
 represents the previous file name (ex /path/to/slide.svs will be named /outdir/slide.iris) \n \
 -d --derive: Generate the lower resolution layers. Options are 2x, 4x, or use-source (default)\
 -sm --strip_metadata: Strip patient identifiers from the encoded metadata within the slide file \
--e --encoding: JPEG or AVIF (default JPEG)\
+-e --encoding: JPEG (the default and only tile encoding Iris Slide writes)\
 -c --concurrency: How many threads should this run on (defaults to all cores for fastest encoding)\
 \n";
 const std::u8string complt_char = u8"█";
@@ -75,8 +75,6 @@ inline IrisSlide::Encoding PARSE_ENCODING (std::string arg)
     for (auto& c : arg) toupper(c);
     if (!strcmp(arg.c_str(), "JPEG"))
         return IrisSlide::TILE_ENCODING_JPEG;
-    if (!strcmp(arg.c_str(), "AVIF"))
-        return IrisSlide::TILE_ENCODING_AVIF;
     return IrisSlide::TILE_ENCODING_UNDEFINED;
 }
 inline IrisSlide::EncoderDerivation::Layers PARSE_DERIVATION (std::string arg)

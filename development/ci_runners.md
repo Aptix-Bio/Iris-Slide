@@ -33,9 +33,7 @@ same work twice. Modular reuse and frequent cache hits are the two levers.
   logic lives in the preset or the script, the same on every operating
   system's shell, and tested. Composite actions are for what needs an action
   (checkout, cache restore and save, cloud sign-in), with no shell logic
-  beyond one call (Ryan, 2026-11-24: "avoid lots of shell script in the
-  actions yamls instead leaning on unified workflows with good Cmake
-  subscripts as needed").
+  beyond one call (decided 2026-11-24).
 - **Identical work runs once.** Work that doesn't depend on the platform (the
   assets, a toolchain archive covering every platform, generated data) is done
   by one job and handed on as an artifact, not repeated per platform.

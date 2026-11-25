@@ -11,7 +11,7 @@ documentation lives next to the code.
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | know who governs each IFE block, where its content comes from, whether it may identify a patient, and which code writes and reads it |
 | [WBS.md](WBS.md) | track the work sprint by sprint: each sprint's milestone and pull request, its tasks and their red-first steps, each tick with its evidence; the session log |
-| [RTM.md](RTM.md) | trace each requirement back to Ryan's goals and forward to code and tests, with status |
+| [RTM.md](RTM.md) | trace each requirement back to the goals and forward to code and tests, with status |
 | [style_guide.md](style_guide.md) | the binding conventions for code, plans and prose |
 | [ci_runners.md](ci_runners.md) | the rules every workflow follows: when a runner runs, reuse, caches, robustness |
 | [PIPELINE.md](PIPELINE.md) | the dependency pins, the vcpkg ports and triplets, the cache store and who may write it, and the numbered pipeline rules |
@@ -39,11 +39,11 @@ milestone someone can see working, and one pull request.
    code that turns it green, with the evidence (test counts, the command run).
 3. The milestone is demonstrated: the sprint's **Shown by** command, which
    anyone can run, and its output pasted into the pull request.
-4. The sprint ends with a **VERIFY** step for Ryan and a **Gate** step: CI
+4. The sprint ends with a **VERIFY** step for the maintainer and a **Gate** step: CI
    green on the pull request. Nothing from the next sprint is started on the
    same branch.
 5. A sprint that changes the public headers has a paired branch of the same
-   name in Iris-Headers, merged first. A task that waits on one of Ryan's
+   name in Iris-Headers, merged first. A task that waits on one of the maintainer's
    answers is marked `blocked` and does not hold its sprint.
 
 Sprints that touch different files run in parallel; [WBS.md](WBS.md) draws
@@ -51,11 +51,17 @@ the order and names the lanes.
 
 The pull request's description has these sections, in this order: Summary ·
 WBS (the sprint's tasks, ticked, with evidence and commit links) · RTM (rows
-changed, with evidence) · Decisions (dated, with Ryan's words) · Measurements
+changed, with evidence) · Decisions (dated, each stated as a plain requirement) · Measurements
 (when any were taken) · Test results (per cell, local and CI) · Red first ·
 Failures fixed (symptom, root cause, fix, commit) · Clinical impact (what a
-pathologist would see differently) · Security impact (new input parsed? new
-dependency? patient data in the diff, logs or fixtures?).
+pathologist would see differently) · Consumer impact (what Iris-Slide's
+consumers must change for a moved pin or a public API or Python change, and
+the merge order of a coordinated change) · Security impact (new input parsed? new
+dependency? patient data in the diff, logs or fixtures?) · AI authorship (which
+parts an AI agent wrote, with which tool, and what the maintainer did).
+`.github/pull_request_template.md` holds these sections, then the "Agent review"
+boxes the review bot ticks against `.github/review/rubric.toml`
+([PIPELINE.md](PIPELINE.md), rule 10).
 
 **Naming:** every ID says what it is. A WBS item is `PascalCaseName_<number>`
 (`DecodeSafety_3`, `JpegSizedFromHeader_3.1`); an RTM row is

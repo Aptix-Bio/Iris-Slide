@@ -1,7 +1,8 @@
 # Pipeline
 
-How Iris-Slide's dependencies are pinned and built, and how CI caches them.
-Set by VcpkgCaching_2 (2026-11-24). The general CI rules are
+How Iris-Slide's dependencies are pinned and built, how CI caches them, and
+how pull requests are reviewed. Set by VcpkgCaching_2 (2026-11-24); rule 10 by
+ReviewBot_17.8 (2026-11-24). The general CI rules are
 [ci_runners.md](ci_runners.md); these are the rules specific to this
 repository, numbered so a commit or a comment can cite one.
 
@@ -32,7 +33,10 @@ flowchart LR
    (`scripts/bootstrap_vcpkg.cmake`) and refuses a vcpkg at another commit,
    since another commit changes every package's ABI hash and so misses every
    cached package. The fetch is a treeless partial clone: the overrides read
-   old port trees from vcpkg's history, which a shallow clone lacks.
+   old port trees from vcpkg's history, which a shallow clone lacks. The bootstrap reads each override's port tree itself, so vcpkg finds them
+   local: vcpkg's own git, run with a cleaned environment, could not resolve
+   github.com on Blacksmith's Windows runner. The toolchain ignores
+   `VCPKG_ROOT`, which Visual Studio's environment points at its bundled vcpkg.
 3. **Each direct dependency states its version** by an override in
    `vcpkg.json`, or by its overlay port in `ports/`. Third-party versions equal
    Iris-Headers' `cmake/dependencies.cmake` where vcpkg has them (table
@@ -84,6 +88,60 @@ flowchart LR
    `cmake -P scripts/<name>.cmake`, which is the same on every operating
    system's shell and is tested in `tools/tests`.
 
+10. **Every pull request from an Aptix-Bio branch is reviewed by the review bot.**
+    `.github/workflows/review.yml` runs the Aptix review bot on every non-draft
+    pull request whose head branch is in this repository, against
+    `.github/review/rubric.toml`; the bot ticks the template's "Agent review"
+    boxes (`.github/pull_request_template.md`), posts one comment, and fails the
+    `code-review` check on a failed blocking item. The trigger is
+    `pull_request_target`, so GitHub runs the workflow, and the bot reads the
+    rubric, its reference files and `.github/CODEOWNERS`, as the default branch
+    holds them: a pull request cannot change the rules it is judged by. Since
+    that trigger gives the run the repository's secrets and a token that can
+    write, each job checks out only the default branch's commit and the bot's
+    pinned commit, and the bot reads the pull request's diff through the API as
+    data; nothing from the head is checked out or run. The job that holds the
+    model key reads only; the job that writes to the pull request never sees
+    the key. The bot is kept in a private repository, and GitHub lets only
+    private repositories use an action from a private repository
+    ([GitHub, "Allowing access to components in a private repository"](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository),
+    read 2026-11-24): each job checks the bot out at the commit
+    `GOVERNANCE_COMMIT` names with the secret `GOVERNANCE_READ_TOKEN`, a token
+    that can read that one repository's contents and nothing else, passed only
+    to that checkout step and not persisted. The model key is the secret
+    `ANTHROPIC_KEY`. A job whose secret is unset fails naming it
+    (`cmake/require_settings.cmake`). The workflow is the review workflow
+    every public Aptix repository runs, apart from comments and product text.
+
+    **Forks.** A pull request from a fork is not reviewed by the model: under
+    `pull_request_target` its run would hold the secrets while the model reads
+    text the fork's author wrote. Both review jobs are skipped and the job
+    "Fork pull requests get no model review" leaves a notice on the run. A
+    maintainer reviews such a change by pushing its commits to an Aptix-Bio
+    branch and opening a pull request from there, which the bot reviews.
+
+    **Where to read a review:** each job's log (every line starts
+    `review_bot:`), the run's summary page, the bot's comment on the pull
+    request, and the `review-verdict` artifact (the full record, kept 90 days).
+    `cmake/check_review_configuration.cmake`, in the `lint` job of `ci.yml`,
+    holds the workflow's properties and the steps it shares with the other
+    repositories; `tools/tests/test_review_configuration.py` holds the rubric,
+    the template and the step order.
+
+    ```mermaid
+    flowchart LR
+        PR["pull request<br/>from an Aptix-Bio branch"] -->|pull_request_target| W["review.yml<br/>as the default branch holds it"]
+        F["pull request<br/>from a fork"] -->|pull_request_target| N["notice only"]
+        W --> R["1. Aptix Review Agent<br/>ANTHROPIC_KEY · read-only"]
+        W --> C["2. Update PR from Agent<br/>no key · pull-requests: write"]
+        G[("review bot<br/>pinned commit")] -->|"GOVERNANCE_READ_TOKEN<br/>checkout only"| R
+        G -->|"GOVERNANCE_READ_TOKEN<br/>checkout only"| C
+        D[("default branch<br/>rubric · references · CODEOWNERS")] --> R
+        D --> C
+        R -->|"verdict artifact"| C
+        C -->|"boxes · comment · check"| PR
+    ```
+
 ## Pins
 
 Read 2026-11-24 from vcpkg's registry at the baseline (`versions/`,
@@ -105,7 +163,7 @@ and from each upstream's release.
 | GLM | 1.0.3 (override) | 1.0.3 | vcpkg baseline |
 | pybind11 | 3.1.0 (overlay: vcpkg's port without its python3 dependency) | v3.1.0 | vcpkg baseline; the archive's SHA-512 is vcpkg's |
 | Catch2 | 3.15.1 (override, feature `tests`) | 3.15.1 | vcpkg `versions/c-/catch2.json` (baseline 3.16.0) |
-| Iris-Headers | `b5e84f5fed31368de904480e5e571dc388fe58ba` (feature/IrisSlideRename) | — | Aptix-Bio/Iris-Headers#5, until it merges (X4) |
+| Iris-Headers | `635afbb5638bee2d29d8024ca4c9418d4ea7c77d` (feature/TileEncodingAv1_1, on main) | — | the paired branch: tile encoding 3 is `TILE_ENCODING_AV1` (decided 2026-11-25, ARCHITECTURE X7) `EncodeSlideInfo::attributes` (decided 2026-11-25, ARCHITECTURE D10), and tile encodings 4 and 5 `TILE_ENCODING_UASTC` and `TILE_ENCODING_XUASTC` (decided 2026-11-25, ARCHITECTURE X8), https://github.com/Aptix-Bio/Iris-Headers/commit/635afbb5638bee2d29d8024ca4c9418d4ea7c77d, the archive's SHA-512 computed 2026-11-25, until it merges (PortsPinMain_17.6); the rename (Aptix-Bio/Iris-Headers#5, X4) is merged into main |
 | Iris-File-Extension | `45845fb3bc42af431588503c856da7281cda70b8` (feature/VcpkgCaching_2, on feature/PngRetiredClinicalWriter) | — | the paired branch, until it merges |
 | Emscripten SDK | 6.0.13, `35659964bc2762fffec0d257997fb61475f765b7` | — | https://github.com/emscripten-core/emsdk/releases/tag/6.0.13 |
 | sccache | v0.19.0 | — | through mozilla-actions/sccache-action v0.0.11 |

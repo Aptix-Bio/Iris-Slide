@@ -606,16 +606,10 @@ Buffer Context_t::compress_tile(const CompressTileInfo &info) const
                                          info.subsampling,
                                          TILE_PIX_LENGTH,
                                          TILE_PIX_LENGTH);
-        case TILE_ENCODING_AVIF:
-            if (_gpuAV1Encode) {
-                assert(false && "HARDWARE ENCODER AV1 IMPLEMENTATION NOT YET BUILT");
-            } return COMPRESS_AVIF_CPU (info.pixelArray,
-                                        info.format,
-                                        info.quality,
-                                        info.subsampling,
-                                        TILE_PIX_LENGTH,
-                                        TILE_PIX_LENGTH);
-            break;
+        case TILE_ENCODING_AV1:
+        case TILE_ENCODING_UASTC:
+        case TILE_ENCODING_XUASTC: throw std::runtime_error
+            (unbuilt_tiles_refused("compress_tile refused", unbuilt_tile_encoding(info.encoding)));
         case TILE_ENCODING_IRIS:
             assert(false && "IMPLEMENTATION NOT YET BUILT");
             break;
@@ -634,14 +628,10 @@ Buffer Context_t::decompress_tile(const DecompressTileInfo &info) const
                                          info.desiredFormat,
                                          TILE_PIX_LENGTH,
                                          TILE_PIX_LENGTH);
-        case TILE_ENCODING_AVIF:
-            if (_gpuAV1Decode) {
-                assert(false && "HARDWARE ENCODER AV1 IMPLEMENTATION NOT YET BUILT");
-            } return DECOMPRESS_AVIF_CPU (info.compressed,
-                                          info.optionalDestination,
-                                          info.desiredFormat,
-                                          TILE_PIX_LENGTH,
-                                          TILE_PIX_LENGTH);
+        case TILE_ENCODING_AV1:
+        case TILE_ENCODING_UASTC:
+        case TILE_ENCODING_XUASTC: throw std::runtime_error
+            (unbuilt_tiles_refused("decompress_tile refused", unbuilt_tile_encoding(info.encoding)));
         case TILE_ENCODING_IRIS:
             assert(false && "IMPLEMENTATION NOT YET BUILT");
             break;

@@ -5,6 +5,7 @@
 //  Created by Ryan Landvater on 2/6/25.
 //
 
+#include <map>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
@@ -27,7 +28,9 @@ inline std::string to_string(Encoding encoding)
     switch (encoding) {
         case TILE_ENCODING_IRIS: return "ENCODING_IRIS";
         case TILE_ENCODING_JPEG: return "ENCODING_JPEG";
-        case TILE_ENCODING_AVIF: return "ENCODING_AVIF";
+        case TILE_ENCODING_AV1:  return "ENCODING_AV1";
+        case TILE_ENCODING_UASTC:  return "ENCODING_UASTC";
+        case TILE_ENCODING_XUASTC: return "ENCODING_XUASTC";
         default:
             return "ENCODING UNDEFINED";
     }       return "ENCODING UNDEFINED";
@@ -50,7 +53,9 @@ inline Encoder _create_encoder (const std::string& src_path,
                                 bool anonymize,
                                 EncoderDerivation::Layers derivation,
                                 unsigned concurrency,
-                                Context context = NULL) {
+                                Context context,
+                                const std::map<std::string, std::string>& i2s_attributes,
+                                uint16_t i2s_version) {
     EncoderDerivation d_strategy {
         .layers             = derivation,
         .method             = EncoderDerivation::ENCODER_DOWNSAMPLE_AVERAGE
@@ -66,6 +71,14 @@ inline Encoder _create_encoder (const std::string& src_path,
         .context            = context,
         .derivation         = derivation?&d_strategy:NULL,
     };
+    // RTM Identity_07: Python's str arrives as UTF-8, and the encoder checks the pairs and the
+    // version when it is dispatched, naming the pair it refuses.
+    if (!i2s_attributes.empty()) {
+        encoder_info.attributes.type    = METADATA_I2S;
+        encoder_info.attributes.version = i2s_version;
+        for (const auto& [key, value] : i2s_attributes)
+            encoder_info.attributes[key] = std::u8string(value.begin(), value.end());
+    }
     return IrisSlide::create_encoder(encoder_info);
 }
 inline std::tuple<Result,EncoderProgress> _get_encoder_progress (const Encoder& encoder)
@@ -135,7 +148,11 @@ PYBIND11_MODULE(encoder, m)
           py::arg("concurrency") = std::thread::hardware_concurrency(),
           "Maximum concurrent thread execution (Default highest performance)",
           py::arg("codec_context") = IrisSlide::Context(),
-          "Iris Slide encoding context for GPU based compression");
+          "Iris Slide encoding context for GPU based compression",
+          py::arg("i2s_attributes") = std::map<std::string, std::string>(),
+          "The slide's Iris Interoperability Specification (I2S) attributes as key and value text (what I2S's Attributes.to_pairs gives). When given, they are written as the slide's METADATA_I2S attributes in place of the source's; dispatch refuses a key that is not ASCII or a value past IFE's sizes, naming it",
+          py::arg("i2s_version") = uint16_t{0},
+          "The I2S version the attributes conform to, as IFE's 16-bit ATTRIBUTES.VERSION holds it: major << 8 | minor, so I2S 0.1 is 1 and I2S 1.0 is 256. Required with i2s_attributes: dispatch refuses version 0, an unversioned claim");
     
     m.def("dispatch_encoder",           &IrisSlide::dispatch_encoder,
           "This method dispatches the Encoder asynchrounously and returns immediately. The encoder will immediately begin encoding the slide data based upon the set encoder parameters, which cannot be changed onced dispatched. The progress of the encoding can be checked by calling get_encoder_status on the encoder",

@@ -1,0 +1,275 @@
+# RTM Review_01
+# The review bot's rubric (WorkflowRunners_17, ReviewBot_17.8; development/PIPELINE.md, rule 10).
+# One [[item]] per checkbox the bot ticks in the pull request's "Agent review" section: first the
+# items every Aptix repository's rubric shares, in their shared order, then Iris-Slide's own
+# (DependenciesThroughVcpkg, ClinicalIntegrity). The bot loads this file, the files it names and
+# .github/CODEOWNERS from the default branch's commit that .github/workflows/review.yml checks
+# out, so a pull request cannot change the rules it is judged by.
+#
+# An item passes, fails, or does not apply. A failed item with blocking = true fails the
+# `code-review` check; a failed advisory item is reported only. Changing this file changes what
+# every later pull request is held to: it is a code-owner file (.github/CODEOWNERS), and its own
+# pull request says why.
+
+[review]
+product = "Iris-Slide, the open-source decoder and encoder of Iris slide files (C++20, with Python and JavaScript bindings)"
+# The rules the model reviews against, sent whole; a missing one fails the review by name. With
+# the bot's instructions and the items below they are one prompt-cached prefix, resent unchanged
+# until the default branch changes one of them.
+reference_files = [
+    "development/style_guide.md",
+    "development/ci_runners.md",
+    "development/ARCHITECTURE.md",
+    "development/README.md",
+    "development/PIPELINE.md",
+    "development/RTM.md",
+]
+# Sent as the list items whose bold ID (`**ReviewBot_17.8**`) the pull request names in its title
+# or description or on a line it adds, each with the lines nested under it; the bot matches
+# `PascalCase_n` IDs, which is how this WBS writes them. The WBS changes in almost every pull
+# request; as a reference file it would end the cached prefix at every merge.
+excerpt_files = [
+    "development/WBS.md",
+]
+
+[trace]
+# Every new WBS tick, and every RTM row moved to these statuses, links to the GitHub commit that
+# did the work; a line that does not fails `item`. Checked by the bot itself, without the model.
+item = "Traceability"
+ticks = ["development/WBS.md"]
+rows = ["development/RTM.md"]
+row_statuses = ["Implemented", "Verified"]
+
+[verification]
+# While the maintainer is the only developer, the pull request's author may give the final
+# human verification.
+allow_author = true
+
+[[item]]
+id = "Traceability"
+title = "Traceability: WBS tasks and RTM rows named; code tagged `// RTM <ID>` or `# RTM <ID>`, Catch2 tests `[<ID>]`; WBS ticks carry evidence and a commit link on the same line"
+blocking = true
+guidance = """
+The description names the WBS sprint and tasks it completes or advances and the
+RTM rows it touches (development/README.md, update rule: the WBS steps and RTM
+rows change in the same commit as the code). Every WBS box ticked in the diff has
+its evidence on the same line (test counts and the command, a measurement, a
+reviewed document, a CI run) and a link to the commit that did the work,
+`[1234567](https://github.com/Aptix-Bio/Iris-Slide/commit/<full hash>)`; every RTM
+row moved to Implemented or Verified links its commit the same way. The bot
+checks the links itself; judge only whether each linked commit plausibly does
+what the line claims. New code that implements a requirement carries
+`// RTM <ID>` (C++) or `# RTM <ID>` (Python, CMake, workflows); its Catch2 test
+carries the tag `[<ID>]`. IDs are spelled out (`DecodeSafety_3`,
+`JpegSizedFromHeader_3.1`, `Decode_01`), with no abbreviations. A change to code
+without the matching WBS and RTM update in the same pull request fails.
+"""
+
+[[item]]
+id = "StyleGuide"
+title = "Style guide: `development/style_guide.md` followed (no recursion, nesting ≤ 3, RAII, early return, fail loudly with the offending value, `Result` at every API boundary, naming, prose)"
+blocking = true
+guidance = """
+Judge the diff against development/style_guide.md, in full. The common failures:
+recursion, direct or through a callback (a walk is a loop over an explicit queue);
+nesting deeper than 3; raw new/delete or a codec, OpenSlide or libdicom handle
+without an RAII owner; an exception crossing a boundary of IrisSlideCore.hpp, a
+thread entry or a binding, or a boundary function without `noexcept`; an error
+without its offending value; `catch (...)` or a bare `except:` anywhere but the
+last handler at a boundary; output to std::cout or std::cerr in place of a
+`Result`; a `switch` with `default:` over an enumeration; a bare number with a
+meaning in place of a named constant or scoped enumeration; a shared type not
+named `<Name>_t` with its `std::shared_ptr` alias, or made other than by
+`create_<name>(Desc, out)`; side effects in conditions; commented-out or dead
+code; comments that restate the code; Python without annotations, with `Any`,
+mutable defaults or `import *`. Prose in comments, documents and the description
+uses the precise technical term, states the reason, and makes no "X, not Y"
+contrast pair for emphasis. Name each violation with file and line.
+"""
+
+[[item]]
+id = "MinimumSurface"
+title = "Minimum code surface: no near-duplicate routines, Iris-Headers and IFE types reused, nothing built ahead of its sprint"
+blocking = true
+guidance = """
+Similar routines are one routine with an enum or optional argument; repeated code
+is extracted to the place its dependencies set (style guide, Modules and Reuse);
+a new function that already exists is a failure. Iris-Headers' `Result`,
+`Buffer`, `Iris::FIFO::Queue` and `Iris::Async`, and the Iris File Extension's
+`Parser` and `Builder`, are reused; a copy or re-implementation fails. A block's
+layout is written only through IFE's `Builder` and read only through its
+`Parser` (ARCHITECTURE.md D1). No umbrella target links what it does not use.
+Nothing is added to the public API or the build ahead of the WBS sprint that
+uses it.
+"""
+
+[[item]]
+id = "TestsFirst"
+title = "Tests: new behaviour has a test shown red first; per-cell results reported; no test weakened to pass"
+blocking = true
+guidance = """
+Behaviour added or changed by the diff is covered by a test in the same pull
+request, tagged with its RTM ID. The "Red first" section shows the failing run
+(the command and its failure) and "Test results" the passing run, per cell. A
+test deleted, skipped, loosened or given a wider tolerance is explained in the
+description; unexplained, it fails. Slides used by tests are built inside the
+test (RTM Testing_03). Documentation-only pull requests: not applicable.
+"""
+
+[[item]]
+id = "AbiAndConsumers"
+title = "Consumers: Iris-Headers and IFE come through overlay ports pinned by SHA; a change to a pin, the public API or the Python package states its consumer impact, and one that needs a sibling repository's change is coordinated"
+blocking = true
+guidance = """
+Iris-Slide consumes Iris-Headers and the Iris File Extension (IFE) through the
+vcpkg overlay ports ports/iris-headers and ports/iris-file-extension, each
+pinned to one commit and its archive's SHA-512; downstream consumers use its
+public API (the headers installed under include/Iris, the exported symbols, the
+`IrisSlide::` CMake targets and install paths) and its Python package (the
+`Iris` module and its type stubs). A change to a pinned dependency's commit or
+hash, a public header, an exported symbol or function signature, a CMake target
+name or install path, or the Python surface (a module, function, argument,
+return type or exception raised) states under "Consumer impact" what each
+consumer must change, and a moved pin names the commits it moves between. A
+change that needs a sibling repository's change (an unmerged Iris-Headers or IFE
+pull request, or a consumer that breaks without its own change) is a
+coordinated change: the description names each pull request and the order in
+which they merge, and the sibling merges first (development/README.md, "How a
+sprint runs", step 5), since merging Iris-Slide first breaks its `main`. A
+change no consumer compiles or imports and that moves no pin: not applicable.
+"""
+
+[[item]]
+id = "PublicRepository"
+title = "Public repository: nothing names or describes proprietary products, private repositories, internal infrastructure or private cloud projects; no quotations of the maintainer; no local machine paths"
+blocking = true
+guidance = """
+Iris-Slide is public; everything the diff adds is published. A finding is any
+added text, in code, comments, documents, the description or commit messages
+shown in the pull request, that names or describes a proprietary product, a
+private repository, internal infrastructure (hosts, buckets, service accounts,
+project or repository identifiers) or a private cloud project. Two references
+are allowed. The licensed codec may be named only as a component that its
+licensees load at run time (ARCHITECTURE.md D5). The review workflow
+(.github/workflows/review.yml) and its configuration test name the review bot's
+repository, which the workflow checks out. A decision or requirement is stated
+as a plain requirement with its date; a quotation of the maintainer, or of any
+person, fails. A local machine path (a home directory, `/Users/...`,
+`C:\\Users\\...`, a scratch directory) fails. Patient data and real slide files
+fail here as under DataProtection.
+"""
+
+[[item]]
+id = "SecurityImpact"
+title = "Security impact: the template's section is filled in and matches the diff (input parsing, dependencies, permissions, secrets)"
+blocking = true
+guidance = """
+Compare the "Security impact" answers with the diff. New parsing of untrusted
+input (an .iris file, a JPEG or AVIF stream, a DICOM series, an OpenSlide
+source, the byte ranges the WASM module fetches) bounds every length and offset
+before use; a decode sizes its destination from the stream's own header and
+compares it with the size the file declares (ARCHITECTURE.md D3). A new or
+upgraded dependency names its version, its licence and how vcpkg pins it. A new
+or widened workflow permission, secret, environment or token is declared and
+justified. An answer that the diff contradicts fails.
+"""
+
+[[item]]
+id = "Pipeline"
+title = "Pipeline: workflows follow `ci_runners.md` and `PIPELINE.md` (SHA pins, `permissions: {}`, untrusted input through `env:`, bounded jobs, one-command `run:` steps)"
+blocking = true
+guidance = """
+For changes under .github/, tools/ or scripts/, or to CMakePresets.json, that
+touch CI. Every action from another repository is pinned by a full commit SHA
+with its version in a comment; `permissions: {}` at the top and per-job grants;
+checkout with `persist-credentials: false`; Blacksmith runner labels; every job
+has timeout-minutes; each `run:` step is one command of at most MAX_RUN_LINES
+lines, its logic in a CMake preset, `cmake -P scripts/<name>.cmake` or a tested
+script; caches keyed by content (development/ci_runners.md; PIPELINE.md rule 9;
+tools/workflow_lint.py). A job that needs a variable or secret checks it first
+(cmake/require_settings.cmake). `pull_request_target` appears only in
+.github/workflows/review.yml, the review workflow every public Aptix repository
+runs, which checks out only the default branch's commit and the review bot's
+pinned commit, runs nothing from the head, runs its model jobs only for pull
+requests from this repository's own branches, and passes GOVERNANCE_READ_TOKEN
+only to the step that checks the bot out (PIPELINE.md rule 10;
+cmake/check_review_configuration.cmake holds this). No `${{ }}` of untrusted input (titles, branch names, bodies) inside
+`run:`. A change to this rubric, .github/CODEOWNERS or review.yml is flagged in
+the findings as needing the maintainer's explicit attention, whatever else it
+does. Not applicable otherwise.
+"""
+
+[[item]]
+id = "DataProtection"
+title = "Data protection: no patient data, slide files, slide metadata, secrets, keys or binaries in the diff"
+blocking = true
+guidance = """
+Nothing that looks like a patient name, identifier, medical record or accession
+number, date of birth, a slide label or macro image, a real slide file (.iris,
+.svs, .ndpi, .tiff, DICOM), a credential, a private key or a token, in code,
+fixtures, logs or the description. No binary blobs: a test builds the slide it
+needs (RTM Testing_03). Any doubt fails, with the file and line.
+"""
+
+[[item]]
+id = "Documentation"
+title = "Documentation: documents describing several types carry Mermaid diagrams that render and match the code; ARCHITECTURE decisions and the block register updated"
+blocking = false
+guidance = """
+A document that describes more than one type or component has a Mermaid
+diagram (classDiagram for collaborating types, flowchart for dependencies and
+flow, sequenceDiagram for lifecycles) that matches the code in this diff and
+renders. A decision that changed is recorded in ARCHITECTURE.md §1, dated and
+stated as a plain requirement. A change to how Iris-Slide writes or reads an IFE
+block edits that block's row in ARCHITECTURE.md §3 in the same commit (D6).
+"""
+
+[[item]]
+id = "AgentDisclosure"
+title = "AI authorship disclosed: which parts an agent wrote, and with which tool"
+blocking = true
+guidance = """
+The description's "AI authorship" section says whether an AI agent wrote any of
+the change, which parts, with which tool and model, and what the human did.
+Missing or blank fails. The bot does not try to detect authorship; it checks
+that the disclosure is present and specific.
+"""
+
+[[item]]
+id = "DependenciesThroughVcpkg"
+title = "Dependencies through vcpkg: no FetchContent or ExternalProject; every dependency from `vcpkg.json`, pinned"
+blocking = true
+guidance = """
+PIPELINE.md rules 1-4. No FetchContent, ExternalProject, `file(DOWNLOAD)` or
+`git clone` of a library in a CMake file or a script. Every library Iris-Slide
+builds against, first-party or third-party, comes from vcpkg.json and is found
+with `find_package(<package> CONFIG REQUIRED)`. A third-party library is pinned
+by its version (an override in vcpkg.json) at the vcpkg commit named by
+`builtin-baseline`, or by an overlay port under ports/ that fetches one commit's
+archive and checks its SHA-512; a first-party repository is an overlay port
+pinned the same way. A pin that moves updates PIPELINE.md's Pins table with its
+source and the date it was read. scripts/bootstrap_vcpkg.cmake and
+scripts/bootstrap_emsdk.cmake, which fetch vcpkg and the Emscripten SDK each at
+a pinned commit, are the tools that provide the dependencies, and they pass.
+Not applicable when the diff touches no build file, port, triplet or manifest.
+"""
+
+[[item]]
+id = "ClinicalIntegrity"
+title = "Clinical integrity: a change to decode, colour, tile geometry or patient identity is listed under Clinical impact with its reason"
+blocking = true
+guidance = """
+A change to what a pathologist sees or to whose identity a file carries is
+listed under "Clinical impact" with a reason; a silent change fails. Decode
+correctness: a decode sizes its output from the stream's own header and compares
+it with TILE_LENGTH, or the associated image's or annotation's declared size,
+refusing a mismatch naming both (ARCHITECTURE.md D3); a tile decodes with the
+encoding the file declares. Colour: ICC profiles, colour spaces, channel order
+and chroma subsampling pass through unchanged unless the description says
+otherwise. Tile geometry: layer extents, scales, tile indices and orientation
+follow IFE's definitions. Identity: patient identity is written only in the
+clinical stream (D2); attributes are written as `METADATA_I2S` and identify no
+individual (D2, D8); a `DigitalImageIdentifier` whose `DII_is_PHI` flag is true
+or absent is scrambled on de-identification (D8). Not applicable when the diff
+touches none of these.
+"""

@@ -6,27 +6,29 @@ parser, and every rule here is a property of one line or of an indented block), 
 line per violation with its file and line number. Exit status 1 when any is found.
 
 Rules:
-- runner: every runner label is a pinned Blacksmith label (Ryan, 2026-11-24: "We should be using
-  blacksmith for our CI runners"); a GitHub-hosted label (`ubuntu-24.04`, `macos-latest`) is
+- runner: every runner label is a pinned Blacksmith label (decided 2026-11-24); a GitHub-hosted label (`ubuntu-24.04`, `macos-latest`) is
   refused wherever it appears, in `runs-on` or in a matrix value passed to one.
 - action-pin: an action from another repository is pinned to a full commit SHA with its version
   in a trailing comment, since a tag can be moved to other code.
-- cache-key: an actions/cache key carries a content hash (`hashFiles(`), or reuses the primary key
-  a restore step computed (`cache-primary-key`), so a key changes exactly when its content does.
+- cache-key: an actions/cache key carries a content hash (`hashFiles(`), reuses the primary key
+  a restore step computed (`cache-primary-key`), or is the review bot's conversation key
+  (`review-transcript-<SHA-256 of the conversation>`, through its step outputs `restore-key` and
+  `save-key`; ReviewBot_17.8), so a key changes exactly when its content does.
 - timeout: every job that runs on a runner has `timeout-minutes`.
 - parallel: `-j` and `--parallel` name a job count (`-j$CPU_COUNT` with CPU_COUNT unset is
   unbounded and was in four workflows).
 - pr-branches: a `pull_request` trigger has no `branches:` filter, so every branch's pull requests
-  run (Ryan, 2026-11-24: "use the vcpkg on all branches").
+  run (decided 2026-11-24).
 - external-project: no third-party library is built by ExternalProject_Add; vcpkg provides them
   prebuilt from its binary cache (ci_runners.md, "Prebuilt over built").
 - global-build-state: no directory-scope `include_directories(` or `add_compile_definitions(`
   in Iris-Slide's own CMake files (B7); settings are target-scoped.
-- run-length: a `run:` step is at most MAX_RUN_LINES lines (Ryan, 2026-11-24: "avoid lots of
-  shell script in the actions yamls instead leaning on unified workflows with good Cmake
-  subscripts as needed"): one `cmake --preset`, `cmake --build --preset`, `ctest --preset`,
+- run-length: a `run:` step is at most MAX_RUN_LINES lines (decided 2026-11-24: little shell in
+  the workflow files, the logic in CMake presets and scripts), a line continued with a backslash
+  counting with the line after it: one `cmake --preset`, `cmake --build --preset`, `ctest --preset`,
   `cmake --workflow --preset` or `cmake -P scripts/<name>.cmake` call, which is the same on every
-  operating system's shell. Logic lives in CMake presets and scripts, where it is tested.
+  operating system's shell. Logic lives in CMake presets and scripts, where it is tested. The
+  review step every Aptix repository shares is the bot's one command and `test -s verdict.json`.
 
 Usage: python3 tools/workflow_lint.py [repository root]
 """
@@ -77,6 +79,8 @@ _BLACKSMITH_TOKEN = re.compile(r"blacksmith-[\w-]+")
 _USES = re.compile(r"^\s*-?\s*uses:\s*(\S+)(.*)$")
 _PINNED = re.compile(r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
 _KEY = re.compile(r"^\s*key:\s*(.+)$")
+# What a cache key may carry to change exactly when its content does (the cache-key rule).
+_CONTENT_KEYS = ("hashFiles(", "cache-primary-key", "steps.previous.outputs.restore-key", "steps.review.outputs.save-key")
 _PARALLEL = re.compile(r"(?:\s-j(?!\s*\d)(?:\$\w+|\s|$)|--parallel(?!\s+\d|=\d))")
 _EXTERNAL_PROJECT = re.compile(r"^\s*ExternalProject_Add\s*\(", re.IGNORECASE)
 _GLOBAL_STATE = re.compile(r"^\s*(include_directories|add_compile_definitions)\s*\(", re.IGNORECASE)
@@ -125,7 +129,7 @@ def lint_yaml(path: Path, text: str) -> list[Violation]:
         elif re.match(r"^\s*-\s", line):
             in_cache_step = False
         key = _KEY.match(line)
-        if key and in_cache_step and "hashFiles(" not in key.group(1) and "cache-primary-key" not in key.group(1):
+        if key and in_cache_step and not any(marker in key.group(1) for marker in _CONTENT_KEYS):
             found.append(Violation(path, number, Rule.CACHE_KEY, f"cache key `{key.group(1).strip()}` has no content hash"))
         if _PARALLEL.search(line):
             found.append(Violation(path, number, Rule.PARALLEL, "a parallel build with no job count"))
@@ -143,7 +147,9 @@ def _long_run_steps(path: Path, lines: list[str]) -> list[Violation]:
             continue
         if run.group(1).strip() and run.group(1).strip()[0] not in "|>":
             continue
-        count = sum(1 for _, text in _block(lines, index) if text.strip() and not text.lstrip().startswith("#"))
+        body = [text.rstrip() for _, text in _block(lines, index) if text.strip() and not text.lstrip().startswith("#")]
+        # A line continued with a backslash is one command with the line after it.
+        count = sum(1 for number, text in enumerate(body) if number == 0 or not body[number - 1].endswith("\\"))
         if count > MAX_RUN_LINES:
             found.append(Violation(path, index + 1, Rule.RUN_LENGTH,
                                    f"a run step of {count} lines (at most {MAX_RUN_LINES}): move it into a CMake preset or scripts/*.cmake"))

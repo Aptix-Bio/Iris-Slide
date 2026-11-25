@@ -5,7 +5,7 @@ Date: 2026-11-24. Read-only audit; no repository was edited.
 **Status after review (2026-11-24).** Kept as written, with references to a
 proprietary consumer rewritten as a viewer's needs. B8 does not hold: the
 auditor searched an IFE checkout without the rename; this tree builds against
-Aptix-Bio/Iris-File-Extension#1, which renames the call. Ryan's decisions of
+Aptix-Bio/Iris-File-Extension#1, which renames the call. The maintainer's decisions of
 the same day refine three fixes (C1, C2: size the decode from the stream's own
 header; C3: patient identity only in the clinical stream). Each finding is
 tracked as a WBS task in [../WBS.md](../WBS.md); the audit itself is not
@@ -190,7 +190,7 @@ The ownership web is acyclic: a `Slide_t` holds its `Context` and its
 | G2 | `Slide` / `Slide_t`, `Context` / `Context_t`, `Encoder` / `Encoder_t`: the shared pointer takes the plain name, and a dependent object holds a `shared_ptr` to what it needs | `headers/include/IrisSlideTypes.hpp:104-107`, `src/IrisSlide.hpp:11-13` | SG §Naming (shared types) and §Resources (ownership webs) |
 | G3 | `codec_failure` builds every `Result` with domain, a scoped `SlideError` code, the offending value and `std::source_location`; the file-level functions are `noexcept` and catch `std::exception` | `src/IrisSlidePriv.hpp:59-63`, `src/IrisSlide.cpp:11-34`, `headers/include/IrisSlideTypes.hpp:44-60` | SG §Errors (Result at every boundary, offending value) and §Typing (named values) |
 | G4 | Compressed tiles of a tiled source pass through unchanged, with the plane count their frame records | `src/IrisSlideEncoder.cpp:659-680` | The paper's lossless transfer of already-tiled input. The check that the encodings agree is missing (C5) |
-| G5 | Each tile is claimed by one compare-and-swap on its status; a derived tile's completion is an atomic bit mask of its sub-tiles. No lock is held while a tile is read, compressed or written | `src/IrisSlideEncoder.cpp:651-654`, `src/IrisSlideDeriveLayers.cpp:224-236, 261-272` | Ryan's claim-and-move-on rule; pairs with the Builder's lock-free append |
+| G5 | Each tile is claimed by one compare-and-swap on its status; a derived tile's completion is an atomic bit mask of its sub-tiles. No lock is held while a tile is read, compressed or written | `src/IrisSlideEncoder.cpp:651-654`, `src/IrisSlideDeriveLayers.cpp:224-236, 261-272` | the maintainer's claim-and-move-on rule; pairs with the Builder's lock-free append |
 | G6 | Derivation of the next layer is queued as a task on the pool instead of called recursively, and the reader is held back by a named bound on pending work | `src/IrisSlideDeriveLayers.cpp:303-310`, `src/IrisSlideEncoder.cpp:16, 1079-1080` | SG §Control Flow (never recurse; queue the calls). The bound is polled with a sleep (A6) |
 | G7 | The slide is written to a scratch file removed by an RAII guard, declared ahead of the Builder so the mapping is released first, and moved into place only after `finalize` | `src/IrisSlideEncoder.cpp:916-925, 1043-1044, 1104-1112` | SG §Resources (self-cleaning); a failed encode leaves no partial `.iris` file. Where the scratch file lives is finding C16 |
 | G8 | The encoder decides the block layout, stable blocks ahead of those an edit replaces; the Builder writes where it is told | `src/IrisSlideEncoder.cpp:821-892` | One owner per decision; matches IFE's stated split |
@@ -225,7 +225,7 @@ A smaller JPEG leaves the rest of the tile uninitialized and reports success.
 *(overflow is inference from the TurboJPEG contract above; not reproduced.)*
 Fix: call `tj3DecompressHeader`, compare `TJPARAM_JPEGWIDTH/HEIGHT` with the
 expected extent, throw with both sizes on a mismatch, and set
-`TJPARAM_MAXPIXELS`. Ryan, 2026-11-24, sets the rule: size the buffer from
+`TJPARAM_MAXPIXELS`. The maintainer, 2026-11-24, set the rule: size the buffer from
 the JPEG's own header, so it is exact and cannot overflow.
 
 **C2. PNG decode trusts the declared size and source format, and ignores the
@@ -707,8 +707,8 @@ reconstruct quickly. See §5.
 | **Decode a stream the viewer fetched itself** | Not public (A1) | A1 |
 | **Decode to RGB, three bytes, into the caller's staging memory** | JPEG can (`TJPF_RGB`, capacity honoured). AVIF and PNG replace the caller's buffer (C13). Nothing returns a `Result` (C14) | C13, C14 |
 | **Whose threads** | The read path starts none and holds no state, which is what a viewer that owns its decode pool needs (G11). If Iris-Slide were ever to own decode threads, the "returns when nothing of this caller's is queued or running" call does not exist | G11 |
-| **Future GPU-buffer import** | `ContextCreateInfo::device` is accepted and discarded (`src/IrisSlideContext.cpp:587-591`). A weak `Buffer` over mapped memory works today for JPEG only. The design is better started from a destination type than from a device handle; which is right is Ryan's decision | A2, C13 |
-| **Encodings belong to IFE** | A pass-through of an `.iris` source decodes nothing, so it could carry an encoding this library cannot decode; today `OPEN_SOURCE` and `dispatch_encoder` assume JPEG or AVIF (`src/IrisSlideEncoder.cpp:955-962`). Open question for Ryan, not a recommendation | C5 |
+| **Future GPU-buffer import** | `ContextCreateInfo::device` is accepted and discarded (`src/IrisSlideContext.cpp:587-591`). A weak `Buffer` over mapped memory works today for JPEG only. The design is better started from a destination type than from a device handle; which is right is the maintainer's decision | A2, C13 |
+| **Encodings belong to IFE** | A pass-through of an `.iris` source decodes nothing, so it could carry an encoding this library cannot decode; today `OPEN_SOURCE` and `dispatch_encoder` assume JPEG or AVIF (`src/IrisSlideEncoder.cpp:955-962`). Open question for the maintainer, not a recommendation | C5 |
 | **Z-stacks** | Written through, not readable by plane (A9) | A9 |
 | **Browser** | Fetch only; files of 4 GiB and over fail (C17). The paper notes the 32-bit limit | C17 |
 
@@ -716,9 +716,9 @@ reconstruct quickly. See §5.
 
 ## 5. Missing project structure
 
-Compared with Ryan's other projects (SemanticZoom, FastFHIR) and IFE itself:
+Compared with the maintainer's other projects (SemanticZoom, FastFHIR) and IFE itself:
 
-| Ryan's other projects have | Iris-Slide has |
+| The maintainer's other projects have | Iris-Slide has |
 |---|---|
 | `ARCHITECTURE.md`: a design contract with dated, locked decisions and open questions | None |
 | `development/` with `WBS.md`, `RTM.md`, a phase log; a commit updates the task and requirement rows it touches | None; no traceability from a requirement to code or a test |

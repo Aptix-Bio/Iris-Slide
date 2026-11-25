@@ -14,6 +14,7 @@ option(IRIS_BUILD_ENCODER "Build the IrisSlide Encoder executable" ON)
 option(IRIS_BUILD_PYTHON "Build IrisSlide Python modules" OFF)
 option(IRIS_USE_OPENSLIDE "Use openslide in the encoder (currently not supported on Windows Arm64)" ON)
 option(IRIS_SYSTEM_DEPENDENCIES "Find the third-party libraries installed on the system instead of through vcpkg" OFF)
+option(IRIS_SLIDE_BUILD_TESTS "Build the Catch2 tests in tests/ (vcpkg.json's tests feature)" OFF)
 
 # VcpkgCaching_2 (RTM Build_01, Build_05): every dependency, first-party and third-party, comes
 # from vcpkg.json through cmake/toolchains/vcpkg.cmake, prebuilt from vcpkg's binary cache,
@@ -32,6 +33,9 @@ if (IRIS_BUILD_ENCODER)
 endif()
 if (IRIS_BUILD_PYTHON)
     list(APPEND VCPKG_MANIFEST_FEATURES python)
+endif()
+if (IRIS_SLIDE_BUILD_TESTS)
+    list(APPEND VCPKG_MANIFEST_FEATURES tests)
 endif()
 
 function(get_codec_version)
@@ -307,4 +311,12 @@ if(IRIS_BUILD_PYTHON)
             DESTINATION ${IRIS_INSTALL_PYTHON_LIBDIR}/Iris/Encoder
         )
     endif()
+endif()
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Tests (TestTarget_1.1, begun by TileEncodingAv1Refused_3.6)
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+if (IRIS_SLIDE_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif()

@@ -61,6 +61,31 @@ inline Iris::Result codec_failure (SlideError code, std::string message,
 {
     return Iris::Result::failure(Iris::Domain::IRIS_SLIDE, code, std::move(message), where);
 }
+/// Tile encodings the Iris format defines that Iris-Slide has no codec for yet: AV1
+/// (TileEncodingAv1Refused_3.6, RTM Decode_09, ARCHITECTURE Q11) and the GPU block-compressed
+/// UASTC and XUASTC (TileEncodingBlocksRefused_3.7, RTM Decode_10, ARCHITECTURE Q13, Q14), all
+/// decided 2026-11-25. A tile declared one of them is refused by name instead of reaching a
+/// decoder of another format. Returns the encoding's name, or nullptr for an encoding
+/// Iris-Slide encodes and decodes.
+inline const char* unbuilt_tile_encoding (Encoding encoding) noexcept
+{
+    switch (encoding) {
+        case TILE_ENCODING_AV1:     return "TILE_ENCODING_AV1";
+        case TILE_ENCODING_UASTC:   return "TILE_ENCODING_UASTC";
+        case TILE_ENCODING_XUASTC:  return "TILE_ENCODING_XUASTC";
+        case TILE_ENCODING_UNDEFINED:
+        case TILE_ENCODING_IRIS:
+        case TILE_ENCODING_JPEG:    return nullptr;
+    }
+    return nullptr;
+}
+/// The refusal of an unbuilt tile encoding: @p refusal names who refused and what ("compress_tile
+/// refused"), and the message goes on to name the encoding.
+inline std::string unbuilt_tiles_refused (const std::string& refusal, const char* encoding)
+{
+    return refusal + " " + encoding + ": Iris-Slide does not encode or decode tiles in this "
+        "encoding yet (development/ARCHITECTURE.md Q11, Q13, Q14)";
+}
 } // END IRIS SLIDE NAMESPACE
 
 #endif /* IrisSlidePriv_h */

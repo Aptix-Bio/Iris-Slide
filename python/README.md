@@ -8,7 +8,7 @@ Copyright &copy; 2025 Iris Developers; MIT Software License
 The Iris Slide Community module is a part of the Iris Digital Pathology project. This module allows for:
 
 - Reading and writing of Iris whole slide image (WSI) digital slide files (.iris)
-- Decoding JPEG- and AVIF-compressed tile image data.
+- Decoding JPEG-compressed tile image data, and JPEG or AVIF associated images.
 
 This module was designed to allow for extremely fast slide access using a simple API. We want to simplify access to these files for you.
 
@@ -319,7 +319,7 @@ from Iris import Encoder, Slide, iris_core
 result = Encoder.encode_slide_file(
     source='input.dcm',                                    # DICOM with byte-stream preservation
     outdir='./encoded/',                                   # Output directory
-    desired_encoding=Slide.Encoding.TILE_ENCODING_AVIF,   # Modern AVIF compression
+    desired_encoding=Slide.Encoding.TILE_ENCODING_JPEG,   # JPEG tiles
     desired_byte_format=iris_core.Format.FORMAT_R8G8B8,   # RGB format
     derivation=Encoder.EncoderDerivation.layer_4x,        # 4x downsampling pyramid
     strip_metadata=True,                                   # Remove patient identifiers
@@ -335,7 +335,8 @@ if result.failed():
 
 **Compression Formats:**
 - `TILE_ENCODING_JPEG` (default): High compatibility, excellent compression
-- `TILE_ENCODING_AVIF`: Modern format, superior compression at higher quality
+- `TILE_ENCODING_AV1`: the Iris format's AV1 tile encoding (a bare AV1 sequence, decided 2026-11-25), not yet encoded or decoded by Iris Slide: requesting it, or reading a slide whose tiles declare it, fails with an error naming the encoding
+- `TILE_ENCODING_UASTC`, `TILE_ENCODING_XUASTC`: the Iris format's GPU block-compressed tile encodings (UASTC LDR 4x4 blocks under one Zstandard frame, and one XUASTC LDR bitstream, decided 2026-11-25), which a viewer transcodes to its GPU's block format; not yet encoded or transcoded by Iris Slide, and refused the same way
 
 **Pyramid Derivation:**
 - `layer_2x`: Generate 2x downsampled layers (recommended for most use cases)
