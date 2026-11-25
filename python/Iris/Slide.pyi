@@ -102,18 +102,18 @@ class Encoding:
     
       TILE_ENCODING_JPEG
     
-      TILE_ENCODING_AVIF
+      TILE_ENCODING_AV1
     
       TILE_ENCODING_IRIS
     
       TILE_ENCODING_DEFAULT
     """
-    TILE_ENCODING_AVIF: typing.ClassVar[Encoding]  # value = <Encoding.TILE_ENCODING_AVIF: 3>
+    TILE_ENCODING_AV1: typing.ClassVar[Encoding]  # value = <Encoding.TILE_ENCODING_AV1: 3>
     TILE_ENCODING_DEFAULT: typing.ClassVar[Encoding]  # value = <Encoding.TILE_ENCODING_JPEG: 2>
     TILE_ENCODING_IRIS: typing.ClassVar[Encoding]  # value = <Encoding.TILE_ENCODING_IRIS: 1>
     TILE_ENCODING_JPEG: typing.ClassVar[Encoding]  # value = <Encoding.TILE_ENCODING_JPEG: 2>
     TILE_ENCODING_UNDEFINED: typing.ClassVar[Encoding]  # value = <Encoding.TILE_ENCODING_UNDEFINED: 0>
-    __members__: typing.ClassVar[dict[str, Encoding]]  # value = {'TILE_ENCODING_UNDEFINED': <Encoding.TILE_ENCODING_UNDEFINED: 0>, 'TILE_ENCODING_JPEG': <Encoding.TILE_ENCODING_JPEG: 2>, 'TILE_ENCODING_AVIF': <Encoding.TILE_ENCODING_AVIF: 3>, 'TILE_ENCODING_IRIS': <Encoding.TILE_ENCODING_IRIS: 1>, 'TILE_ENCODING_DEFAULT': <Encoding.TILE_ENCODING_JPEG: 2>}
+    __members__: typing.ClassVar[dict[str, Encoding]]  # value = {'TILE_ENCODING_UNDEFINED': <Encoding.TILE_ENCODING_UNDEFINED: 0>, 'TILE_ENCODING_JPEG': <Encoding.TILE_ENCODING_JPEG: 2>, 'TILE_ENCODING_AV1': <Encoding.TILE_ENCODING_AV1: 3>, 'TILE_ENCODING_IRIS': <Encoding.TILE_ENCODING_IRIS: 1>, 'TILE_ENCODING_DEFAULT': <Encoding.TILE_ENCODING_JPEG: 2>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:

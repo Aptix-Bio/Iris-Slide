@@ -7,7 +7,7 @@ under it are the checkable implementation, red first. Requirements live in
 [RTM.md](RTM.md); block governance and the open questions in
 [ARCHITECTURE.md](ARCHITECTURE.md); the findings each task closes in
 [analysis/design_audit_2026-11-24.md](analysis/design_audit_2026-11-24.md)
-(cited as C1–C17, A1–A9, B1–B8, and "audit D1"–"audit D3", since ARCHITECTURE.md numbers its own decisions D1–D8). E1–E4, Q1–Q10 and X1–X6 are
+(cited as C1–C17, A1–A9, B1–B8, and "audit D1"–"audit D3", since ARCHITECTURE.md numbers its own decisions D1–D9). E1–E4, Q1–Q11 and X1–X7 are
 ARCHITECTURE.md's defects, open questions and external dependencies.
 
 ## Conventions
@@ -100,7 +100,7 @@ header every lane uses.
 | DevelopmentDirectory_0 | this folder reviewed: block governance, sprints, requirements | audit D3 (the design contract) | `doing` |
 | VcpkgCaching_2 | every dependency prebuilt from vcpkg.json and nothing fetched at configure; CI on every branch's pull requests on Blacksmith, vcpkg's packages and the compiler's objects shared through one GCS store | B1 (first-party pins), B3, B5 (runners, caches), B7, X4 (pins the rename branches) | `doing` |
 | TestHarness_1 | `ctest` green under AddressSanitizer on macOS and Linux, with a slide built, opened and decoded in the test | B4 | `blocked` on X4 |
-| DecodeSafety_3 | hostile JPEG and AVIF streams refused naming both sizes under AddressSanitizer; every valid stream decoded into a buffer sized from its own header | C1, C6, C13, C15, E3, A4 (pixel layout, destination rule) | `todo` |
+| DecodeSafety_3 | hostile JPEG tiles and JPEG or AVIF associated images refused naming both sizes under AddressSanitizer; every valid stream decoded into a buffer sized from its own header; a tile declared `TILE_ENCODING_AV1` refused naming it | C1, C6, C13, C15, E3, A4 (pixel layout, destination rule), D9 | `todo`; TileEncodingAv1Refused_3.6 built ahead |
 | PngRemoved_4 | the library builds without libpng and refuses a PNG image naming its encoding | C2, X6 | `todo` |
 | CallerBufferDecode_5 | a program decodes a stream it read through IFE's `Parser` into its own buffer and receives a `Result` | A1 (decode call, GPU types) | `todo` |
 | PatientIdentity_6 | a slide encoded from a source with patient fields reads back with none in its attributes, from the command line, C++ and Python; a DII flagged as PHI is scrambled on de-identification | C3, E1, E2, audit D1 (metadata claims) | `todo`; three tasks `blocked` on Q2, Q6, X3 |
@@ -300,8 +300,11 @@ Purpose: decoding trusts declared sizes (C1, C13) and a fixed 256-pixel tile
 (E3). Decided 2026-11-24: the buffer is sized from the JPEG stream's own
 encoded size, so it is exact and cannot overflow (ARCHITECTURE D3).
 Milestone: under AddressSanitizer, a 512 × 512 JPEG in a 256-pixel tile and a
-wrong-sized AVIF are each refused with both sizes, and every valid stream
-decodes into a buffer sized from its own header.
+wrong-sized AVIF associated image are each refused with both sizes, and every
+valid stream decodes into a buffer sized from its own header. Decided
+2026-11-25, the AVIF tile encoding is removed and tile encoding 3 is
+`TILE_ENCODING_AV1` (ARCHITECTURE D9): AVIF remains an associated-image
+encoding only, and an AV1 tile is refused by name until Q11 is answered.
 
 Shown by: `ctest --preset asan -R Decode`
 
@@ -331,6 +334,23 @@ Shown by: `ctest --preset asan -R Decode`
   allocator (C15) [Decode_06]
   - [ ] Red: a test that compresses into a buffer one byte too small expects
     a refusal naming both sizes and receives a reallocated pointer
+- [x] **TileEncodingAv1Refused_3.6** — decided 2026-11-25 (ARCHITECTURE D9):
+  the AVIF tile path is removed (the encoder's `-e AVIF`, Python's
+  `TILE_ENCODING_AVIF`, the AVIF tile decode and encode), and a tile table
+  declaring `TILE_ENCODING_AV1` is refused naming the encoding on decode, on
+  encode and as an encoder source; AVIF associated images and libavif stay.
+  Built ahead of this sprint on ReviewBot_17.8, with the paired Iris-Headers
+  pin (X7); it starts `tests/` (TestTarget_1.1) [Decode_09]
+  - [x] Red: `ctest --preset debug`, 0 of 2 pass, each "no exception was thrown
+    where one was expected": the decode hands a two-byte AV1 temporal delimiter
+    to libavif ("BMFF parsing failed") and returns no buffer, the encode writes
+    AVIF for a tile requested as AV1 ([3cf21bc](https://github.com/Aptix-Bio/Iris-Slide/commit/3cf21bc825c0cf97ed9a81dedbfea97b4b752cb3))
+  - [x] Green: the same command, 2 of 2 pass; `cmake --build --preset debug`
+    (library, encoder, tests) and the Python modules build with no new warning;
+    `tools/tests` 51 pass, `tools/workflow_lint.py` 0 violations
+  - [ ] The encoder's source refusal (an `.iris` source whose table declares
+    AV1) gains its test with EndToEndSuite_7.1, which runs the encoder on a
+    fixture slide
 - [ ] **VERIFY:** the maintainer reviews the hostile-stream tests
 - [ ] **Gate:** CI green on the pull request
 
@@ -352,7 +372,9 @@ with no libpng on the link line
   - [ ] Red: a fixture with a PNG associated image decodes today, and
     re-encodes with the PNG passed through
 - [ ] **AssociatedImagesAsJpegOrAvif_4.2** — the encoder writes associated
-  images as JPEG or AVIF only [Decode_03]
+  images as JPEG or AVIF (`IMAGE_ENCODING_AVIF`) only; AVIF is an
+  associated-image encoding alone since the AVIF tile encoding was removed
+  (decided 2026-11-25, ARCHITECTURE D9) [Decode_03]
   - [ ] Red: an encode that requests a PNG associated image succeeds today
 - [ ] **LibpngLeavesTheBuild_4.3** — `cmake/png.cmake`, zlib-ng and the PNG
   codec removed from every target, the wheels and `licenses/` [Decode_03]
@@ -375,7 +397,7 @@ in `examples/` decoding tile 0 of the fixture
 
 - [ ] **DecompressTilePublic_5.1** — `[[nodiscard]] Result
   decompress_tile(const DecompressTileDesc&, Buffer& decoded) noexcept` over
-  `std::span<const std::byte>`, JPEG and AVIF, RGB and RGBA [Decode_07]
+  `std::span<const std::byte>`, JPEG (and AV1 if Q11 adds it), RGB and RGBA [Decode_07]
   - [ ] Red: the contract test that the returned buffer is the caller's, its
     size set, for every encoding and format, fails to compile until the call
     exists
@@ -387,6 +409,10 @@ in `examples/` decoding tile 0 of the fixture
 - [ ] **DecodeExample_5.3** — a 30-line example that maps a file with IFE's
   `Parser` and decodes one tile, built and run by `ctest` [Decode_07]
   - [ ] Red: the example's test is registered before the example exists
+- [ ] **Av1TileDecode_5.4** — AV1 tiles (ARCHITECTURE D9) decoded as the
+  maintainer's answer to Q11 says (the proposal: dav1d from vcpkg, sized by
+  the destination rule of OneDestinationRule_3.3), replacing the refusal of
+  TileEncodingAv1Refused_3.6 [Decode_09] — `blocked` on Q11
 - [ ] **VERIFY:** the maintainer reviews the public signature
 - [ ] **Gate:** CI green on both pull requests, Iris-Headers' first
 
@@ -448,7 +474,7 @@ the properties it dropped
 
 ## EncoderCorrectness_7 — the encoder writes what it declares `todo` · needs TestHarness_1
 
-Purpose: the encoder can label JPEG tiles AVIF (C5), exit 0 on failure (C9),
+Purpose: the encoder can label JPEG tiles with another requested encoding (C5; AVIF when the audit found it, AV1 is refused since 2026-11-25), exit 0 on failure (C9),
 drop an associated image with a printed line (C14), and lose a source's
 annotations and clinical stream on a re-encode (E4). Milestone: a suite that
 runs `IrisSlideEncoder` on a generated tiled TIFF and on the fixture slide
@@ -464,12 +490,16 @@ Shown by: `ctest --preset asan -R EncoderEndToEnd`
 - [ ] **EncodingsAgree_7.2** — a stream passes through only when the source's
   encoding equals the requested one; otherwise it is decoded and recompressed
   (C5) [Encode_01]
-  - [ ] Red: JPEG `.iris` source, AVIF requested, with and without
-    derivation: tiles fail to decode
+  - [ ] Red: a JPEG `.iris` source re-encoded under another requested
+    encoding, with and without derivation: tiles fail to decode. JPEG is the
+    only tile encoding the encoder writes since the AVIF tile encoding was
+    removed (D9); the red step uses the first second encoding that exists
+    (AV1 per Q11, or IRIS per Q3), and until then the rule is held by the
+    refusals of TileEncodingAv1Refused_3.6
 - [ ] **CommandLineHonest_7.3** — one `try` in `main`, a non-zero exit on
   every failure, an argument table, case-insensitive values, no locale
   assumed, `ioctl` checked (C9) [Encode_02]
-  - [ ] Red: `-e avif` is refused; the tool aborts under the `C` locale
+  - [ ] Red: `-e jpeg` (lower case) is refused; the tool aborts under the `C` locale
 - [ ] **AssociatedImageFailuresReported_7.4** — a failed associated image
   fails the encode with its label and the reason (C14) [Encode_02]
   - [ ] Red: an image that cannot be compressed is skipped and the encode
@@ -789,7 +819,9 @@ pull request opened after ReviewBot_17.8 merges
   `IRIS_SLIDE_GCP_PROVIDER` [Build_06] `blocked` on the project's billing
 - [ ] **PortsPinMain_17.6** — re-pin the iris-headers and iris-file-extension
   ports to their main commits once the rename and IFE's `feature/VcpkgCaching_2`
-  merge (X4), and remove the duplicate third-party pins in Iris-Headers'
+  merge (X4), and once Iris-Headers' `feature/TileEncodingAv1_1` merges (X7:
+  the iris-headers port is pinned to its `4c78915` since 2026-11-25; the
+  Iris-Headers rename is already in main), and remove the duplicate third-party pins in Iris-Headers'
   `cmake/dependencies.cmake`, whose versions `vcpkg.json` now states, by a
   paired change there [Build_01] `blocked` on X4
 - [ ] **DownstreamCached_17.7** — Iris-Headers' downstream cell builds
@@ -825,7 +857,7 @@ pull request opened after ReviewBot_17.8 merges
 
 Purpose: the paper reports 6,400 to 8,100 tiles a second through Python on
 an M1; nothing here measures it (audit §4). Milestone: a benchmark of JPEG
-and AVIF tiles per second at one and N threads, and a budget constant from
+tiles per second (AV1 too once Q11 adds its decode) at one and N threads, and a budget constant from
 the first measurement that a gate holds.
 
 Shown by: `cmake --build --preset release --target read_benchmark && build/release/read_benchmark`
@@ -878,12 +910,14 @@ audit marked closed with its commit
 | Q8 | TileFrameCost_18.3 |
 | Q9 | HeadersTakeIfeEnumerations_11.4 |
 | Q10 | DigitalImageIdentifier_6.6 (who sets the flag at encode time) |
+| Q11 | Av1TileDecode_5.4 (`blocked`); TileEncodingAv1Refused_3.6 until then |
 | X1 | ClinicalStreamWritten_6.5, AnnotationSurface_11.5 |
 | X2 | HeadersTakeIfeEnumerations_11.4 |
 | X3 | AttributesFromI2S_6.7 (`blocked`), DigitalImageIdentifier_6.6 |
 | X4 | TestHarness_1 (waits on it), FirstPartyPorts_2.7 (pins the rename branches), PortsPinMain_17.6 |
 | X5 | LicensedCodecInterface_14 |
 | X6 | EnumerationsFollowIfe_4.4 (`blocked`) |
+| X7 | TileEncodingAv1Refused_3.6 (pins the paired branch), PortsPinMain_17.6 |
 | E1 | AttributesNeverIdentify_6.1 (writing), HeadersTakeIfeEnumerations_11.4 (values) |
 | E2 | AttributesNeverIdentify_6.1 |
 | E3 | TileLengthFromTheFile_3.2 |
@@ -937,3 +971,15 @@ audit marked closed with its commit
   (`cmake/require_settings.cmake`). The rubric lists the shared items in the
   shared order, AbiAndConsumers among them, before Iris-Slide's own. The
   run-length rule counts a backslash-continued line with its command.
+- **2026-11-25, AV1 tiles.** Decided 2026-11-25: the AVIF tile encoding is
+  removed from the Iris format and tile encoding 3 is `TILE_ENCODING_AV1`, a
+  bare AV1 sequence with no container (ARCHITECTURE D9). Iris-Slide removed
+  its AVIF tile path and refuses AV1 tiles by name (TileEncodingAv1Refused_3.6,
+  built on ReviewBot_17.8 with the first Catch2 target); AVIF associated
+  images and libavif stay. The iris-headers port moved to the paired branch
+  `feature/TileEncodingAv1_1` (X7); IFE's port did not move, since Iris-Slide
+  names none of IFE's tile enumerators. Whether Iris-Slide decodes AV1 is Q11
+  (Av1TileDecode_5.4). Moving to Iris-Headers' main line brought one new
+  compiler warning outside this change: `METADATA_FREE_TEXT` is not handled in
+  the Python binding's metadata-type switch (`python/IrisSlidePython.hpp`),
+  which HeadersTakeIfeEnumerations_11.4 and PythonBinding_15 cover.

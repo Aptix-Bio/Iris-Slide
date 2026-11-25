@@ -27,7 +27,7 @@ inline std::string to_string(Encoding encoding)
     switch (encoding) {
         case TILE_ENCODING_IRIS: return "ENCODING_IRIS";
         case TILE_ENCODING_JPEG: return "ENCODING_JPEG";
-        case TILE_ENCODING_AV1: return "ENCODING_AVIF";
+        case TILE_ENCODING_AV1:  return "ENCODING_AV1";
         default:
             return "ENCODING UNDEFINED";
     }       return "ENCODING UNDEFINED";

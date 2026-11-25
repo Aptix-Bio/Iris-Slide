@@ -1,4 +1,5 @@
-// TileEncodingAv1Refused_3.6 (RTM Decode_09). Decided 2026-11-25: tile encoding 3 is
+// RTM Decode_09
+// TileEncodingAv1Refused_3.6. Decided 2026-11-25: tile encoding 3 is
 // TILE_ENCODING_AV1, a bare AV1 sequence in the Low Overhead Bitstream Format, and the AVIF
 // tile encoding is removed. Iris-Slide neither decodes nor encodes AV1 tiles yet
 // (development/ARCHITECTURE.md Q11), so a tile table that declares it is refused with an error
@@ -23,7 +24,7 @@ constexpr std::uint32_t RGBA_BYTES = 4;
 }
 
 TEST_CASE("A tile declared TILE_ENCODING_AV1 is refused on decode, naming the encoding",
-          "[Decode][TileEncodingAv1]")
+          "[Decode][Decode_09]")
 {
     const IrisSlide::Context_t context {IrisSlide::ContextCreateInfo {}};
     const Iris::Buffer stream = Iris::Wrap_weak_buffer_fom_data
@@ -37,7 +38,7 @@ TEST_CASE("A tile declared TILE_ENCODING_AV1 is refused on decode, naming the en
 }
 
 TEST_CASE("A tile requested as TILE_ENCODING_AV1 is refused on encode, naming the encoding",
-          "[Encode][TileEncodingAv1]")
+          "[Encode][Decode_09]")
 {
     const IrisSlide::Context_t context {IrisSlide::ContextCreateInfo {}};
     const Iris::Buffer pixels = Iris::Create_strong_buffer(TILE_SIDE * TILE_SIDE * RGBA_BYTES);

@@ -33,7 +33,7 @@ flowchart LR
 
 ## Goals
 
-| Goal | Requirement, as decided 2026-11-24 |
+| Goal | Requirement, as decided 2026-11-24 (later goals dated in the row) |
 |---|---|
 | Goal_01 | Iris-Codec is renamed Iris-Slide and is the open-source decoder and encoder of slide files |
 | Goal_02 | A decoder sizes its destination buffer from the JPEG stream's own encoded size, so the buffer is exact and cannot overflow; the same sizing applies to every codec |
@@ -54,6 +54,7 @@ flowchart LR
 | Goal_17 | Every dependency comes from vcpkg; Iris-Slide's CMake fetches nothing itself |
 | Goal_18 | Workflows are few and unified; their logic lives in CMake presets and scripts, with little shell in the workflow files |
 | Goal_19 | Every pull request is code-reviewed by the Aptix review bot against Iris-Slide's own rules; the bot's repository stays private; a fork's pull request is reviewed by the model only after a maintainer pushes it to an Aptix-Bio branch |
+| Goal_20 | Decided 2026-11-25: the AVIF tile encoding is removed from the Iris format; tile encoding 3 is `TILE_ENCODING_AV1`, a bare AV1 sequence in the AV1 Low Overhead Bitstream Format, one shown frame per focal plane, a single-plane tile one key frame, no container; no compatibility path for AVIF tiles; AVIF associated images stay |
 
 ## Requirements
 
@@ -61,11 +62,11 @@ flowchart LR
 |---|---|---|---|---|---|
 | Governance_01 | Every IFE block Iris-Slide reads or writes has a recorded governing authority, provenance per source, identity class, writer and reader | Goal_06 | DevelopmentDirectory_0 | Review | Planned |
 | Process_01 | Work runs in sprints that each end in a milestone and one pull request, every task red first | Goal_08 | DevelopmentDirectory_0 | Review | Planned |
-| Testing_01 | `ctest` runs the library's tests on every cell | B4 | TestHarness_1 | Static | Planned |
+| Testing_01 | `ctest` runs the library's tests on every cell | B4 | TestHarness_1 | Static | Partial: `tests/` with Catch2 (`IRIS_SLIDE_BUILD_TESTS`, on in the `debug` preset) and the `debug` test preset, begun 2026-11-25 for Decode_09; no CI cell runs it yet (CiRunsTests_1.5) |
 | Testing_02 | Debug, release, AddressSanitizer/UndefinedBehaviorSanitizer and ThreadSanitizer presets | B4 | TestHarness_1 | Static | Planned |
 | Testing_03 | A slide is built, opened and decoded inside the tests, with no slide file checked in | B4 | TestHarness_1 | Integration | Planned |
 | Testing_04 | CI runs the tests, cheapest cell first | B4, B5 | TestHarness_1 | Static | Planned |
-| Decode_01 | A JPEG or AVIF decode sizes its destination from the stream's own header and cannot write past it; a tile whose stream is not the tile's extent is refused naming both sizes | Goal_02, D3, C1, C13 | DecodeSafety_3 | Hostile, Unit | Planned |
+| Decode_01 | A JPEG tile decode, and a JPEG or AVIF associated-image decode, sizes its destination from the stream's own header and cannot write past it; a tile whose stream is not the tile's extent is refused naming both sizes (AVIF tiles removed 2026-11-25, Goal_20) | Goal_02, D3, C1, C13 | DecodeSafety_3 | Hostile, Unit | Planned |
 | Decode_02 | Retired 2026-11-24: PNG is cut (Decode_03), so no PNG decoder remains to size | Goal_02, C2 | — | — | Retired |
 | Decode_03 | Iris-Slide neither writes nor decodes PNG; reading a PNG image or annotation, or re-encoding a source that carries one, is refused naming its encoding; SVG is the preferred annotation form | Goal_03, Goal_09, Goal_11, C2 | PngRemoved_4 | Unit, Static | Planned |
 | Decode_04 | A decode into a caller's buffer uses it when large enough and sets its size; a smaller one is refused naming both sizes | C13 | DecodeSafety_3 | Contract | Planned |
@@ -73,6 +74,7 @@ flowchart LR
 | Decode_06 | No buffer passed to a codec library can be reallocated or freed by another allocator | C15 | DecodeSafety_3 | Unit | Planned |
 | Decode_07 | A public `decompress_tile` decodes a span into the caller's buffer and returns a `Result`; the CPU library declares no GPU types | A1 | CallerBufferDecode_5 | Contract | Planned |
 | Decode_08 | A tile's expected extent is the file's TILE_LENGTH | D3, E3 | DecodeSafety_3 | Hostile | Planned |
+| Decode_09 | A tile table declaring `TILE_ENCODING_AV1` is refused with an error naming the encoding, on decode, on encode and as an encoder source, until Q11 decides AV1 tile decoding; no tile stream reaches libavif | Goal_20, D9, Q11 | DecodeSafety_3 (TileEncodingAv1Refused_3.6, built ahead on ReviewBot_17.8) | Unit | Implemented: decode and encode refusals tested (`tests/tile_encoding_test.cpp`, `[Decode_09]`); the encoder's source refusal untested until EndToEndSuite_7.1 |
 | Identity_01 | Attributes are written only as `METADATA_I2S` and hold no patient identity, from every source | Goal_04, C3, E1 | PatientIdentity_6 | Integration | Planned |
 | Identity_02 | The command line, C++ and Python reach the same identity handling | C3 | PatientIdentity_6 | Integration | Planned |
 | Identity_03 | Associated images that show identity (label, macro) are handled as the maintainer decides | Goal_04 | PatientIdentity_6 | Integration | Blocked (Q2) |

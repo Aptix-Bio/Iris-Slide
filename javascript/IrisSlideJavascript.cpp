@@ -155,7 +155,8 @@ inline std::string SERIALIZE_ENCODING (const IrisSlide::Encoding &encoding)
         case IrisSlide::TILE_ENCODING_UNDEFINED:    return "\"ENCODING_UNDEFINED\"";
         case IrisSlide::TILE_ENCODING_IRIS:         return "\"image/iris\"";
         case IrisSlide::TILE_ENCODING_JPEG:         return "\"image/jpeg\"";
-        case IrisSlide::TILE_ENCODING_AV1:         return "\"image/avif\"";
+        // Iris Slide names no media type for an AV1 tile stream and does not decode it (Q11).
+        case IrisSlide::TILE_ENCODING_AV1:          return "\"application/octet-stream\"";
     }
     return "\"UNDEFINED ENCODING\"";
 }
@@ -258,7 +259,6 @@ public:
             switch (_abstraction.tileTable.encoding) {
                 case IrisSlide::TILE_ENCODING_IRIS:  mime_str = "image/iris"; break;
                 case IrisSlide::TILE_ENCODING_JPEG:  mime_str = "image/jpeg"; break;
-                case IrisSlide::TILE_ENCODING_AV1:  mime_str = "image/avif"; break;
                 default:                             mime_str = "application/octet-stream"; break;
             }
             std::string range_header = "bytes="

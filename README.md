@@ -4,7 +4,7 @@ Copyright &copy; 2025 Iris Developers; MIT Software License
 
 Iris Slide is the open-source decoder and encoder of Iris whole slide image files, maintained at [Aptix-Bio](https://github.com/Aptix-Bio/Iris-Slide). It was named Iris-Codec until 2026-11-24. It provides:
 - Reading and writing Iris whole slide image (WSI) files (*.iris*)
-- Decoding JPEG- and AVIF-compressed tile image data
+- Decoding JPEG-compressed tile image data, and JPEG or AVIF associated images
 
 This repository provides extremely fast slide access through a simple API. Available as:
 - [Pre-compiled binaries](https://github.com/Aptix-Bio/Iris-Slide/releases)
@@ -33,7 +33,7 @@ The Iris Slide encoder converts WSI files from various vendor formats into optim
 **Key Features:**
 - **Native DICOM Support**: Byte-stream preservation for lossless quality
 - **Multi-format Support**: SVS, NDPI, VSI, MRXS, and other OpenSlide formats
-- **Modern Compression**: JPEG (default) or AVIF
+- **Tile Compression**: JPEG. The Iris format's AV1 tile encoding (`TILE_ENCODING_AV1`, a bare AV1 sequence, decided 2026-11-25) is not yet encoded or decoded by Iris Slide; a slide whose tiles declare it is refused with an error naming the encoding
 - **Automatic Pyramid Derivation**: Generate 2x or 4x, or use source pyramid format.
 - **Privacy Controls**: Metadata stripping and anonymization options
 - **High Performance**: Multi-threaded with real-time progress tracking
@@ -45,7 +45,7 @@ The [Iris File Extension](https://github.com/Aptix-Bio/Iris-File-Extension) owns
 ```mermaid
 flowchart LR
     subgraph codec["Iris Slide"]
-        src["sources: OpenSlide, DICOM, .iris"] --> enc["Encoder: threads, JPEG/AVIF"]
+        src["sources: OpenSlide, DICOM, .iris"] --> enc["Encoder: threads, JPEG tiles"]
         slide["Slide: decode tiles and images"]
     end
     subgraph ife["Iris File Extension"]
@@ -63,7 +63,7 @@ The Builder writes each block where the head is when it is asked, so the encoder
 
 **Requirements:**
 - C++ 20 Standard Library
-- [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo), [libavif](https://github.com/AOMediaCodec/libavif)
+- [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo), and [libavif](https://github.com/AOMediaCodec/libavif) for AVIF associated images
 - [OpenSlide](https://github.com/openslide/openslide) and [libdicom](https://github.com/ImagingDataCommons/libdicom) (for encoder only)
 
 ## Building From Source
@@ -143,7 +143,7 @@ const irisSlide = await createModule();
 ./IrisSlideEncoder -s input.svs -o ./output/ -d use_source
 
 # Advanced options
-./IrisSlideEncoder -s input.dcm -o ./output/ -e AVIF -d 2x -c 8
+./IrisSlideEncoder -s input.dcm -o ./output/ -e JPEG -d 2x -c 8
 
 # Research Example (strip metadata)
 ./IrisSlideEncoder -s patient.dcm -o ./research/ -sm -d 4x -c 4
@@ -155,7 +155,7 @@ const irisSlide = await createModule();
 - `-o, --outdir`: Output directory path (encoder names file as XXX.iris based on source filename)
 - `-d, --derive`: Generate lower resolution layers - Options: `2x`, `4x`, or `use-source` (default)
 - `-sm, --strip_metadata`: Strip patient identifiers from encoded metadata
-- `-e, --encoding`: Compression format - `JPEG` (default) or `AVIF`
+- `-e, --encoding`: Tile compression format - `JPEG` (the default and, today, the only one)
 - `-c, --concurrency`: Number of threads to use (defaults to all CPU cores)
 
 **Python:**
@@ -456,7 +456,7 @@ from Iris import Encoder, Slide, iris_core
 result = Encoder.encode_slide_file(
     source='path/to/input.svs',
     outdir='./output/',
-    desired_encoding=Slide.Encoding.TILE_ENCODING_AVIF,  # Use AVIF compression
+    desired_encoding=Slide.Encoding.TILE_ENCODING_JPEG,  # JPEG tiles
     desired_byte_format=iris_core.Format.FORMAT_R8G8B8A8,  # RGBA format
     strip_metadata=True,  # Remove patient identifiers
     derivation=Encoder.EncoderDerivation.layer_4x,  # 4x pyramid layers
@@ -486,7 +486,7 @@ result = Encoder.encode_slide_file(
 **Available Encoding Parameters:**
 - `source`: Path to input WSI file (required)
 - `outdir`: Output directory (defaults to source directory)
-- `desired_encoding`: Compression format (JPEG or AVIF, default: JPEG)
+- `desired_encoding`: Tile compression format (JPEG, the default; `TILE_ENCODING_AV1` is refused until Iris Slide encodes AV1)
 - `desired_byte_format`: Pixel format (default: R8G8B8)
 - `strip_metadata`: Remove patient identifiers (default: False)
 - `anonymize`: Anonymize metadata (default: False)
