@@ -435,8 +435,9 @@ in `examples/` decoding tile 0 of the fixture
   `basisu` port at the baseline, 2.50, in its own target; the Zstandard
   frame's content checked at 16 bytes a block for TILE_LENGTH before the
   transcode), replacing the refusal of TileEncodingBlocksRefused_3.7; XUASTC
-  after IFE settles its footprint and bitstream stability (IFE OD-T3), and
-  stored mip levels after IFE's OD-T2 [Decode_11] — `blocked` on Q13
+  after IFE settles its footprint and bitstream stability (IFE OD-T3); the
+  frame's content holds the `MIP_LEVELS` levels IFE's tile table declares
+  (IFE D29, 2026-11-25), level 0 first [Decode_11] — `blocked` on Q13
 - [ ] **VERIFY:** the maintainer reviews the public signature
 - [ ] **Gate:** CI green on both pull requests, Iris-Headers' first
 
@@ -579,6 +580,16 @@ Shown by: `ctest --preset asan -R EncoderEndToEnd`
     *(to measure)*; the margin is set from these numbers
   - [ ] Red: a test that encodes the fixture tiles as UASTC and fails on any
     tile above the margin
+  - [ ] **Levels capped at the layer step** (decided 2026-11-25, D11): the encoder writes
+    `MIP_LEVELS` levels into each UASTC frame, back to back, finest first,
+    and warns when its configuration asks for more than
+    round(log2(step)) + 1, the step being 2 under `-d 2x`, 4 under `-d 4x`,
+    or the source pyramid's; the warning reaches the caller as Q15 decides
+    (the proposal: a `Result::warning` from `dispatch_encoder`) [Encode_08]
+  - [ ] Red (planned for when block encoding is built): encoding a fixture
+    under `-d 2x` with 3 levels configured returns a warning naming 3 levels
+    and the cap of 2 and writes 3; with 2 configured it returns no warning;
+    under `-d 4x` the cap is 3
 - [ ] **VERIFY:** the maintainer encodes a vendor slide of the maintainer's choosing with the new
   command line
 - [ ] **Gate:** CI green on the pull request
@@ -980,6 +991,7 @@ audit marked closed with its commit
 | Q11 | Av1TileDecode_5.4 (`blocked`); TileEncodingAv1Refused_3.6 until then |
 | Q13 | BlockTileTranscode_5.5 (`blocked`); TileEncodingBlocksRefused_3.7 until then |
 | Q14 | BlockTileEncodeParity_7.7 (`blocked`); TileEncodingBlocksRefused_3.7 until then |
+| Q15 | BlockTileEncodeParity_7.7 (the warning when levels exceed the layer step) |
 | X1 | ClinicalStreamWritten_6.5, AnnotationSurface_11.5 |
 | X2 | HeadersTakeIfeEnumerations_11.4 |
 | X3 | AttributesFromI2S_6.7 (`blocked`), DigitalImageIdentifier_6.6 |
@@ -1082,3 +1094,14 @@ audit marked closed with its commit
   encoder's requirement, is Q14 (BlockTileEncodeParity_7.7). The iris-headers
   port moved to `635afbb` (X8); IFE leaves the mip-level layout and XUASTC's
   footprint and stability open (its OD-T2, OD-T3).
+- **2026-11-25, mip levels fixed per slide and capped at the layer step.** Decided
+  2026-11-25: a block-compressed slide records a fixed number of mip levels
+  once, in IFE's `TILE_TABLE.MIP_LEVELS` (IFE D29, resolving its OD-T2),
+  instead of per-tile fields in the tile frame. A UASTC frame holds the
+  levels back to back, finest first, each offset computed from TILE_LENGTH;
+  XUASTC holds level 0 alone, since its bitstream records no total length
+  (IFE OD-T4). A reader uses min(`MIP_LEVELS`, round(log2(step)) + 1)
+  levels, so the encoder warns, without refusing, when configured for more
+  (D11, Encode_08); how a warning reaches the caller is Q15. D11, Q13, Q14,
+  BlockTileTranscode_5.5 and BlockTileEncodeParity_7.7 updated; no code
+  changes.
