@@ -488,6 +488,7 @@ the properties it dropped
     `[Identity_07]`), and 50 repeats pass; the library, encoder, tests and
     Python modules build with no new warning; the Python binding's
     `i2s_attributes` and `i2s_version` reach the same refusals, naming the key
+    [2d1667b](https://github.com/Aptix-Bio/Iris-Slide/commit/2d1667b8f46696fecbce46e4a3125076757a7ee8)
   - [ ] The command line takes the pairs once CommandLineHonest_7.3 gives it
     an argument table. Until the encoder can check a key against I2S's
     generated source (6.7), a `--i2s key=value` typed at the command line
