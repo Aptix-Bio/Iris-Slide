@@ -173,6 +173,12 @@ inline std::string PRINT_ENCODING (Encoding encoding)
         case TILE_ENCODING_AV1:
             descr << "AV1 Encoded (not decoded by Iris Slide)";
             break;
+        case TILE_ENCODING_UASTC:
+            descr << "UASTC Encoded (not transcoded by Iris Slide)";
+            break;
+        case TILE_ENCODING_XUASTC:
+            descr << "XUASTC Encoded (not transcoded by Iris Slide)";
+            break;
     }
     descr << "\n";
     return descr.str();
@@ -288,6 +294,8 @@ static inline void DEFINE_IRIS_SLIDE_SUBMODULE (pybind11::module_& base)
         .value("TILE_ENCODING_UNDEFINED",   TILE_ENCODING_UNDEFINED)
         .value("TILE_ENCODING_JPEG",        TILE_ENCODING_JPEG)
         .value("TILE_ENCODING_AV1",         TILE_ENCODING_AV1)
+        .value("TILE_ENCODING_UASTC",       TILE_ENCODING_UASTC)
+        .value("TILE_ENCODING_XUASTC",      TILE_ENCODING_XUASTC)
         .value("TILE_ENCODING_IRIS",        TILE_ENCODING_IRIS)
         .value("TILE_ENCODING_DEFAULT",     TILE_ENCODING_DEFAULT)
         .def("__repr__",                    &PRINT_ENCODING);

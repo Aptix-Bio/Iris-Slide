@@ -584,16 +584,6 @@ inline Buffer DECOMPRESS_AVIF_CPU (const Buffer &compressed,
     if (decoder) avifDecoderDestroy(decoder);
     return dst_buffer;
 }
-// TileEncodingAv1Refused_3.6 (RTM Decode_09). Decided 2026-11-25: tile encoding 3 is
-// TILE_ENCODING_AV1, a bare AV1 sequence in the Low Overhead Bitstream Format, and the AVIF tile
-// encoding is removed; AVIF stays only for associated images (IMAGE_ENCODING_AVIF). Iris-Slide
-// has no AV1 tile codec yet (development/ARCHITECTURE.md Q11), so a tile declared AV1 is refused
-// by name instead of reaching a decoder of another format.
-static std::string AV1_TILES_REFUSED (const char* call)
-{
-    return std::string(call) + " refused TILE_ENCODING_AV1: Iris-Slide does not encode or "
-        "decode AV1 tiles (development/ARCHITECTURE.md Q11)";
-}
 Context_t::Context_t    (const ContextCreateInfo& info) :
 _device                                     (nullptr)
 {
@@ -616,8 +606,10 @@ Buffer Context_t::compress_tile(const CompressTileInfo &info) const
                                          info.subsampling,
                                          TILE_PIX_LENGTH,
                                          TILE_PIX_LENGTH);
-        case TILE_ENCODING_AV1: throw std::runtime_error
-            (AV1_TILES_REFUSED("compress_tile"));
+        case TILE_ENCODING_AV1:
+        case TILE_ENCODING_UASTC:
+        case TILE_ENCODING_XUASTC: throw std::runtime_error
+            (unbuilt_tiles_refused("compress_tile refused", unbuilt_tile_encoding(info.encoding)));
         case TILE_ENCODING_IRIS:
             assert(false && "IMPLEMENTATION NOT YET BUILT");
             break;
@@ -636,8 +628,10 @@ Buffer Context_t::decompress_tile(const DecompressTileInfo &info) const
                                          info.desiredFormat,
                                          TILE_PIX_LENGTH,
                                          TILE_PIX_LENGTH);
-        case TILE_ENCODING_AV1: throw std::runtime_error
-            (AV1_TILES_REFUSED("decompress_tile"));
+        case TILE_ENCODING_AV1:
+        case TILE_ENCODING_UASTC:
+        case TILE_ENCODING_XUASTC: throw std::runtime_error
+            (unbuilt_tiles_refused("decompress_tile refused", unbuilt_tile_encoding(info.encoding)));
         case TILE_ENCODING_IRIS:
             assert(false && "IMPLEMENTATION NOT YET BUILT");
             break;

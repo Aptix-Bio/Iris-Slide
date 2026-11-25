@@ -33,7 +33,7 @@ The Iris Slide encoder converts WSI files from various vendor formats into optim
 **Key Features:**
 - **Native DICOM Support**: Byte-stream preservation for lossless quality
 - **Multi-format Support**: SVS, NDPI, VSI, MRXS, and other OpenSlide formats
-- **Tile Compression**: JPEG. The Iris format's AV1 tile encoding (`TILE_ENCODING_AV1`, a bare AV1 sequence, decided 2026-11-25) is not yet encoded or decoded by Iris Slide; a slide whose tiles declare it is refused with an error naming the encoding
+- **Tile Compression**: JPEG. The Iris format's AV1 tile encoding (`TILE_ENCODING_AV1`, a bare AV1 sequence) and its GPU block-compressed tile encodings (`TILE_ENCODING_UASTC`, UASTC LDR 4x4 blocks under one Zstandard frame, and `TILE_ENCODING_XUASTC`, one XUASTC LDR bitstream), all decided 2026-11-25, are not yet encoded or decoded by Iris Slide; a slide whose tiles declare one is refused with an error naming the encoding
 - **Automatic Pyramid Derivation**: Generate 2x or 4x, or use source pyramid format.
 - **Privacy Controls**: Metadata stripping and anonymization options
 - **High Performance**: Multi-threaded with real-time progress tracking
@@ -498,7 +498,7 @@ result = Encoder.encode_slide_file(
 **Available Encoding Parameters:**
 - `source`: Path to input WSI file (required)
 - `outdir`: Output directory (defaults to source directory)
-- `desired_encoding`: Tile compression format (JPEG, the default; `TILE_ENCODING_AV1` is refused until Iris Slide encodes AV1)
+- `desired_encoding`: Tile compression format (JPEG, the default; `TILE_ENCODING_AV1`, `TILE_ENCODING_UASTC` and `TILE_ENCODING_XUASTC` are refused until Iris Slide encodes them)
 - `desired_byte_format`: Pixel format (default: R8G8B8)
 - `strip_metadata`: Remove patient identifiers (default: False)
 - `anonymize`: Anonymize metadata (default: False)

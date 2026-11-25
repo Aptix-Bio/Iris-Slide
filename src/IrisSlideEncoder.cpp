@@ -1048,19 +1048,22 @@ Result Encoder_t::dispatch_encoder()
     // Validate encoding
     switch (_encoding) {
         case TILE_ENCODING_JPEG: break;
-        // TileEncodingAv1Refused_3.6 (RTM Decode_09): no AV1 tile encoder yet (ARCHITECTURE Q11).
-        case TILE_ENCODING_AV1: throw std::runtime_error
-            ("[ERROR] The encoder refused TILE_ENCODING_AV1: Iris-Slide does not encode AV1 tiles.");
+        // RTM Decode_09, Decode_10: no AV1, UASTC or XUASTC tile encoder yet (ARCHITECTURE Q11, Q14).
+        case TILE_ENCODING_AV1:
+        case TILE_ENCODING_UASTC:
+        case TILE_ENCODING_XUASTC: throw std::runtime_error
+            ("[ERROR] " + unbuilt_tiles_refused("The encoder refused", unbuilt_tile_encoding(_encoding)));
         case TILE_ENCODING_IRIS: throw std::runtime_error
             ("[ERROR] Encoding using the Iris Slide is not available for community use.");
         default: throw std::runtime_error
             ("[ERROR] Encoder does not have a valid Iris::Encoding format set");
     }
-    // An AV1 source's streams would otherwise pass through, or reach a decoder of another
-    // format, under the requested encoding's label (RTM Decode_09).
-    if (source.encoding == TILE_ENCODING_AV1) throw std::runtime_error
-        ("[ERROR] The encoder refused source " + _srcPath +
-         ": its tile table declares TILE_ENCODING_AV1, which Iris-Slide does not decode.");
+    // An AV1, UASTC or XUASTC source's streams would otherwise pass through, or reach a decoder
+    // of another format, under the requested encoding's label (RTM Decode_09, Decode_10).
+    const char* unbuilt_source = unbuilt_tile_encoding(source.encoding);
+    if (unbuilt_source) throw std::runtime_error
+        ("[ERROR] " + unbuilt_tiles_refused("The encoder refused source " + _srcPath +
+                                            ": its tile table declares", unbuilt_source));
     if (source.format == FORMAT_UNDEFINED)
         source.format = FORMAT_R8G8B8A8;
 

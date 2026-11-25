@@ -352,6 +352,22 @@ Shown by: `ctest --preset asan -R Decode`
   - [ ] The encoder's source refusal (an `.iris` source whose table declares
     AV1) gains its test with EndToEndSuite_7.1, which runs the encoder on a
     fixture slide
+- [ ] **TileEncodingBlocksRefused_3.7** — decided 2026-11-25 (ARCHITECTURE
+  D11): tile encodings 4 and 5 are the GPU block-compressed
+  `TILE_ENCODING_UASTC` and `TILE_ENCODING_XUASTC`, and a tile table declaring
+  either is refused naming the encoding on decode, on encode and as an encoder
+  source, through the one `unbuilt_tile_encoding` that AV1's refusal now uses
+  too; the Python and JavaScript enumerations, the stubs and both READMEs name
+  them. Built ahead of this sprint on ReviewBot_17.8, with the paired
+  Iris-Headers pin (X8) [Decode_10]
+  - [x] Red: `ctest --preset debug`, 4 of 5 pass: the new test fails on decode
+    for both encodings with "decompress_tile failed with nonsense encoding
+    format in DecompressTileInfo", which names neither, and the build warns
+    that neither is handled in `compress_tile`'s or `decompress_tile`'s switch
+    ([e718bd2](https://github.com/Aptix-Bio/Iris-Slide/commit/e718bd221901ca227ea237e9fede4208a2248b38))
+  - [x] Green: the same command, 5 of 5 pass; `cmake --build --preset debug` (library, encoder, tests) with no warning, and the Python modules with only the known `METADATA_FREE_TEXT` warning, `Encoding.TILE_ENCODING_UASTC` 4 and `TILE_ENCODING_XUASTC` 5 from Python; `tools/tests` 51 pass, `tools/workflow_lint.py` 0 violations
+  - [ ] The encoder's source refusal gains its test with EndToEndSuite_7.1,
+    as AV1's does
 - [ ] **VERIFY:** the maintainer reviews the hostile-stream tests
 - [ ] **Gate:** CI green on the pull request
 
@@ -414,6 +430,13 @@ in `examples/` decoding tile 0 of the fixture
   maintainer's answer to Q11 says (the proposal: dav1d from vcpkg, sized by
   the destination rule of OneDestinationRule_3.3), replacing the refusal of
   TileEncodingAv1Refused_3.6 [Decode_09] — `blocked` on Q11
+- [ ] **BlockTileTranscode_5.5** — UASTC tiles (ARCHITECTURE D11) transcoded
+  to RGBA8 as the maintainer's answer to Q13 says (the proposal: vcpkg's
+  `basisu` port at the baseline, 2.50, in its own target; the Zstandard
+  frame's content checked at 16 bytes a block for TILE_LENGTH before the
+  transcode), replacing the refusal of TileEncodingBlocksRefused_3.7; XUASTC
+  after IFE settles its footprint and bitstream stability (IFE OD-T3), and
+  stored mip levels after IFE's OD-T2 [Decode_11] — `blocked` on Q13
 - [ ] **VERIFY:** the maintainer reviews the public signature
 - [ ] **Gate:** CI green on both pull requests, Iris-Headers' first
 
@@ -546,6 +569,16 @@ Shown by: `ctest --preset asan -R EncoderEndToEnd`
   (E4). Passing them through waits on Q6 and Q7 [Encode_06]
   - [ ] Red: a source with one annotation re-encodes to a file with none and
     reports success
+- [ ] **BlockTileEncodeParity_7.7** — the encoder writes UASTC (and, after
+  IFE's OD-T3, XUASTC) tiles as the maintainer's answer to Q14 says, with
+  rate-distortion control tuned until a tile is no bigger than its JPEG at
+  the quality bar within the maintainer's margin (ARCHITECTURE D11) [Encode_07]
+  — `blocked` on Q14
+  - [ ] Measure first: each fixture tile's UASTC and XUASTC bytes against its
+    JPEG at the quality bar, with a quality metric against the source
+    *(to measure)*; the margin is set from these numbers
+  - [ ] Red: a test that encodes the fixture tiles as UASTC and fails on any
+    tile above the margin
 - [ ] **VERIFY:** the maintainer encodes a vendor slide of the maintainer's choosing with the new
   command line
 - [ ] **Gate:** CI green on the pull request
@@ -852,8 +885,9 @@ pull request opened after ReviewBot_17.8 merges
 - [ ] **PortsPinMain_17.6** — re-pin the iris-headers and iris-file-extension
   ports to their main commits once the rename and IFE's `feature/VcpkgCaching_2`
   merge (X4), and once Iris-Headers' `feature/TileEncodingAv1_1` merges (X7:
-  the iris-headers port is pinned to its `9fa8a26` since 2026-11-25, which
-  adds `EncodeSlideInfo::attributes` to `4c78915`'s AV1; the
+  the iris-headers port is pinned to its `635afbb` since 2026-11-25, which
+  adds `EncodeSlideInfo::attributes` and UASTC and XUASTC (X8) to `4c78915`'s
+  AV1; the
   Iris-Headers rename is already in main), and remove the duplicate third-party pins in Iris-Headers'
   `cmake/dependencies.cmake`, whose versions `vcpkg.json` now states, by a
   paired change there [Build_01] `blocked` on X4
@@ -944,6 +978,8 @@ audit marked closed with its commit
 | Q9 | HeadersTakeIfeEnumerations_11.4 |
 | Q10 | DigitalImageIdentifier_6.6 (who sets the flag at encode time) |
 | Q11 | Av1TileDecode_5.4 (`blocked`); TileEncodingAv1Refused_3.6 until then |
+| Q13 | BlockTileTranscode_5.5 (`blocked`); TileEncodingBlocksRefused_3.7 until then |
+| Q14 | BlockTileEncodeParity_7.7 (`blocked`); TileEncodingBlocksRefused_3.7 until then |
 | X1 | ClinicalStreamWritten_6.5, AnnotationSurface_11.5 |
 | X2 | HeadersTakeIfeEnumerations_11.4 |
 | X3 | AttributesFromI2S_6.7 (`blocked`), DigitalImageIdentifier_6.6 |
@@ -951,6 +987,7 @@ audit marked closed with its commit
 | X5 | LicensedCodecInterface_14 |
 | X6 | EnumerationsFollowIfe_4.4 (`blocked`) |
 | X7 | TileEncodingAv1Refused_3.6 (pins the paired branch), PortsPinMain_17.6 |
+| X8 | TileEncodingBlocksRefused_3.7 (pins the paired branch), PortsPinMain_17.6 |
 | E1 | AttributesNeverIdentify_6.1 (writing), HeadersTakeIfeEnumerations_11.4 (values) |
 | E2 | AttributesNeverIdentify_6.1 |
 | E3 | TileLengthFromTheFile_3.2 |
@@ -1034,3 +1071,14 @@ audit marked closed with its commit
   unchanged (it writes the caller's value and refuses 0); the README, the
   Python docstring and the stubs now say how the caller packs it
   (I2sVersionPacked_6.9).
+- **2026-11-25, GPU block-compressed tile encodings.** Decided 2026-11-25:
+  tile encodings 4 and 5 are `TILE_ENCODING_UASTC` and `TILE_ENCODING_XUASTC`,
+  bare codec streams a viewer transcodes to its GPU's block format
+  (ARCHITECTURE D11, Goal_22). Iris-Slide refuses both by name, as it refuses
+  AV1, through one `unbuilt_tile_encoding` that the AV1 refusal now shares
+  (TileEncodingBlocksRefused_3.7). Transcoding to RGBA through Basis
+  Universal's transcoder from vcpkg's `basisu` port is Q13
+  (BlockTileTranscode_5.5); encoding with size parity against JPEG, the
+  encoder's requirement, is Q14 (BlockTileEncodeParity_7.7). The iris-headers
+  port moved to `635afbb` (X8); IFE leaves the mip-level layout and XUASTC's
+  footprint and stability open (its OD-T2, OD-T3).

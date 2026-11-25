@@ -336,6 +336,7 @@ if result.failed():
 **Compression Formats:**
 - `TILE_ENCODING_JPEG` (default): High compatibility, excellent compression
 - `TILE_ENCODING_AV1`: the Iris format's AV1 tile encoding (a bare AV1 sequence, decided 2026-11-25), not yet encoded or decoded by Iris Slide: requesting it, or reading a slide whose tiles declare it, fails with an error naming the encoding
+- `TILE_ENCODING_UASTC`, `TILE_ENCODING_XUASTC`: the Iris format's GPU block-compressed tile encodings (UASTC LDR 4x4 blocks under one Zstandard frame, and one XUASTC LDR bitstream, decided 2026-11-25), which a viewer transcodes to its GPU's block format; not yet encoded or transcoded by Iris Slide, and refused the same way
 
 **Pyramid Derivation:**
 - `layer_2x`: Generate 2x downsampled layers (recommended for most use cases)

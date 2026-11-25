@@ -56,6 +56,7 @@ flowchart LR
 | Goal_19 | Every pull request is code-reviewed by the Aptix review bot against Iris-Slide's own rules; the bot's repository stays private; a fork's pull request is reviewed by the model only after a maintainer pushes it to an Aptix-Bio branch |
 | Goal_20 | Decided 2026-11-25: the AVIF tile encoding is removed from the Iris format; tile encoding 3 is `TILE_ENCODING_AV1`, a bare AV1 sequence in the AV1 Low Overhead Bitstream Format, one shown frame per focal plane, a single-plane tile one key frame, no container; no compatibility path for AVIF tiles; AVIF associated images stay |
 | Goal_21 | Decided 2026-11-25: Iris-Slide's encoder takes a slide's I2S attributes from its caller and writes them into the `.iris` file as a `METADATA_I2S` attribute block; Iris-Slide does not depend on I2S, so the caller passes plain key and value text with the I2S version |
+| Goal_22 | Decided 2026-11-25: tile encodings 4 and 5 are the GPU block-compressed `TILE_ENCODING_UASTC` (one Zstandard frame of UASTC LDR 4x4 blocks) and `TILE_ENCODING_XUASTC` (one XUASTC LDR bitstream), bare; a UASTC tile written by the encoder is no bigger than its JPEG at the quality bar, within a margin the maintainer sets |
 
 ## Requirements
 
@@ -76,6 +77,8 @@ flowchart LR
 | Decode_07 | A public `decompress_tile` decodes a span into the caller's buffer and returns a `Result`; the CPU library declares no GPU types | A1 | CallerBufferDecode_5 | Contract | Planned |
 | Decode_08 | A tile's expected extent is the file's TILE_LENGTH | D3, E3 | DecodeSafety_3 | Hostile | Planned |
 | Decode_09 | A tile table declaring `TILE_ENCODING_AV1` is refused with an error naming the encoding, on decode, on encode and as an encoder source, until Q11 decides AV1 tile decoding; no tile stream reaches libavif | Goal_20, D9, Q11 | DecodeSafety_3 (TileEncodingAv1Refused_3.6, built ahead on ReviewBot_17.8) | Unit | Implemented: decode and encode refusals tested (`tests/tile_encoding_test.cpp`, `[Decode_09]`); the encoder's source refusal untested until EndToEndSuite_7.1 [bed76a7](https://github.com/Aptix-Bio/Iris-Slide/commit/bed76a753b09cb1e59b2609e0c8eeaf06ca4237b) |
+| Decode_10 | A tile table declaring `TILE_ENCODING_UASTC` or `TILE_ENCODING_XUASTC` is refused with an error naming the encoding, on decode, on encode and as an encoder source, until Q13 and Q14 decide transcoding and encoding | Goal_22, D11, Q13, Q14 | DecodeSafety_3 (TileEncodingBlocksRefused_3.7, built ahead on ReviewBot_17.8) | Unit | Planned |
+| Decode_11 | A UASTC tile is transcoded to RGBA8 into a buffer sized from TILE_LENGTH, its Zstandard frame's content checked at 16 bytes a block first; XUASTC follows IFE's OD-T3 | Goal_22, D11, Q13 | BlockTileTranscode_5.5 | Unit | Planned |
 | Identity_01 | Attributes are written only as `METADATA_I2S` and hold no patient identity, from every source | Goal_04, C3, E1 | PatientIdentity_6 | Integration | Planned |
 | Identity_02 | The command line, C++ and Python reach the same identity handling | C3 | PatientIdentity_6 | Integration | Planned |
 | Identity_03 | Associated images that show identity (label, macro) are handled as the maintainer decides | Goal_04 | PatientIdentity_6 | Integration | Blocked (Q2) |
@@ -89,6 +92,7 @@ flowchart LR
 | Encode_04 | Transparent source regions are encoded white | C10 | SourceInterface_8 | Unit | Planned |
 | Encode_05 | The scratch file sits beside the destination and is renamed into place; a concurrency of 0 is refused | C16 | EncoderCorrectness_7 | Integration | Planned |
 | Encode_06 | Re-encoding a source with annotations or a clinical stream is refused naming the blocks, until they are passed through | E4, Q6, Q7 | EncoderCorrectness_7 | Integration | Planned |
+| Encode_07 | A UASTC tile the encoder writes is no bigger than the same tile as JPEG at the quality bar, within the maintainer's margin (size parity) | Goal_22, D11, Q14 | BlockTileEncodeParity_7.7 | Integration | Planned |
 | Concurrency_01 | The encoder's shared state has no data race under ThreadSanitizer | C8 | EncoderConcurrency_9 | Concurrency | Planned |
 | Concurrency_02 | Every encoder thread is owned and joined by its owner; dropping the last handle interrupts and frees everything | C7, C16, A5, A6 | EncoderConcurrency_9 | Concurrency | Planned |
 | Concurrency_03 | No exception escapes an encoder boundary | C7 | EncoderConcurrency_9 | Unit | Planned |
