@@ -7,7 +7,7 @@ under it are the checkable implementation, red first. Requirements live in
 [RTM.md](RTM.md); block governance and the open questions in
 [ARCHITECTURE.md](ARCHITECTURE.md); the findings each task closes in
 [analysis/design_audit_2026-11-24.md](analysis/design_audit_2026-11-24.md)
-(cited as C1–C17, A1–A9, B1–B8, and "audit D1"–"audit D3", since ARCHITECTURE.md numbers its own decisions D1–D9). E1–E4, Q1–Q11 and X1–X7 are
+(cited as C1–C17, A1–A9, B1–B8, and "audit D1"–"audit D3", since ARCHITECTURE.md numbers its own decisions D1–D10). E1–E4, Q1–Q12 and X1–X7 are
 ARCHITECTURE.md's defects, open questions and external dependencies.
 
 ## Conventions
@@ -103,7 +103,7 @@ header every lane uses.
 | DecodeSafety_3 | hostile JPEG tiles and JPEG or AVIF associated images refused naming both sizes under AddressSanitizer; every valid stream decoded into a buffer sized from its own header; a tile declared `TILE_ENCODING_AV1` refused naming it | C1, C6, C13, C15, E3, A4 (pixel layout, destination rule), D9 | `todo`; TileEncodingAv1Refused_3.6 built ahead |
 | PngRemoved_4 | the library builds without libpng and refuses a PNG image naming its encoding | C2, X6 | `todo` |
 | CallerBufferDecode_5 | a program decodes a stream it read through IFE's `Parser` into its own buffer and receives a `Result` | A1 (decode call, GPU types) | `todo` |
-| PatientIdentity_6 | a slide encoded from a source with patient fields reads back with none in its attributes, from the command line, C++ and Python; a DII flagged as PHI is scrambled on de-identification | C3, E1, E2, audit D1 (metadata claims) | `todo`; three tasks `blocked` on Q2, Q6, X3 |
+| PatientIdentity_6 | a slide encoded from a source with patient fields reads back with none in its attributes, from the command line, C++ and Python; a DII flagged as PHI is scrambled on de-identification | C3, E1, E2, audit D1 (metadata claims) | `todo`; three tasks `blocked` on Q2, Q6, X3; EncoderTakesI2S_6.8 built ahead |
 | EncoderCorrectness_7 | `IrisSlideEncoder` run end to end: every output tile decodes with the declared encoding, every failure exits non-zero | C5, C9, C14 (encoder), C16 (scratch file, zero concurrency), E4 | `todo` |
 | SourceInterface_8 | one source type per input; a read error from any source fails the encode with that error; every handle closed | C10, A4 (sources, pyramid loops) | `todo` |
 | EncoderConcurrency_9 | the encoder's lifecycle suite clean under ThreadSanitizer | C7, C8, C16 (destructor), A5, A6 | `todo` |
@@ -470,6 +470,29 @@ the properties it dropped
   in the C++ source that I2S's generator emits from its JSON specification
   (decided 2026-11-24), pinned by commit (X3)
   [Identity_05] — `blocked` until I2S publishes its first version
+- [x] **EncoderTakesI2S_6.8** — decided 2026-11-25 (ARCHITECTURE D10): the
+  encoder takes a slide's I2S attributes from its caller,
+  `EncodeSlideInfo::attributes` (the paired Iris-Headers branch), as key and
+  value text with `METADATA_I2S` and the I2S version, and writes them as the
+  slide's one attributes block in place of the source's pairs. It refuses,
+  naming the pair and before the source is opened, what IFE's attribute
+  blocks cannot hold, another format and version 0; the version's packing is
+  Q12. Built ahead of this sprint on ReviewBot_17.8; the allow-list of 6.1
+  and 6.7 still governs the source's own pairs [Identity_07]
+  - [x] Red: `ctest --preset debug`, 2 of 4 pass; the two `[Identity_07]`
+    cases fail 16 of 29 assertions: the output carries the source's one
+    free-text pair at version 0 in place of the two I2S pairs at version 1,
+    and a non-ASCII key, a value that is not UTF-8, an unversioned I2S claim
+    and a free-text format each encode with no error ([ad35821](https://github.com/Aptix-Bio/Iris-Slide/commit/ad35821b4e70be2d6d07824987e592c991c70083))
+  - [x] Green: the same command, 4 of 4 pass (29 of 29 assertions in
+    `[Identity_07]`), and 50 repeats pass; the library, encoder, tests and
+    Python modules build with no new warning; the Python binding's
+    `i2s_attributes` and `i2s_version` reach the same refusals, naming the key
+  - [ ] The command line takes the pairs once CommandLineHonest_7.3 gives it
+    an argument table. Until the encoder can check a key against I2S's
+    generated source (6.7), a `--i2s key=value` typed at the command line
+    would be written under the I2S claim with no vocabulary check, which the
+    C++ and Python callers make with I2S's own `Attributes`
 - [ ] **VERIFY:** the maintainer reviews the allow-list and the fixture
 - [ ] **Gate:** CI green on the pull request
 
@@ -821,7 +844,8 @@ pull request opened after ReviewBot_17.8 merges
 - [ ] **PortsPinMain_17.6** — re-pin the iris-headers and iris-file-extension
   ports to their main commits once the rename and IFE's `feature/VcpkgCaching_2`
   merge (X4), and once Iris-Headers' `feature/TileEncodingAv1_1` merges (X7:
-  the iris-headers port is pinned to its `4c78915` since 2026-11-25; the
+  the iris-headers port is pinned to its `9fa8a26` since 2026-11-25, which
+  adds `EncodeSlideInfo::attributes` to `4c78915`'s AV1; the
   Iris-Headers rename is already in main), and remove the duplicate third-party pins in Iris-Headers'
   `cmake/dependencies.cmake`, whose versions `vcpkg.json` now states, by a
   paired change there [Build_01] `blocked` on X4
@@ -984,3 +1008,15 @@ audit marked closed with its commit
   compiler warning outside this change: `METADATA_FREE_TEXT` is not handled in
   the Python binding's metadata-type switch (`python/IrisSlidePython.hpp`),
   which HeadersTakeIfeEnumerations_11.4 and PythonBinding_15 cover.
+- **2026-11-25, I2S attributes from the caller.** Decided 2026-11-25: the
+  encoder takes a slide's I2S attributes and writes them as a `METADATA_I2S`
+  attributes block (ARCHITECTURE D10, Goal_21). I2S is not yet published and
+  Iris-Slide's build is, so the caller passes I2S's pairs as text in the
+  Iris-Headers type `EncodeSlideInfo::attributes` (paired branch
+  `feature/TileEncodingAv1_1`, the port moved to `9fa8a26`); the encoder
+  checks only what IFE's attribute blocks require, and the caller's pairs
+  replace the source's, since a slide holds one attributes block. How an I2S
+  version packs into IFE's 16-bit VERSION is open (Q12): the caller passes it,
+  and version 0 is refused. The first end-to-end test writes its fixture
+  through IFE's Builder, which FixtureSlide_1.3 can grow from
+  (EncoderTakesI2S_6.8).

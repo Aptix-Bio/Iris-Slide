@@ -106,7 +106,7 @@ class EncoderStatus:
     @property
     def value(self) -> int:
         ...
-def create_encoder(source: str, outdir: str = '', desired_encoding: Encoding = ..., desired_byte_format: Format = ..., anonymize: bool = False, derivation: EncoderDerivation = ..., concurrency: int = 8, codec_context: Context = None) -> Encoder:
+def create_encoder(source: str, outdir: str = '', desired_encoding: Encoding = ..., desired_byte_format: Format = ..., anonymize: bool = False, derivation: EncoderDerivation = ..., concurrency: int = 8, codec_context: Context = None, i2s_attributes: dict[str, str] = ..., i2s_version: int = 0) -> Encoder:
     """
     Iris Slide encoding context for GPU based compression
     """

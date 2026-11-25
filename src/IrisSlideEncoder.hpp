@@ -19,6 +19,7 @@ class Encoder_t {
     bool                            _anonymize;
     Encoding                        _encoding;
     EncoderDerivation               _derivation;
+    Attributes                      _attributes;
     Threads                         _threads;
     EncoderTracker                  _tracker;
     AtomicEncoderStatus             _status;

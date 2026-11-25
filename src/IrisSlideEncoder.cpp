@@ -4,10 +4,14 @@
 //
 //  Created by Ryan Landvater on 8/2/22.
 //
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <random>
+#include <string_view>
 #include <vector>
 #include "IrisSlidePriv.hpp"
 #include "IFE_Builder.hpp"   // the block tier: builder->claim / fill / append
@@ -38,6 +42,92 @@ inline std::string TO_STRING (EncoderStatus status)
         case ENCODER_ERROR:     return "ENCODER_ERROR";
         case ENCODER_SHUTDOWN:  return "ENCODER_SHUTDOWN";
     }   return "CORRUPT ENCODER STATUS IDENTIFIED";
+}
+inline std::string TO_STRING (MetadataType type)
+{
+    switch (type) {
+        case METADATA_UNDEFINED:    return "METADATA_UNDEFINED";
+        case METADATA_I2S:          return "METADATA_I2S";
+        case METADATA_DICOM:        return "METADATA_DICOM";
+        case METADATA_FREE_TEXT:    return "METADATA_FREE_TEXT";
+    }   return "metadata type " + std::to_string(static_cast<int>(type));
+}
+// RTM Identity_07
+// The well-formed UTF-8 sequences of RFC 3629 section 4, one row per lead-byte range: the
+// sequence's length and the range its second byte must fall in. The second-byte ranges are what
+// exclude overlong forms, UTF-16 surrogates and code points past U+10FFFF; every later byte is a
+// continuation byte. A lead byte in no row (0x80-0xC1, 0xF5-0xFF) begins no sequence.
+struct Utf8Lead {
+    uint8_t first, last, length, second_low, second_high;
+};
+constexpr uint8_t UTF8_CONTINUATION_LOW  = 0x80;
+constexpr uint8_t UTF8_CONTINUATION_HIGH = 0xBF;
+constexpr std::array<Utf8Lead, 9> UTF8_LEADS {{
+    {0x00, 0x7F, 1, 0x00, 0x00},
+    {0xC2, 0xDF, 2, 0x80, 0xBF},
+    {0xE0, 0xE0, 3, 0xA0, 0xBF},
+    {0xE1, 0xEC, 3, 0x80, 0xBF},
+    {0xED, 0xED, 3, 0x80, 0x9F},
+    {0xEE, 0xEF, 3, 0x80, 0xBF},
+    {0xF0, 0xF0, 4, 0x90, 0xBF},
+    {0xF1, 0xF3, 4, 0x80, 0xBF},
+    {0xF4, 0xF4, 4, 0x80, 0x8F},
+}};
+/// The offset of the first byte that begins no well-formed UTF-8 sequence, or npos.
+inline std::size_t FIRST_INVALID_UTF8 (std::u8string_view text)
+{
+    for (std::size_t at = 0; at < text.size();) {
+        const auto lead = static_cast<uint8_t>(text[at]);
+        const auto row  = std::find_if(UTF8_LEADS.begin(), UTF8_LEADS.end(), [lead](const Utf8Lead& r)
+                                       { return lead >= r.first && lead <= r.last; });
+        if (row == UTF8_LEADS.end() || text.size() - at < row->length) return at;
+        for (std::size_t i = 1; i < row->length; ++i) {
+            const auto byte = static_cast<uint8_t>(text[at + i]);
+            const auto low  = i == 1 ? row->second_low  : UTF8_CONTINUATION_LOW;
+            const auto high = i == 1 ? row->second_high : UTF8_CONTINUATION_HIGH;
+            if (byte < low || byte > high) return at;
+        }
+        at += row->length;
+    }
+    return std::u8string_view::npos;
+}
+constexpr unsigned char ASCII_LAST = 0x7F;
+/// The caller's attributes (EncodeSlideInfo::attributes), refused before the source is opened,
+/// naming the pair: an I2S claim with the I2S version it conforms to, and what IFE's attribute
+/// blocks require of the bytes (ife-attribute-sizes: a 16-bit KEY_SIZE; ife-attribute-bytes:
+/// ASCII keys, UTF-8 values, a 32-bit COUNT of every key and value byte). Whether a key belongs
+/// to I2S is I2S's check: Iris-Slide does not depend on I2S (ARCHITECTURE D10).
+inline void CHECK_CALLER_ATTRIBUTES (const Attributes& attributes)
+{
+    if (attributes.empty()) return;
+    // D2: Iris-Slide writes a caller's pairs only under the claim that they identify no one.
+    if (attributes.type != METADATA_I2S) throw std::runtime_error
+        ("[ERROR] The encoder refused the caller's attributes declared " + TO_STRING(attributes.type) +
+         ": a caller's pairs are written only as METADATA_I2S");
+    // IFE reads an I2S claim with no version as free text (ife-attributes); the packing of an
+    // I2S version into the 16-bit VERSION is the caller's to pass (ARCHITECTURE Q12).
+    if (attributes.version == 0) throw std::runtime_error
+        ("[ERROR] The encoder refused the caller's METADATA_I2S attributes at version 0: "
+         "an I2S claim names the I2S version its pairs conform to");
+    uint64_t bytes = 0;
+    for (const auto& [key, value] : attributes) {
+        const auto wide = std::find_if(key.begin(), key.end(), [](char c)
+                                       { return static_cast<unsigned char>(c) > ASCII_LAST; });
+        if (wide != key.end()) throw std::runtime_error
+            ("[ERROR] The encoder refused the attribute key \"" + key + "\": byte " +
+             std::to_string(wide - key.begin()) + " is not ASCII");
+        if (key.size() > std::numeric_limits<uint16_t>::max()) throw std::runtime_error
+            ("[ERROR] The encoder refused the attribute key \"" + key + "\": " +
+             std::to_string(key.size()) + " bytes, past the 16-bit KEY_SIZE");
+        const auto invalid = FIRST_INVALID_UTF8(value);
+        if (invalid != std::u8string_view::npos) throw std::runtime_error
+            ("[ERROR] The encoder refused the value of attribute key \"" + key + "\": byte " +
+             std::to_string(invalid) + " begins no UTF-8 sequence");
+        bytes += key.size() + value.size();
+    }
+    if (bytes > std::numeric_limits<uint32_t>::max()) throw std::runtime_error
+        ("[ERROR] The encoder refused the caller's attributes: " + std::to_string(bytes) +
+         " key and value bytes, past ATTRIBUTE_BYTES' 32-bit COUNT");
 }
 Encoder create_encoder(EncodeSlideInfo &info) noexcept
 {
@@ -160,6 +250,7 @@ _dstPath                                    (__i.dstFilePath),
 _anonymize                                  (__i.anonymize),
 _encoding                                   (__i.desiredEncoding),
 _derivation                                 (_derive?*__i.derivation:EncoderDerivation()),
+_attributes                                 (__i.attributes),
 _status                                     (ENCODER_INACTIVE)
 {
     
@@ -948,6 +1039,9 @@ Result Encoder_t::dispatch_encoder()
             ("[ERROR] Encoder is being shutdown. Cannot start encoding.");
     }
 
+    // The caller's attributes are refused before anything is opened (RTM Identity_07).
+    CHECK_CALLER_ATTRIBUTES (_attributes);
+
     // Attempt to open the source slide file
     auto source = OPEN_SOURCE (_srcPath);
 
@@ -1109,7 +1203,11 @@ Result Encoder_t::dispatch_encoder()
         // SLIDE STRUCTURE, SEAL, AND MOVE INTO PLACE
         // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         try {
-            const Metadata metadata = READ_METADATA (source, table.extent, _anonymize);
+            Metadata metadata = READ_METADATA (source, table.extent, _anonymize);
+            // RTM Identity_07: the caller's pairs replace the source's. IFE's METADATA holds one
+            // ATTRIBUTES_OFFSET, and a merge would put the source's free text or DICOM elements
+            // under the caller's METADATA_I2S claim that no pair identifies anyone (D2).
+            if (!_attributes.empty()) metadata.attributes = _attributes;
             writer.finalize(WRITE_SLIDE_STRUCTURE (_context, table, writer, source, metadata));
             // A rename cannot cross volumes (the temp directory is often on
             // another one); copy instead. The scratch file goes at scope exit.

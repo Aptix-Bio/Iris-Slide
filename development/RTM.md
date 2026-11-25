@@ -55,6 +55,7 @@ flowchart LR
 | Goal_18 | Workflows are few and unified; their logic lives in CMake presets and scripts, with little shell in the workflow files |
 | Goal_19 | Every pull request is code-reviewed by the Aptix review bot against Iris-Slide's own rules; the bot's repository stays private; a fork's pull request is reviewed by the model only after a maintainer pushes it to an Aptix-Bio branch |
 | Goal_20 | Decided 2026-11-25: the AVIF tile encoding is removed from the Iris format; tile encoding 3 is `TILE_ENCODING_AV1`, a bare AV1 sequence in the AV1 Low Overhead Bitstream Format, one shown frame per focal plane, a single-plane tile one key frame, no container; no compatibility path for AVIF tiles; AVIF associated images stay |
+| Goal_21 | Decided 2026-11-25: Iris-Slide's encoder takes a slide's I2S attributes from its caller and writes them into the `.iris` file as a `METADATA_I2S` attribute block; Iris-Slide does not depend on I2S, so the caller passes plain key and value text with the I2S version |
 
 ## Requirements
 
@@ -81,6 +82,7 @@ flowchart LR
 | Identity_04 | The clinical stream (HL7 v2, FHIR JSON, FastFHIR) is written as the maintainer's answer to Q6 says | Goal_04 | PatientIdentity_6 | Integration | Blocked (Q6) |
 | Identity_05 | Attribute keys come from one allow-list, and from I2S's generated C++ once I2S publishes; no `METADATA_DICOM` or `METADATA_FREE_TEXT` attributes are written | Goal_10, Goal_12, D8, E2, Q5 | PatientIdentity_6 | Integration, Static | Planned; the I2S source Blocked (X3) |
 | Identity_06 | The encoder writes the `DigitalImageIdentifier` with its `DII_is_PHI` flag; de-identification scrambles the DII when the flag is true or absent and leaves it unchanged when false | Goal_13, Goal_14, Goal_15, D8, Q10 | PatientIdentity_6 | Integration | Planned; who sets the flag waits on Q10 |
+| Identity_07 | The caller's I2S pairs (`EncodeSlideInfo::attributes`) are written as the slide's one `METADATA_I2S` attributes block with the caller's version, in place of the source's pairs; a key that is not ASCII or past 16 bits of size, a value that is not UTF-8, attributes past the 32-bit byte count, another format or version 0 are refused before the source is opened, naming the pair or the value | Goal_21, D2, D10, Q12 | PatientIdentity_6 (EncoderTakesI2S_6.8, built ahead on ReviewBot_17.8) | Integration | Implemented: `tests/encoder_attributes_test.cpp`, `[Identity_07]`; the Python binding's `i2s_attributes` and `i2s_version` reach the same check; the command line waits on CommandLineHonest_7.3 |
 | Encode_01 | A tile stream passes through only when its encoding equals the requested one | C5 | EncoderCorrectness_7 | Integration | Planned |
 | Encode_02 | Every encode failure is returned or exits non-zero; nothing is printed and skipped | C9, C14 | EncoderCorrectness_7 | Integration | Planned |
 | Encode_03 | One source type per input owns its handle and reports its read errors | C10, A4 | SourceInterface_8 | Integration | Planned |

@@ -23,7 +23,9 @@ def encode_slide_file(source: str,
                       anonymize: bool = False, 
                       derivation: EncoderDerivation = EncoderDerivation.layer_2x, 
                       concurrency: int = None, 
-                      codec_context: Context = None) -> Result:
+                      codec_context: Context = None,
+                      i2s_attributes: dict[str, str] | None = None,
+                      i2s_version: int = 0) -> Result:
     encoder = None
     
     # Default concurrency to CPU count if not specified
@@ -41,7 +43,8 @@ def encode_slide_file(source: str,
             print(f"No destination or invalid directory provided. Selecting source directory instead: {outdir}")
         
         # Create the Iris Slide Encoder
-        encoder = create_encoder(source, outdir, desired_encoding, desired_byte_format, anonymize, derivation, concurrency, codec_context)
+        encoder = create_encoder(source, outdir, desired_encoding, desired_byte_format, anonymize, derivation, concurrency, codec_context,
+                                 i2s_attributes or {}, i2s_version)
         if (encoder == None): 
             raise Exception("Failed to create an Iris Encoder")
         
