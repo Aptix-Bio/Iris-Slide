@@ -163,7 +163,7 @@ and from each upstream's release.
 | GLM | 1.0.3 (override) | 1.0.3 | vcpkg baseline |
 | pybind11 | 3.1.0 (overlay: vcpkg's port without its python3 dependency) | v3.1.0 | vcpkg baseline; the archive's SHA-512 is vcpkg's |
 | Catch2 | 3.15.1 (override, feature `tests`) | 3.15.1 | vcpkg `versions/c-/catch2.json` (baseline 3.16.0) |
-| Iris-Headers | `b5e84f5fed31368de904480e5e571dc388fe58ba` (feature/IrisSlideRename) | — | Aptix-Bio/Iris-Headers#5, until it merges (X4) |
+| Iris-Headers | `4c78915a2627c18113047f405d2f56d16edfbe59` (feature/TileEncodingAv1_1, on main) | — | the paired branch: tile encoding 3 is `TILE_ENCODING_AV1` (decided 2026-11-25, ARCHITECTURE X7), until it merges (PortsPinMain_17.6); the rename (Aptix-Bio/Iris-Headers#5, X4) is merged into main |
 | Iris-File-Extension | `45845fb3bc42af431588503c856da7281cda70b8` (feature/VcpkgCaching_2, on feature/PngRetiredClinicalWriter) | — | the paired branch, until it merges |
 | Emscripten SDK | 6.0.13, `35659964bc2762fffec0d257997fb61475f765b7` | — | https://github.com/emscripten-core/emsdk/releases/tag/6.0.13 |
 | sccache | v0.19.0 | — | through mozilla-actions/sccache-action v0.0.11 |

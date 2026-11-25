@@ -954,7 +954,7 @@ Result Encoder_t::dispatch_encoder()
     // Validate encoding
     switch (_encoding) {
         case TILE_ENCODING_JPEG: break;
-        case TILE_ENCODING_AVIF: break;
+        case TILE_ENCODING_AV1: break;
         case TILE_ENCODING_IRIS: throw std::runtime_error
             ("[ERROR] Encoding using the Iris Slide is not available for community use.");
         default: throw std::runtime_error

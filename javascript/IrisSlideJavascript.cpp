@@ -155,7 +155,7 @@ inline std::string SERIALIZE_ENCODING (const IrisSlide::Encoding &encoding)
         case IrisSlide::TILE_ENCODING_UNDEFINED:    return "\"ENCODING_UNDEFINED\"";
         case IrisSlide::TILE_ENCODING_IRIS:         return "\"image/iris\"";
         case IrisSlide::TILE_ENCODING_JPEG:         return "\"image/jpeg\"";
-        case IrisSlide::TILE_ENCODING_AVIF:         return "\"image/avif\"";
+        case IrisSlide::TILE_ENCODING_AV1:         return "\"image/avif\"";
     }
     return "\"UNDEFINED ENCODING\"";
 }
@@ -258,7 +258,7 @@ public:
             switch (_abstraction.tileTable.encoding) {
                 case IrisSlide::TILE_ENCODING_IRIS:  mime_str = "image/iris"; break;
                 case IrisSlide::TILE_ENCODING_JPEG:  mime_str = "image/jpeg"; break;
-                case IrisSlide::TILE_ENCODING_AVIF:  mime_str = "image/avif"; break;
+                case IrisSlide::TILE_ENCODING_AV1:  mime_str = "image/avif"; break;
                 default:                             mime_str = "application/octet-stream"; break;
             }
             std::string range_header = "bytes="
@@ -481,7 +481,7 @@ EMSCRIPTEN_BINDINGS(iris_slide) {
         .value("TILE_ENCODING_UNDEFINED", IrisSlide::TILE_ENCODING_UNDEFINED)
         .value("TILE_ENCODING_IRIS", IrisSlide::TILE_ENCODING_IRIS)
         .value("TILE_ENCODING_JPEG", IrisSlide::TILE_ENCODING_JPEG)
-        .value("TILE_ENCODING_AVIF", IrisSlide::TILE_ENCODING_AVIF);
+        .value("TILE_ENCODING_AV1", IrisSlide::TILE_ENCODING_AV1);
 
     value_object<Iris::LayerExtent>("LayerExtent")
         .field("xTiles", &Iris::LayerExtent::xTiles)

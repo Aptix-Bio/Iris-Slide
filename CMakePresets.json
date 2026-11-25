@@ -28,9 +28,10 @@
     {
       "name": "debug",
       "inherits": "vcpkg",
-      "displayName": "Debug: the library, the encoder and OpenSlide",
+      "displayName": "Debug: the library, the encoder, OpenSlide and the tests",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "IRIS_SLIDE_BUILD_TESTS": "ON"
       }
     },
     {
@@ -71,6 +72,15 @@
           "name": "release"
         }
       ]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }

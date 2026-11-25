@@ -606,7 +606,7 @@ Buffer Context_t::compress_tile(const CompressTileInfo &info) const
                                          info.subsampling,
                                          TILE_PIX_LENGTH,
                                          TILE_PIX_LENGTH);
-        case TILE_ENCODING_AVIF:
+        case TILE_ENCODING_AV1:
             if (_gpuAV1Encode) {
                 assert(false && "HARDWARE ENCODER AV1 IMPLEMENTATION NOT YET BUILT");
             } return COMPRESS_AVIF_CPU (info.pixelArray,
@@ -634,7 +634,7 @@ Buffer Context_t::decompress_tile(const DecompressTileInfo &info) const
                                          info.desiredFormat,
                                          TILE_PIX_LENGTH,
                                          TILE_PIX_LENGTH);
-        case TILE_ENCODING_AVIF:
+        case TILE_ENCODING_AV1:
             if (_gpuAV1Decode) {
                 assert(false && "HARDWARE ENCODER AV1 IMPLEMENTATION NOT YET BUILT");
             } return DECOMPRESS_AVIF_CPU (info.compressed,

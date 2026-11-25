@@ -76,7 +76,7 @@ inline IrisSlide::Encoding PARSE_ENCODING (std::string arg)
     if (!strcmp(arg.c_str(), "JPEG"))
         return IrisSlide::TILE_ENCODING_JPEG;
     if (!strcmp(arg.c_str(), "AVIF"))
-        return IrisSlide::TILE_ENCODING_AVIF;
+        return IrisSlide::TILE_ENCODING_AV1;
     return IrisSlide::TILE_ENCODING_UNDEFINED;
 }
 inline IrisSlide::EncoderDerivation::Layers PARSE_DERIVATION (std::string arg)
