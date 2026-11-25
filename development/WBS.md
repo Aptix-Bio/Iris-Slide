@@ -500,7 +500,7 @@ the properties it dropped
   the caller's u16 and refuses 0, and a half above 255 cannot be passed in a
   u16 the caller packs, so no code changes: the README, the Python binding's
   `i2s_version` docstring and the stubs say how the caller packs it
-  [Identity_07]
+  [Identity_07] [7b184b0](https://github.com/Aptix-Bio/Iris-Slide/commit/7b184b050b8185ff1f0aaf07c466699c14b9a9a2)
 - [ ] **VERIFY:** the maintainer reviews the allow-list and the fixture
 - [ ] **Gate:** CI green on the pull request
 
