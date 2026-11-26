@@ -50,7 +50,9 @@
 #include "IrisSlide.hpp"
 #include "IrisSlideEncoder.hpp"
 
+#include <cstdint>
 #include <source_location>
+#include <stdexcept>
 #include <string>
 #include <utility>
 namespace IrisSlide {
@@ -85,6 +87,41 @@ inline std::string unbuilt_tiles_refused (const std::string& refusal, const char
 {
     return refusal + " " + encoding + ": Iris-Slide does not encode or decode tiles in this "
         "encoding yet (development/ARCHITECTURE.md Q11, Q13, Q14)";
+}
+// RTM Api_06
+/// A failed Result from a library Iris-Slide calls (IFE), thrown inside Iris-Slide, carrying the
+/// domain, code, message and place of the original, so a boundary that returns a Result returns
+/// IFE's FileError as it came (ARCHITECTURE D12, decided 2026-11-26). No such boundary reaches
+/// an IFE call yet: the reads that do (open, tile and image reads) return a Slide or a Buffer
+/// until CreateForm_12.2 and ReadsReturnResult_12.3, and BoundaryHelper_12.1's one helper will
+/// return it. Derived from
+/// std::runtime_error so the message is copied without allocating, as an exception's must be,
+/// and so a boundary that returns no Result still reads it through what().
+class ResultFailure : public std::runtime_error {
+public:
+    explicit ResultFailure (const Iris::Result& result) :
+        std::runtime_error(result.message), _domain(result.domain), _code(result.code), _where(result.where) {}
+
+    [[nodiscard]] Iris::Result result () const noexcept
+    {
+        Iris::Result failed;   // a default Result is a failure
+        failed.domain  = _domain;
+        failed.code    = _code;
+        failed.message = what();
+        failed.where   = _where;
+        return failed;
+    }
+
+private:
+    Iris::Domain         _domain;
+    std::uint32_t        _code;
+    std::source_location _where;
+};
+/// IFE's read calls return a Result and never throw (IFE R-8, D30). Inside this library a failure
+/// is thrown on as a ResultFailure, and the public function's boundary returns it.
+inline void throw_if_failed (const Iris::Result& result)
+{
+    if (result.failed()) throw ResultFailure(result);
 }
 } // END IRIS SLIDE NAMESPACE
 

@@ -766,9 +766,11 @@ inline static void ENCODE_SOURCE_PYRAMID (const Context ctx,
             //  An Iris source's tiles pass through as they are: an empty stream
             //  is its NULL_TILE, still "no tile at this position", and a
             //  Z-stacked stream keeps the plane count its frame records.
+            uint16_t planes = 0;   // RTM Api_06: an Iris source's plane count, through IFE's Result
+            if (bytes->size() != 0 && src.irisSlide)
+                throw_if_failed(src.irisSlide->get_slide_parser().tile_planes(__LI, __TI, planes));
             if (bytes->size() == 0) builder.append_null_tile(__LI, __TI);
-            else builder.append_tile(__LI, __TI, static_cast<const BYTE*>(bytes->data()), bytes->size(),
-                                     src.irisSlide ? src.irisSlide->get_slide_parser().tile_planes(__LI, __TI) : 0);
+            else builder.append_tile(__LI, __TI, static_cast<const BYTE*>(bytes->data()), bytes->size(), planes);
 
             //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
             //  RELEASE TILE STEP
@@ -977,7 +979,7 @@ inline Iris::File::BuilderFinalizeInfo WRITE_SLIDE_STRUCTURE (const Context& ctx
         .MAGNIFICATION      = metadata.magnification,
         // An Iris source's Z-stack spacing passes through with its planes.
         .MICRONS_PLANE      = source.irisSlide ?
-            source.irisSlide->get_slide_parser().abstraction().micronsPerPlane : 0.f,
+            source.irisSlide->abstraction().micronsPerPlane : 0.f,
     });
     return {.tileTable = table_at, .metadata = metadata_at};
 }
@@ -1000,7 +1002,7 @@ inline void RESET_TRACKER (EncoderTracker &_tracker, const std::string &dst_path
 inline std::vector<uint16_t> SOURCE_PLANES (const EncoderSource& source, bool derive)
 {
     if (derive || !source.irisSlide) return {};
-    auto planes = source.irisSlide->get_slide_parser().abstraction().tileTable.planes;
+    auto planes = source.irisSlide->abstraction().tileTable.planes;
     for (auto& layer_planes : planes) if (layer_planes <= 1) layer_planes = 0;
     return planes;
 }

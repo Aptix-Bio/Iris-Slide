@@ -164,7 +164,7 @@ and from each upstream's release.
 | pybind11 | 3.1.0 (overlay: vcpkg's port without its python3 dependency) | v3.1.0 | vcpkg baseline; the archive's SHA-512 is vcpkg's |
 | Catch2 | 3.15.1 (override, feature `tests`) | 3.15.1 | vcpkg `versions/c-/catch2.json` (baseline 3.16.0) |
 | Iris-Headers | `635afbb5638bee2d29d8024ca4c9418d4ea7c77d` (feature/TileEncodingAv1_1, on main) | — | the paired branch: tile encoding 3 is `TILE_ENCODING_AV1` (decided 2026-11-25, ARCHITECTURE X7) `EncodeSlideInfo::attributes` (decided 2026-11-25, ARCHITECTURE D10), and tile encodings 4 and 5 `TILE_ENCODING_UASTC` and `TILE_ENCODING_XUASTC` (decided 2026-11-25, ARCHITECTURE X8), https://github.com/Aptix-Bio/Iris-Headers/commit/635afbb5638bee2d29d8024ca4c9418d4ea7c77d, the archive's SHA-512 computed 2026-11-25, until it merges (PortsPinMain_17.6); the rename (Aptix-Bio/Iris-Headers#5, X4) is merged into main |
-| Iris-File-Extension | `45845fb3bc42af431588503c856da7281cda70b8` (feature/VcpkgCaching_2, on feature/PngRetiredClinicalWriter) | — | the paired branch, until it merges |
+| Iris-File-Extension | `06ec6f28cd59ddf997e3dafc588054affc8f9da8` (feature/BoundaryResults_R-8, on main) | — | the paired branch: IFE's read calls return a `Result` and write their value through a reference (IFE R-8, decided 2026-11-25), https://github.com/Aptix-Bio/Iris-File-Extension/commit/06ec6f28cd59ddf997e3dafc588054affc8f9da8, the archive's SHA-512 computed 2026-11-26, until Aptix-Bio/Iris-File-Extension#11 merges; repinned then to its commit on main |
 | Emscripten SDK | 6.0.13, `35659964bc2762fffec0d257997fb61475f765b7` | — | https://github.com/emscripten-core/emsdk/releases/tag/6.0.13 |
 | sccache | v0.19.0 | — | through mozilla-actions/sccache-action v0.0.11 |
 

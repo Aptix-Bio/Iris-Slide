@@ -132,7 +132,9 @@ debugging detail across its boundary.
   `IrisSlide::SlideError` code, the offending value, the vendor's code when
   there is one, and where it failed. Boundary functions are `noexcept`, so an
   exception that escapes terminates loudly in a test instead of unwinding into
-  foreign code.
+  foreign code. A failure IFE reports is returned with IFE's own domain and
+  `Iris::File::FileError` code, as IFE returned it, so its exact code reaches
+  the caller (decided 2026-11-26, ARCHITECTURE D12).
 - **Every error carries the offending value:** `"unknown encoding: " +
   std::to_string(e)`, never `"bad encoding"`.
 - **Expected outcomes are values, not errors.** An empty tile in a sparse

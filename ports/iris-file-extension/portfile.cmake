@@ -1,12 +1,12 @@
 # VcpkgCaching_2 (FirstPartyPorts_2.7; RTM Build_01): Iris-File-Extension at a commit, verified by
-# the archive's SHA-512, in place of FetchContent at the tip of a branch. The commit is the tip of
-# the paired branch feature/VcpkgCaching_2, which adds IFE_Window.hpp to an Emscripten install and is
-# based on feature/PngRetiredClinicalWriter (itself on the rename, X4), until those merge.
+# the archive's SHA-512, in place of FetchContent at the tip of a branch. The commit is on the
+# paired branch feature/BoundaryResults_R-8 (IFE R-8), on which IFE's read calls return a Result
+# and write their value through a reference; repinned to IFE main once that pull request merges.
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO Aptix-Bio/Iris-File-Extension
-    REF 45845fb3bc42af431588503c856da7281cda70b8
-    SHA512 98282851ad8439fc8af69fe8fe407728944a282bbbafe232eabc2faeb3cc2b5d46e6073d60e0d3dd625263b395dc6bf4acede02a1840bf5171d6ceb46011600c
+    REF 06ec6f28cd59ddf997e3dafc588054affc8f9da8
+    SHA512 809de3561b89f50afd74f5e677373c7fd432724e4beac3a1d47eefd1541eb9b9c4120f824b26c8957e85da96d506b185065227c894fc6ce32ce6b3c54e558e50
     HEAD_REF main
 )
 # IFE generates its block layer from spec/*.json at configure (generator/, standard library only).

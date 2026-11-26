@@ -11,8 +11,11 @@ namespace IrisSlide {
 Iris::Result is_iris_slide_file(const std::string &file_path) noexcept
 {
     try {
-        // IFE's own domain and code are kept; the message gains the path.
-        Iris::Result result = Iris::File::Parser::open(file_path).is_iris_slide_file();
+        // RTM Api_06: IFE's own domain and code are kept; the message gains the path.
+        Iris::File::Parser parser;
+        Iris::Result result = Iris::File::create_parser({.filepath = file_path}, parser);
+        if (result.succeeded())
+            result = parser.is_iris_slide_file();
         if (result.failed())
             result.message = "Iris File Extension test failed (" + file_path + "): " + result.message;
         return result;
@@ -25,7 +28,10 @@ Iris::Result is_iris_slide_file(const std::string &file_path) noexcept
 Iris::Result validate_slide (const struct SlideOpenInfo &info) noexcept
 {
     try {
-        return Iris::File::Parser::open(info.filePath).validate_file_structure();
+        // RTM Api_06: a path IFE cannot map returns IFE's own Result.
+        Iris::File::Parser parser;
+        const Iris::Result opened = Iris::File::create_parser({.filepath = info.filePath}, parser);
+        return opened.failed() ? opened : parser.validate_file_structure();
     } catch (const std::exception &e) {
         return codec_failure(SlideError::FILE_NOT_OPENED, "Iris File Extension slide (" + 
             info.filePath + ") failed validation: " +
@@ -46,7 +52,9 @@ Slide open_slide (const struct SlideOpenInfo &info) noexcept
         
         // The Parser maps the file read-only and owns the mapping for as long
         // as the slide holds it.
-        return std::make_shared<Slide_t>(context, Iris::File::Parser::open(info.filePath));
+        Iris::File::Parser parser;
+        throw_if_failed(Iris::File::create_parser({.filepath = info.filePath}, parser));
+        return std::make_shared<Slide_t>(context, parser);
         
     } catch (const std::exception &e) {
         std::cerr   << "Failed to open the slide "
@@ -151,17 +159,17 @@ Slide_t::Slide_t    (const Context& cxt, const Iris::File::Parser& parser) :
 _context                                (cxt),
 _parser                                 (parser)
 {
-    // Lift now, so a structurally damaged file is refused when it is opened
-    // rather than on its first read.
-    _parser.abstraction();
+    // RTM Api_06: lift now, so a structurally damaged file is refused when it
+    // is opened rather than on its first read.
+    throw_if_failed(_parser.abstraction(_abstraction));
 }
 Version Slide_t::get_slide_codec_version() const
 {
-    return _parser.abstraction().metadata.codec;
+    return _abstraction->metadata.codec;
 }
 SlideInfo Slide_t::get_slide_info() const
 {
-    const auto& file = _parser.abstraction();
+    const auto& file = *_abstraction;
     return SlideInfo {
         .format         = file.tileTable.format,
         .encoding       = file.tileTable.encoding,
@@ -173,14 +181,20 @@ const Iris::File::Parser& Slide_t::get_slide_parser() const
 {
     return _parser;
 }
+const Iris::File::Abstraction::File& Slide_t::abstraction() const
+{
+    return *_abstraction;
+}
 Buffer Slide_t::get_slide_tile_entry(uint32_t layer, uint32_t tile_indx) const
 {
-    const auto stream = _parser.tile(layer, tile_indx);
+    std::span<const Iris::BYTE> stream;
+    throw_if_failed(_parser.tile(layer, tile_indx, stream));
     return Iris::Copy_strong_buffer_from_data(stream.data(), stream.size());
 }
 Buffer Slide_t::read_slide_tile(const SlideTileReadInfo &info) const
 {
-    const auto stream = _parser.tile(info.layerIndex, info.tileIndex);
+    std::span<const Iris::BYTE> stream;
+    throw_if_failed(_parser.tile(info.layerIndex, info.tileIndex, stream));
     if (stream.empty()) throw std::runtime_error
         ("no tile at layer " + std::to_string(info.layerIndex) +
          ", tile " + std::to_string(info.tileIndex) + " (NULL_TILE)");
@@ -214,7 +228,7 @@ Buffer Slide_t::read_slide_tile(const SlideTileReadInfo &info) const
         .compressed             = src,
         .optionalDestination    = dst_buffer,
         .desiredFormat          = info.desiredFormat,
-        .encoding               = _parser.abstraction().tileTable.encoding,
+        .encoding               = _abstraction->tileTable.encoding,
     });
     if (!dst_buffer) throw std::runtime_error
         ("Failed to decompress slide tile");
@@ -223,7 +237,7 @@ Buffer Slide_t::read_slide_tile(const SlideTileReadInfo &info) const
 }
 AssociatedImageInfo Slide_t::get_assoc_image_info (const std::string &image_label) const
 {
-    const auto& images   = _parser.abstraction().images;
+    const auto& images   = _abstraction->images;
     const auto image_itr = images.find(image_label);
     if (image_itr == images.cend())
         throw std::runtime_error("get_assoc_image_info failed as there is no image with label \""+
@@ -233,13 +247,15 @@ AssociatedImageInfo Slide_t::get_assoc_image_info (const std::string &image_labe
 }
 Buffer Slide_t::get_assoc_image (const std::string &image_label) const
 {
-    const auto stream = _parser.image(image_label);
+    std::span<const Iris::BYTE> stream;
+    throw_if_failed(_parser.image(image_label, stream));
     return Copy_strong_buffer_from_data(stream.data(), stream.size());
 }
 Buffer Slide_t::read_assc_image (const AssociatedImageReadInfo &info) const
 {
     const auto  image   = get_assoc_image_info(info.imageLabel);
-    const auto  stream  = _parser.image(info.imageLabel);
+    std::span<const Iris::BYTE> stream;
+    throw_if_failed(_parser.image(info.imageLabel, stream));
     Buffer src          = Iris::Wrap_weak_buffer_fom_data (stream.data(), stream.size());
     
     // Initialize the write destination
