@@ -767,7 +767,7 @@ empty
     pinned IFE 56f8c83 and through an overlay of IFE's branch (arm64 macOS,
     Release, `IRIS_SLIDE_BUILD_TESTS=ON`), ctest 5 of 5; the wasm32-emscripten
     module builds against the overlay; `tools/tests` 51 passed,
-    `tools/workflow_lint.py` 0 violations
+    `tools/workflow_lint.py` 0 violations ([ced3309](https://github.com/Aptix-Bio/Iris-Slide/commit/ced330985c19e2c8a7d515db2cc9cfc6e35a1632))
 - [ ] **VERIFY:** the maintainer reviews the public header's diff
 - [ ] **Gate:** CI green on both pull requests, Iris-Headers' first
 
