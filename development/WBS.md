@@ -748,6 +748,26 @@ empty
 - [ ] **ZStackRead_12.4** — a plane on the tile read description, or a
   refusal of multi-plane streams naming the plane count (A9) [Api_04]
   - [ ] Red: a two-plane fixture's tile decodes as one image
+- [x] **IfeReadResults_12.5** — IFE's read calls return a `Result` and write
+  their value through a reference (IFE R-8, decided 2026-11-25), so every call
+  Iris-Slide makes into them checks the `Result`: `Parser::open`, the Parser's
+  `abstraction`, `tile`, `tile_planes` and `image`, and the JavaScript module's
+  `abstract_file_structure`. Inside the library a failure is thrown on with
+  IFE's message (`throw_if_failed`, `src/IrisSlidePriv.hpp`) and the public
+  function's boundary returns it; `Slide_t` keeps a pointer to the parser's one
+  cached lift. The IFE port pins IFE's paired branch. Made on the branch
+  `feature/BoundaryResults_R-8`, named after IFE's work item instead of this
+  sprint, because IFE's `downstream` job builds the Iris-Slide branch named like
+  its own pull request's head. Done ahead of the sprint, since IFE's change
+  breaks this tree's build. [Api_06]
+  - [x] Red: main (a3242cb) does not compile against IFE 56f8c83, 21 errors in
+    `src/IrisSlide.cpp` and `src/IrisSlideEncoder.cpp`, the first "too few
+    arguments to function call, expected 2, have 1" (`Parser::open`)
+  - [x] Green: the library, the encoder and the tests build against the
+    pinned IFE 56f8c83 and through an overlay of IFE's branch (arm64 macOS,
+    Release, `IRIS_SLIDE_BUILD_TESTS=ON`), ctest 5 of 5; the wasm32-emscripten
+    module builds against the overlay; `tools/tests` 51 passed,
+    `tools/workflow_lint.py` 0 violations
 - [ ] **VERIFY:** the maintainer reviews the public header's diff
 - [ ] **Gate:** CI green on both pull requests, Iris-Headers' first
 

@@ -86,6 +86,15 @@ inline std::string unbuilt_tiles_refused (const std::string& refusal, const char
     return refusal + " " + encoding + ": Iris-Slide does not encode or decode tiles in this "
         "encoding yet (development/ARCHITECTURE.md Q11, Q13, Q14)";
 }
+// RTM Api_06
+/// IFE's read calls return a Result and never throw (IFE R-8, D30). Inside this
+/// library a failure is thrown on, as any failure here is, with IFE's message
+/// naming the offending value, and the public function's boundary turns it
+/// into this library's Result.
+inline void throw_if_failed (const Iris::Result& result)
+{
+    if (result.failed()) throw std::runtime_error(result.message);
+}
 } // END IRIS SLIDE NAMESPACE
 
 #endif /* IrisSlidePriv_h */

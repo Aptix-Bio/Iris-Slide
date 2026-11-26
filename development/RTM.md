@@ -104,6 +104,7 @@ flowchart LR
 | Api_02 | Decoder and encoder are separate libraries; nothing links what it does not use | A3, B2 | ApiSurface_11 | Static | Planned |
 | Api_03 | Every public call returns a `Result` and creates objects in the `create_<name>(Desc, out)` form | C14, A1, A4 | ResultBoundaries_12 | Contract | Planned |
 | Api_04 | Multi-plane tile streams are readable by plane or refused by name | A9 | ResultBoundaries_12 | Contract | Planned |
+| Api_06 | Every call Iris-Slide makes into IFE's read path checks the `Result` it returns (IFE R-8): a damaged file, a missing tile or a missing label fails with IFE's message naming the value | C14 | ResultBoundaries_12 | Integration: the build against IFE's paired branch, IFE's CI `Iris-Slide builds against this branch` | Implemented *(link owed: IfeReadResults_12.5)* |
 | Api_05 | `MetadataType` and `ImageOrientation` hold IFE 1.1's values | E1, Q9, X2 | ApiSurface_11 | Static | Planned |
 | Hygiene_01 | clang-tidy and warnings-as-errors are silent; no reserved identifiers, macros for constants or `goto` | A7 | CodeHygiene_13 | Static | Planned |
 | Hygiene_02 | Comments state what the code does | audit D2 | CodeHygiene_13 | Review | Planned |

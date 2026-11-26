@@ -11,6 +11,9 @@ namespace IrisSlide {
 class Slide_t {
     const Context                               _context;
     const Iris::File::Parser                    _parser;
+    // The parser's one cached lift, set by the constructor: valid while
+    // _parser lives, so every read below shares it and copies nothing.
+    const Iris::File::Abstraction::File*        _abstraction = nullptr;
 public:
     explicit Slide_t                  (const Context&, const Iris::File::Parser&);
     Slide_t                           (const Slide_t&) = delete;
@@ -23,6 +26,8 @@ public:
     // Return the read handle this slide forwards to (the encoder passes an Iris
     // source's tiles through with it)
     const Iris::File::Parser& get_slide_parser  () const;
+    // Return the slide's lifted structure (the parser's cached lift)
+    const Iris::File::Abstraction::File& get_slide_abstraction () const;
     // Get the compressed slide tile entry
     Buffer              get_slide_tile_entry    (uint32_t layer, uint32_t tile_indx) const;
     // Read the slide tile entry to return a decompressed tile

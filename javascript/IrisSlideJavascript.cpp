@@ -418,7 +418,12 @@ emscripten::val _openSlide(const std::string& url) {
     if (!fetch_structural_prefix(url, file_size, prefix, version))
         throw std::runtime_error
         ("Failed to fetch the hosted file's structural blocks from remote endpoint ("+url+")");
-    auto file = Iris::File::abstract_file_structure({prefix.data(), prefix.size()});
+    // IFE's lift returns a Result (IFE R-8); its message names the offending value.
+    Iris::File::Abstraction::File file;
+    if (const Iris::Result lifted = Iris::File::abstract_file_structure({prefix.data(), prefix.size()}, file);
+        lifted.failed())
+        throw std::runtime_error
+        ("The hosted file's structure could not be lifted ("+url+"): " + lifted.message);
     return emscripten::val(std::make_shared<Slide_t>(url,file));
 }
 } // END IRIS_SLIDE
