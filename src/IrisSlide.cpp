@@ -13,7 +13,7 @@ Iris::Result is_iris_slide_file(const std::string &file_path) noexcept
     try {
         // RTM Api_06: IFE's own domain and code are kept; the message gains the path.
         Iris::File::Parser parser;
-        Iris::Result result = Iris::File::Parser::open(file_path, parser);
+        Iris::Result result = Iris::File::create_parser({.filepath = file_path}, parser);
         if (result.succeeded())
             result = parser.is_iris_slide_file();
         if (result.failed())
@@ -30,7 +30,7 @@ Iris::Result validate_slide (const struct SlideOpenInfo &info) noexcept
     try {
         // RTM Api_06: a path IFE cannot map returns IFE's own Result.
         Iris::File::Parser parser;
-        const Iris::Result opened = Iris::File::Parser::open(info.filePath, parser);
+        const Iris::Result opened = Iris::File::create_parser({.filepath = info.filePath}, parser);
         return opened.failed() ? opened : parser.validate_file_structure();
     } catch (const std::exception &e) {
         return codec_failure(SlideError::FILE_NOT_OPENED, "Iris File Extension slide (" + 
@@ -53,7 +53,7 @@ Slide open_slide (const struct SlideOpenInfo &info) noexcept
         // The Parser maps the file read-only and owns the mapping for as long
         // as the slide holds it.
         Iris::File::Parser parser;
-        throw_if_failed(Iris::File::Parser::open(info.filePath, parser));
+        throw_if_failed(Iris::File::create_parser({.filepath = info.filePath}, parser));
         return std::make_shared<Slide_t>(context, parser);
         
     } catch (const std::exception &e) {
@@ -72,6 +72,8 @@ Iris::Result get_slide_info(const Slide &slide, SlideInfo& info) noexcept
         info = slide->get_slide_info();
         
         return Iris::Result::success();
+    } catch (const ResultFailure& failure) {   // RTM Api_06: IFE's domain and code, as they came
+        return failure.result();
     } catch (const std::exception& e) {
         return codec_failure(SlideError::SLIDE_INFO_UNREADABLE, std::string("Failed to read slide info: ") + e.what());
     }
@@ -106,6 +108,8 @@ Result get_associated_image_info(const Slide &slide, AssociatedImageInfo &info) 
         info = slide->get_assoc_image_info(info.imageLabel);
         return Iris::Result::success();
         
+    } catch (const ResultFailure& failure) {   // RTM Api_06: IFE's domain and code, as they came
+        return failure.result();
     } catch (const std::exception& e) {
         return codec_failure(SlideError::ASSOCIATED_IMAGE_UNREADABLE, std::string("Failed to get associated image info: ") +
             e.what());
@@ -135,6 +139,8 @@ Iris::Result annotate_slide(const Annotation &annotation) noexcept
         
         assert(false && "IrisSlide::annotate_slide() in IrisSlide.cpp not yet fully written");
 //        return annotation.slide->write_slide_annotation(annotation);
+    } catch (const ResultFailure& failure) {   // RTM Api_06: IFE's domain and code, as they came
+        return failure.result();
     } catch (std::runtime_error& e) {
         return codec_failure(SlideError::ANNOTATION_NOT_WRITTEN, std::string("Failed to annotate the codec slide: ") +
             e.what());
@@ -150,6 +156,8 @@ Iris::Result get_slide_annotations(const Slide &slide, Annotations &annotations)
         annotations.clear();
         
         return Iris::Result::success();
+    } catch (const ResultFailure& failure) {   // RTM Api_06: IFE's domain and code, as they came
+        return failure.result();
     } catch (std::runtime_error& e) {
         return codec_failure(SlideError::ANNOTATIONS_UNREADABLE, std::string("Failed to retrieve slide annotation objects: ") +
             e.what());

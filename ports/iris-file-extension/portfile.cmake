@@ -5,8 +5,8 @@
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO Aptix-Bio/Iris-File-Extension
-    REF 56f8c832dbc9224e51073020f33c51721a7dac37
-    SHA512 a711bc22b2073be26bdf0dc74e60fcd13a7d7614c2a10d066dfb872bf4b2fbf058d84e0ba52ab752c4b77b6836085d8095520cae570215724ffb4c9b804d21c2
+    REF 06ec6f28cd59ddf997e3dafc588054affc8f9da8
+    SHA512 809de3561b89f50afd74f5e677373c7fd432724e4beac3a1d47eefd1541eb9b9c4120f824b26c8957e85da96d506b185065227c894fc6ce32ce6b3c54e558e50
     HEAD_REF main
 )
 # IFE generates its block layer from spec/*.json at configure (generator/, standard library only).

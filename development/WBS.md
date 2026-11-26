@@ -109,7 +109,7 @@ header every lane uses.
 | EncoderConcurrency_9 | the encoder's lifecycle suite clean under ThreadSanitizer | C7, C8, C16 (destructor), A5, A6 | `todo` |
 | DicomBridge_10 | DICOM fixtures encode correctly or are refused by name under AddressSanitizer | C4, C11, C12 | `todo` |
 | ApiSurface_11 | every declaration in `IrisSlideCore.hpp` links against the installed decoder and encoder libraries | A2, A3, B2 | `todo`; one task `blocked` on Q7 |
-| ResultBoundaries_12 | every public call returns a `Result`; no test writes to stderr | C14 (API), A1 (`create_` form), A4 (boundary helper), A9 | `todo` |
+| ResultBoundaries_12 | every public call returns a `Result`; no test writes to stderr | C14 (API), A1 (`create_` form), A4 (boundary helper), A9 | `doing`: IfeReadResults_12.5 on pull request #4, forced by IFE R-8 |
 | CodeHygiene_13 | clang-tidy and warnings-as-errors silent over the tree | A7, audit D2 | `todo` |
 | LicensedCodecInterface_14 | a test codec library loaded at run time decodes its encoding; without it, a refusal naming the encoding | Q3, Q4, X5 | `blocked` on Q3, Q4 |
 | PythonBinding_15 | `pytest` and `mypy --strict` green; a failed read raises | A8, C14 (Python) | `todo` |
@@ -722,7 +722,7 @@ Shown by: `ctest --preset release -R ExportedSymbols`
 - [ ] **VERIFY:** the maintainer reviews the public header's diff
 - [ ] **Gate:** CI green on both pull requests, Iris-Headers' first
 
-## ResultBoundaries_12 — every public call returns a `Result` `todo` · needs ApiSurface_11
+## ResultBoundaries_12 — every public call returns a `Result` `doing` (IfeReadResults_12.5, ahead of ApiSurface_11) · needs ApiSurface_11
 
 Purpose: failures are returned as null with the reason on stderr (C14), and
 objects are created outside the `create_<name>(Desc, out) -> Result` form
@@ -748,21 +748,27 @@ empty
 - [ ] **ZStackRead_12.4** — a plane on the tile read description, or a
   refusal of multi-plane streams naming the plane count (A9) [Api_04]
   - [ ] Red: a two-plane fixture's tile decodes as one image
-- [x] **IfeReadResults_12.5** — every call Iris-Slide makes into IFE's read path checks the `Result` it returns (IFE R-8) ([ced3309](https://github.com/Aptix-Bio/Iris-Slide/commit/ced330985c19e2c8a7d515db2cc9cfc6e35a1632)) [Api_06]
+- [x] **IfeReadResults_12.5** — every call Iris-Slide makes into IFE's read path checks the `Result` it returns, and an IFE failure reaches the caller with IFE's domain and code (IFE R-8) ([ced3309](https://github.com/Aptix-Bio/Iris-Slide/commit/ced330985c19e2c8a7d515db2cc9cfc6e35a1632)) [Api_06]
   IFE's read calls return a `Result` and write their value through a reference
-  (IFE R-8, decided 2026-11-25): `Parser::open`, the Parser's `abstraction`,
-  `tile`, `tile_planes` and `image`, and the JavaScript module's
+  (IFE R-8, decided 2026-11-25): IFE's `create_parser` (in place of
+  `Parser::open`, IFE decided 2026-11-26), the Parser's `abstraction`, `tile`,
+  `tile_planes` and `image`, and the JavaScript module's
   `abstract_file_structure`. A path IFE cannot map returns IFE's own `Result`
-  from `is_iris_slide_file` and `validate_slide`; inside the library a failure
-  is thrown on with IFE's message (`throw_if_failed`, `src/IrisSlidePriv.hpp`)
-  and the public function's boundary returns it; `Slide_t` keeps a pointer to
-  the parser's one cached lift (`abstraction()`). The IFE port pins IFE's
-  paired branch. Made on the branch `feature/BoundaryResults_R-8`, named after
-  IFE's work item instead of this sprint, because IFE's `downstream` job
-  builds the Iris-Slide branch named like its own pull request's head. Done
-  ahead of the sprint, since IFE's change breaks this tree's build.
-  - [x] Red: on main ([a3242cb](https://github.com/Aptix-Bio/Iris-Slide/commit/a3242cb258dedafeb1dcc2ed7d84eaaa12fae2ff)) with its pinned IFE 45845fb, `tests/ife_read_results_test.cpp` does not compile ("no member named 'NOT_MAPPED' in 'Iris::File::FileError'"); with that code check reduced to the domain, 2 of 11 assertions fail ("A path IFE cannot map": the domain is Iris-Slide's, not IFE's); the damaged-block and missing-label cases pass there, recording behaviour the change keeps. Main also does not compile against IFE 56f8c83: 21 errors, the first "too few arguments to function call, expected 2, have 1" (`Parser::open`)
-  - [x] Green: ctest 8 of 8, `[Api_06]` 3 of 3 test cases, against the pinned IFE 56f8c83 (arm64 macOS, Release, `IRIS_SLIDE_BUILD_TESTS=ON`); the wasm32-emscripten module builds; `tools/tests` 51 passed, `tools/workflow_lint.py` 0 violations; CI run 45829164326 green on every cell at bd4b7f2 ([ced3309](https://github.com/Aptix-Bio/Iris-Slide/commit/ced330985c19e2c8a7d515db2cc9cfc6e35a1632))
+  from `is_iris_slide_file` and `validate_slide`. Decided 2026-11-26: inside
+  the library an IFE failure is thrown as a `ResultFailure`
+  (`throw_if_failed`, `src/IrisSlidePriv.hpp`) carrying IFE's domain, code,
+  message and place, and the Result-returning public calls of
+  `src/IrisSlide.cpp` return it as it came, instead of re-wrapping it under
+  Iris-Slide's domain; this is the IFE part of BoundaryHelper_12.1, whose one
+  boundary helper is still owed. `Slide_t` keeps a pointer to the parser's one
+  cached lift (`abstraction()`). The IFE port pins IFE's paired branch. Made on
+  the branch `feature/BoundaryResults_R-8`, named after IFE's work item instead
+  of this sprint, because IFE's `downstream` job builds the Iris-Slide branch
+  named like its own pull request's head. Done ahead of the sprint, since IFE's
+  change breaks this tree's build.
+  - [x] Red: on main ([a3242cb](https://github.com/Aptix-Bio/Iris-Slide/commit/a3242cb258dedafeb1dcc2ed7d84eaaa12fae2ff)) with its pinned IFE 45845fb, `tests/ife_read_results_test.cpp` does not compile ("no member named 'NOT_MAPPED' in 'Iris::File::FileError'"); with that code check reduced to the domain, 2 of 11 assertions fail ("A path IFE cannot map": the domain is Iris-Slide's); the damaged-block and missing-label cases pass there, recording behaviour the change keeps. Main also does not compile against IFE 56f8c83: 21 errors, the first "too few arguments to function call, expected 2, have 1" (`Parser::open`)
+  - [x] Red: at [adb1a39](https://github.com/Aptix-Bio/Iris-Slide/commit/adb1a391efee91835fcbac12553f903420ad1f61) against IFE 06ec6f2 through an overlay port, the ResultFailure case does not compile ("no type named 'ResultFailure' in namespace 'IrisSlide'"), nor does `src/IrisSlide.cpp` ("no member named 'open' in 'Iris::File::Parser'")
+  - [x] Green: ctest 9 of 9, `[Api_06]` 4 of 4 test cases (15 assertions), against the pinned IFE 06ec6f2 (arm64 macOS, Release, `IRIS_SLIDE_BUILD_TESTS=ON`); `tools/tests` 51 passed, `tools/workflow_lint.py` 0 violations; at bd4b7f2, CI run 45829164326 green on every cell, the wasm32-emscripten module included ([ced3309](https://github.com/Aptix-Bio/Iris-Slide/commit/ced330985c19e2c8a7d515db2cc9cfc6e35a1632))
 - [ ] **VERIFY:** the maintainer reviews the public header's diff
 - [ ] **Gate:** CI green on both pull requests, Iris-Headers' first
 
@@ -1120,3 +1126,16 @@ audit marked closed with its commit
   (D11, Encode_08); how a warning reaches the caller is Q15. D11, Q13, Q14,
   BlockTileTranscode_5.5 and BlockTileEncodeParity_7.7 updated; no code
   changes.
+- **2026-11-26, IFE's read calls return a Result.** IFE's read path stopped
+  throwing across its API (IFE R-8, Aptix-Bio/Iris-File-Extension#11), so
+  every call Iris-Slide makes into it checks the `Result`, and the IFE port
+  pins IFE's paired branch (IfeReadResults_12.5, pull request #4, on the
+  branch `feature/BoundaryResults_R-8` that IFE's `downstream` job pairs).
+  The review findings on #4 and the maintainer's decisions of 2026-11-26
+  followed: IFE's `create_parser` replaces `Parser::open`; an IFE failure
+  reaches the caller with IFE's domain and code (`ResultFailure`, the IFE part
+  of BoundaryHelper_12.1); ResultBoundaries_12 is `doing`. IFE's `downstream`
+  job fails #11 as a coordinated change until this merges.
+  **Next:** merge IFE#11, re-pin the IFE port to its commit on IFE `main` if
+  the merge rewrote it, and merge #4; then BoundaryHelper_12.1's one boundary
+  helper.
