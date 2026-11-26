@@ -72,8 +72,6 @@ Iris::Result get_slide_info(const Slide &slide, SlideInfo& info) noexcept
         info = slide->get_slide_info();
         
         return Iris::Result::success();
-    } catch (const ResultFailure& failure) {   // RTM Api_06: IFE's domain and code, as they came
-        return failure.result();
     } catch (const std::exception& e) {
         return codec_failure(SlideError::SLIDE_INFO_UNREADABLE, std::string("Failed to read slide info: ") + e.what());
     }
@@ -108,8 +106,6 @@ Result get_associated_image_info(const Slide &slide, AssociatedImageInfo &info) 
         info = slide->get_assoc_image_info(info.imageLabel);
         return Iris::Result::success();
         
-    } catch (const ResultFailure& failure) {   // RTM Api_06: IFE's domain and code, as they came
-        return failure.result();
     } catch (const std::exception& e) {
         return codec_failure(SlideError::ASSOCIATED_IMAGE_UNREADABLE, std::string("Failed to get associated image info: ") +
             e.what());
@@ -139,8 +135,6 @@ Iris::Result annotate_slide(const Annotation &annotation) noexcept
         
         assert(false && "IrisSlide::annotate_slide() in IrisSlide.cpp not yet fully written");
 //        return annotation.slide->write_slide_annotation(annotation);
-    } catch (const ResultFailure& failure) {   // RTM Api_06: IFE's domain and code, as they came
-        return failure.result();
     } catch (std::runtime_error& e) {
         return codec_failure(SlideError::ANNOTATION_NOT_WRITTEN, std::string("Failed to annotate the codec slide: ") +
             e.what());
@@ -156,8 +150,6 @@ Iris::Result get_slide_annotations(const Slide &slide, Annotations &annotations)
         annotations.clear();
         
         return Iris::Result::success();
-    } catch (const ResultFailure& failure) {   // RTM Api_06: IFE's domain and code, as they came
-        return failure.result();
     } catch (std::runtime_error& e) {
         return codec_failure(SlideError::ANNOTATIONS_UNREADABLE, std::string("Failed to retrieve slide annotation objects: ") +
             e.what());

@@ -757,10 +757,12 @@ empty
   from `is_iris_slide_file` and `validate_slide`. Decided 2026-11-26: inside
   the library an IFE failure is thrown as a `ResultFailure`
   (`throw_if_failed`, `src/IrisSlidePriv.hpp`) carrying IFE's domain, code,
-  message and place, and the Result-returning public calls of
-  `src/IrisSlide.cpp` return it as it came, instead of re-wrapping it under
-  Iris-Slide's domain; this is the IFE part of BoundaryHelper_12.1, whose one
-  boundary helper is still owed. `Slide_t` keeps a pointer to the parser's one
+  message and place (ARCHITECTURE D12), and `is_iris_slide_file` and
+  `validate_slide` return IFE's own `Result`, instead of re-wrapping it under
+  Iris-Slide's domain. This advances BoundaryHelper_12.1, whose one boundary
+  helper, returning a thrown `ResultFailure` as it came, is still owed: no
+  Result-returning call reaches a thrown IFE failure until CreateForm_12.2 and
+  ReadsReturnResult_12.3. `Slide_t` keeps a pointer to the parser's one
   cached lift (`abstraction()`). The IFE port pins IFE's paired branch. Made on
   the branch `feature/BoundaryResults_R-8`, named after IFE's work item instead
   of this sprint, because IFE's `downstream` job builds the Iris-Slide branch
@@ -768,7 +770,7 @@ empty
   change breaks this tree's build.
   - [x] Red: on main ([a3242cb](https://github.com/Aptix-Bio/Iris-Slide/commit/a3242cb258dedafeb1dcc2ed7d84eaaa12fae2ff)) with its pinned IFE 45845fb, `tests/ife_read_results_test.cpp` does not compile ("no member named 'NOT_MAPPED' in 'Iris::File::FileError'"); with that code check reduced to the domain, 2 of 11 assertions fail ("A path IFE cannot map": the domain is Iris-Slide's); the damaged-block and missing-label cases pass there, recording behaviour the change keeps. Main also does not compile against IFE 56f8c83: 21 errors, the first "too few arguments to function call, expected 2, have 1" (`Parser::open`)
   - [x] Red: at [adb1a39](https://github.com/Aptix-Bio/Iris-Slide/commit/adb1a391efee91835fcbac12553f903420ad1f61) against IFE 06ec6f2 through an overlay port, the ResultFailure case does not compile ("no type named 'ResultFailure' in namespace 'IrisSlide'"), nor does `src/IrisSlide.cpp` ("no member named 'open' in 'Iris::File::Parser'")
-  - [x] Green: ctest 9 of 9, `[Api_06]` 4 of 4 test cases (15 assertions), against the pinned IFE 06ec6f2 (arm64 macOS, Release, `IRIS_SLIDE_BUILD_TESTS=ON`); `tools/tests` 51 passed, `tools/workflow_lint.py` 0 violations; at bd4b7f2, CI run 45829164326 green on every cell, the wasm32-emscripten module included ([ced3309](https://github.com/Aptix-Bio/Iris-Slide/commit/ced330985c19e2c8a7d515db2cc9cfc6e35a1632), [4aee40d](https://github.com/Aptix-Bio/Iris-Slide/commit/4aee40d5defff83abc388d3872c73cf2ce93de33))
+  - [x] Green: ctest 9 of 9, `[Api_06]` 4 of 4 test cases (15 assertions), against the pinned IFE 06ec6f2 (arm64 macOS, Release, `IRIS_SLIDE_BUILD_TESTS=ON`); `tools/tests` 51 passed, `tools/workflow_lint.py` 0 violations; at [bd4b7f2](https://github.com/Aptix-Bio/Iris-Slide/commit/bd4b7f29208a97dfeb6e3b6abf1fe7e7f995ec8b), CI run 45829164326 green on every cell, the wasm32-emscripten module included ([ced3309](https://github.com/Aptix-Bio/Iris-Slide/commit/ced330985c19e2c8a7d515db2cc9cfc6e35a1632), [4aee40d](https://github.com/Aptix-Bio/Iris-Slide/commit/4aee40d5defff83abc388d3872c73cf2ce93de33))
 - [ ] **VERIFY:** the maintainer reviews the public header's diff
 - [ ] **Gate:** CI green on both pull requests, Iris-Headers' first
 

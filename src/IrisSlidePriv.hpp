@@ -89,9 +89,12 @@ inline std::string unbuilt_tiles_refused (const std::string& refusal, const char
         "encoding yet (development/ARCHITECTURE.md Q11, Q13, Q14)";
 }
 // RTM Api_06
-/// A failed Result from a library Iris-Slide calls (IFE), thrown inside Iris-Slide and returned
-/// at its boundary as it came: the domain, code, message and place of the original, so IFE's
-/// FileError reaches the caller (decided 2026-11-26, ResultBoundaries_12.1). Derived from
+/// A failed Result from a library Iris-Slide calls (IFE), thrown inside Iris-Slide, carrying the
+/// domain, code, message and place of the original, so a boundary that returns a Result returns
+/// IFE's FileError as it came (ARCHITECTURE D12, decided 2026-11-26). No such boundary reaches
+/// an IFE call yet: the reads that do (open, tile and image reads) return a Slide or a Buffer
+/// until CreateForm_12.2 and ReadsReturnResult_12.3, and BoundaryHelper_12.1's one helper will
+/// return it. Derived from
 /// std::runtime_error so the message is copied without allocating, as an exception's must be,
 /// and so a boundary that returns no Result still reads it through what().
 class ResultFailure : public std::runtime_error {

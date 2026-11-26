@@ -5,7 +5,7 @@
 // value: a path IFE cannot map, a damaged block. A label no image carries fails naming the label.
 // Decided 2026-11-26: an IFE failure thrown inside Iris-Slide (ResultFailure, from
 // throw_if_failed) reaches the caller of a Result-returning public call with IFE's domain and code,
-// instead of re-wrapped as a std::runtime_error under Iris-Slide's (ResultBoundaries_12.1).
+// instead of re-wrapped as a std::runtime_error under Iris-Slide's (ARCHITECTURE D12; BoundaryHelper_12.1).
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
