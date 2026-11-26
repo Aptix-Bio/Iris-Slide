@@ -9,6 +9,7 @@ add_executable(
     IrisSlideTests
     $<TARGET_OBJECTS:IrisSlideLib>
     tile_encoding_test.cpp
+    ife_read_results_test.cpp
 )
 set(test_dependencies ${IrisSlideDependencies})
 if (IRIS_BUILD_ENCODER)
