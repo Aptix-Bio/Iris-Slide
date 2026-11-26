@@ -27,7 +27,7 @@ public:
     // source's tiles through with it)
     const Iris::File::Parser& get_slide_parser  () const;
     // Return the slide's lifted structure (the parser's cached lift)
-    const Iris::File::Abstraction::File& get_slide_abstraction () const;
+    const Iris::File::Abstraction::File& abstraction          () const;
     // Get the compressed slide tile entry
     Buffer              get_slide_tile_entry    (uint32_t layer, uint32_t tile_indx) const;
     // Read the slide tile entry to return a decompressed tile

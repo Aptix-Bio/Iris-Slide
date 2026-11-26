@@ -11,7 +11,7 @@ namespace IrisSlide {
 Iris::Result is_iris_slide_file(const std::string &file_path) noexcept
 {
     try {
-        // IFE's own domain and code are kept; the message gains the path.
+        // RTM Api_06: IFE's own domain and code are kept; the message gains the path.
         Iris::File::Parser parser;
         Iris::Result result = Iris::File::Parser::open(file_path, parser);
         if (result.succeeded())
@@ -28,6 +28,7 @@ Iris::Result is_iris_slide_file(const std::string &file_path) noexcept
 Iris::Result validate_slide (const struct SlideOpenInfo &info) noexcept
 {
     try {
+        // RTM Api_06: a path IFE cannot map returns IFE's own Result.
         Iris::File::Parser parser;
         const Iris::Result opened = Iris::File::Parser::open(info.filePath, parser);
         return opened.failed() ? opened : parser.validate_file_structure();
@@ -158,8 +159,8 @@ Slide_t::Slide_t    (const Context& cxt, const Iris::File::Parser& parser) :
 _context                                (cxt),
 _parser                                 (parser)
 {
-    // Lift now, so a structurally damaged file is refused when it is opened
-    // rather than on its first read.
+    // RTM Api_06: lift now, so a structurally damaged file is refused when it
+    // is opened rather than on its first read.
     throw_if_failed(_parser.abstraction(_abstraction));
 }
 Version Slide_t::get_slide_codec_version() const
@@ -180,7 +181,7 @@ const Iris::File::Parser& Slide_t::get_slide_parser() const
 {
     return _parser;
 }
-const Iris::File::Abstraction::File& Slide_t::get_slide_abstraction() const
+const Iris::File::Abstraction::File& Slide_t::abstraction() const
 {
     return *_abstraction;
 }
