@@ -3,6 +3,9 @@
 // (IFE R-8, decided 2026-11-25). Iris-Slide's public calls that read a file through IFE return
 // IFE's failure Result as it came, with IFE's domain, code and a message naming the offending
 // value: a path IFE cannot map, a damaged block. A label no image carries fails naming the label.
+// Decided 2026-11-26: an IFE failure thrown inside Iris-Slide (ResultFailure, from
+// throw_if_failed) reaches the caller of a Result-returning public call with IFE's domain and code,
+// instead of re-wrapped as a std::runtime_error under Iris-Slide's (ResultBoundaries_12.1).
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -139,4 +142,23 @@ TEST_CASE("A label no associated image carries fails naming the label", "[Api_06
     const Iris::Result read = IrisSlide::get_associated_image_info(slide, info);
     CHECK(read.failed());
     CHECK_THAT(read.message, ContainsSubstring("no such label"));
+}
+
+TEST_CASE("An IFE failure thrown inside Iris-Slide keeps IFE's domain, code and message", "[Api_06]")
+{
+    const ScratchDirectory scratch;
+    const std::string missing = (scratch.path / "no_such_slide.iris").string();
+    Iris::File::Parser parser;
+    const Iris::Result opened = Iris::File::create_parser({.filepath = missing}, parser);
+    REQUIRE(opened.failed());
+
+    try {
+        IrisSlide::throw_if_failed(opened);
+        FAIL("throw_if_failed returned on a failure");
+    } catch (const IrisSlide::ResultFailure& thrown) {
+        const Iris::Result result = thrown.result();
+        CHECK(is_ife_failure(result, Iris::File::FileError::NOT_MAPPED));
+        CHECK_THAT(result.message, ContainsSubstring(missing));
+        CHECK_THAT(thrown.what(), ContainsSubstring(missing));
+    }
 }
