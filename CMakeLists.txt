@@ -122,6 +122,9 @@ set (IrisSlideEncoderDependencies ${IrisSlideDependencies} Threads::Threads)
 if (IRIS_BUILD_ENCODER)
     find_package(unofficial-libdicom CONFIG REQUIRED)
     list(APPEND IrisSlideEncoderDependencies unofficial::libdicom::dicom)
+    # RTM Dicom_05: OpenJPEG decodes JPEG 2000 and HTJ2K source frames (ARCHITECTURE D17).
+    find_package(OpenJPEG CONFIG REQUIRED)
+    list(APPEND IrisSlideEncoderDependencies openjp2)
     if (IRIS_USE_OPENSLIDE)
         message(STATUS "BUILDING IRIS SLIDE ENCODER: Encoding from vendor files requires Openslide")
         find_package(openslide-bin CONFIG REQUIRED)
@@ -147,6 +150,7 @@ set (
     ${SLIDE_SOURCE_DIR}/IrisSlideDeriveLayers.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideDcmBridge.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideEncoder.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideOpenJpeg.cpp
 )
 set (
     IrisSlideInclude

@@ -14,7 +14,8 @@ add_executable(
 set(test_dependencies ${IrisSlideDependencies})
 if (IRIS_BUILD_ENCODER)
     target_sources(IrisSlideTests PRIVATE ${IrisSlideEncoderSources} encoder_attributes_test.cpp
-                   source_codec_test.cpp)
+                   source_codec_test.cpp openjpeg_frames_test.cpp
+                   local_slides_test.cpp)
     set(test_dependencies ${IrisSlideEncoderDependencies})
 endif()
 iris_slide_compile_settings(IrisSlideTests)
@@ -24,3 +25,9 @@ target_link_libraries(
     PRIVATE ${test_dependencies} Catch2::Catch2WithMain
 )
 catch_discover_tests(IrisSlideTests)
+# LocalSlideInputs_22.6 (RTM Testing_01): the folder of the maintainer's own slides the local-slide
+# tests read, decided 2026-11-27. No slide enters the repository; unset, those tests fail by name.
+set(IRIS_SLIDE_TEST_SLIDES "" CACHE PATH "Folder of DICOM slides the local-slide tests read")
+if (IRIS_SLIDE_TEST_SLIDES)
+    target_compile_definitions(IrisSlideTests PRIVATE IRIS_SLIDE_TEST_SLIDES="${IRIS_SLIDE_TEST_SLIDES}")
+endif()

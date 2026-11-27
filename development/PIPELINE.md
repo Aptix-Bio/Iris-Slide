@@ -171,6 +171,7 @@ and from each upstream's release.
 | zlib | 1.3.2#2 (baseline; libpng's dependency) | zlib-ng 2.3.3 | **differs**: vcpkg's libpng depends on the `zlib` port; zlib-ng's port builds its zlib-compatible library only when a triplet sets `ZLIB_COMPAT`, and the `zlib` port would still be installed for libpng. Ends with libpng (PngRemoved_4) |
 | libdicom | 1.3.0#1 (overlay: vcpkg's port plus a CMake config) | v1.3.0 | vcpkg baseline |
 | OpenSlide | openslide-bin 4.0.1.2 (OpenSlide 4.0.1), each archive by SHA-512 | 4.0.1.2 | https://github.com/openslide/openslide-bin/releases/tag/v4.0.1.2; GitHub's SHA-256 of each asset matched |
+| OpenJPEG | 2.5.4 (override, feature `encoder`, no default features) | — | vcpkg baseline; BSD-2-Clause; decodes JPEG 2000 and, since 2.5.0, HTJ2K (OpenJPEG NEWS, https://github.com/uclouvain/openjpeg/blob/v2.5.4/NEWS.md, read 2026-11-27); released September 2025 (ARCHITECTURE D17) |
 | Vulkan-Headers | 1.4.363.0 (override) | vulkan-sdk-1.4.363.0 | vcpkg baseline |
 | VulkanMemoryAllocator | 3.4.0 (override) | v3.4.0 | vcpkg baseline |
 | GLM | 1.0.3 (override) | 1.0.3 | vcpkg baseline |
