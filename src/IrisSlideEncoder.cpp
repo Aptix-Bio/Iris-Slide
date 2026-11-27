@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <concepts>
 #include <atomic>
 #include <limits>
 #include <string_view>

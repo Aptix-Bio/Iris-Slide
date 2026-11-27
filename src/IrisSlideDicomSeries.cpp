@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 
 extern "C" {
