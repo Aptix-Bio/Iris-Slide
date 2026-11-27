@@ -17,10 +17,10 @@
 # GitHub lets only private repositories use a private repository's actions ("Allowing access to
 # components in a private repository", read 2026-11-24), so this public repository cannot name it
 # in `uses:`. Each job checks it out at GOVERNANCE_COMMIT with GOVERNANCE_READ_TOKEN, a token with
-# read access to that repository's contents and to the private repository of the family's shared
-# rules and plans (reissued 2026-11-27), and runs its composite action from that path. The token
-# goes to that checkout step and, as `planning-token`, to the bot's action in both jobs, which
-# fetches the rules and plans read-only and masks it; no other step receives it, and it is not
+# read access to that repository's contents and to the shared rules and plans, which are kept
+# privately (reissued 2026-11-27), and runs its composite action from that path. The token goes to
+# that checkout step and, as `planning-token`, to the bot's action in both jobs, which reads the
+# rules and plans read-only and masks it; no other step receives it, and it is not
 # persisted in any checkout's git configuration. A local action has no `github.action_ref`, so BOT_REF is the pin.
 #
 # Why `pull_request_target` is safe here (GitHub, "Securely using pull_request_target",
@@ -57,11 +57,13 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # The review bot's commit, governance 59cfd33 (the merge of its PR 13): the bot that reads the
+  # The review bot's commit, governance 1afbc99 (the merge of its PR 16): the bot that reads the
   # shared rules and items and this repository's privately kept plans from a read-only checkout
-  # its action makes with `planning-token`. Moving it is a reviewed change to this file, which
+  # its action makes with `planning-token`, and whose commit trace takes a work-item ID to hold a
+  # lowercase letter, so an UPPER_SNAKE constant in code is not traced as an item (moved
+  # 2026-11-27 from 59cfd33). Moving it is a reviewed change to this file, which
   # .github/CODEOWNERS gives to the maintainer.
-  GOVERNANCE_COMMIT: 59cfd336d368529ac2264ac316d8e93632e65b1c
+  GOVERNANCE_COMMIT: 1afbc996fc0426cbc190b6518c8fd7dcb0516b8e
 
 jobs:
   review:
