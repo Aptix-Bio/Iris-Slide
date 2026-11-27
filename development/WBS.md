@@ -46,7 +46,7 @@ ARCHITECTURE.md's defects, open questions and external dependencies.
 
 ## Sprint plan
 
-Twenty sprints. VcpkgCaching_2 runs first, before TestHarness_1 (decided
+Twenty-one sprints. VcpkgCaching_2 runs first, before TestHarness_1 (decided
 2026-11-24: CI uses vcpkg on every branch, with every build cache shared): every
 later sprint's pull request then builds from prebuilt dependencies and a shared
 compiler cache. It took over DependencyPins_16 and the first two tasks of
@@ -88,6 +88,8 @@ flowchart LR
     S16 --> S19
     S17 --> S19
     S18 --> S19
+    S12 --> S20["PhantomSlide_20"]
+    S20 --> S19
 ```
 
 Four lanes run in parallel once TestHarness_1 is merged, since they touch
@@ -116,6 +118,7 @@ header every lane uses.
 | WasmBinding_16 | the WASM module's prefix fetch passes against a 5 GiB window | C17, A4 (second `Slide_t`) | `todo` |
 | WorkflowRunners_17 | a release-candidate tag produces checked artifacts; the remaining pins and the cache identities' own project; every pull request from an Aptix-Bio branch reviewed by the review bot against Iris-Slide's rubric | B1 (the rest), B5 (wheels), B6, A4 (version parse) | `doing` |
 | ReadBenchmark_18 | tiles per second measured against the paper, held by a gate | audit §4 (speed), Q8 | `todo` |
+| PhantomSlide_20 | a slide in a test object store opened as a phantom: windows planned, handed to a test transport, landed and decoded, clean under ThreadSanitizer | D13 (Goal_23) | `todo` |
 | PublicRelease_19 | the documents match the code, a fresh audit finds nothing open, the maintainer makes the repository public | audit D1 (the rest), audit D3 (the rest) | `todo` |
 
 ## DevelopmentDirectory_0 — the plan travels with the code `doing`
@@ -975,6 +978,54 @@ Shown by: `cmake --build --preset release --target read_benchmark && build/relea
 - [ ] **VERIFY:** the maintainer reviews the numbers and answers Q8
 - [ ] **Gate:** CI green on the pull request
 
+## PhantomSlide_20 — a remote slide read through the caller's transport `todo` · needs ResultBoundaries_12 and X9
+
+Purpose: a slide on a network share or in an object store is read through a
+phantom, a local stand-in for the whole file that plans each read and does no
+I/O (D13). Numbered 20 because it was added after the sprints were numbered
+(2026-11-26). Milestone: a test transport serving a slide's bytes from memory,
+as an object store would, with a delay per request; the phantom opens from the
+opening read, plans windows for a viewport, lands them and decodes every tile,
+with fewer requests than tiles. Its public declarations are added to the public
+header on a paired Iris-Headers branch, merged first, as for any sprint that
+changes the public header.
+
+Shown by: `ctest --preset asan -R Phantom && ctest --preset tsan -R Phantom`
+
+- [ ] **PhantomOpen_20.1** — `create_phantom(const PhantomDesc&, Phantom&)`
+  from the caller's opening read, with IFE's summary block used when present
+  (X10) and each metadata block read with IFE's generated readers [Phantom_01]
+  - [ ] Red: an opening read whose tile table lies past the file size the
+    header gives is refused naming the block, the offset and the size
+- [ ] **ByteOrderIndex_20.2** — the tile indices sorted by file offset once at
+  open, immutable after [Phantom_02]
+  - [ ] Red: on a slide written in a shuffled tile order, each tile's
+    neighbours in the index are its neighbours in the file
+- [ ] **PhantomTileTable_20.3** — per tile: file offset and size, arena
+  offset, state with a generation; the arena offset published before the state
+  turns cached (X9) [Phantom_03]
+  - [ ] Red: a reader that sees a tile cached reads its bytes, under
+    ThreadSanitizer, with a writer landing beside it
+- [ ] **FetchMissing_20.4** — the claim walk within `window_bytes`, the span's
+  bytes reserved in the arena, then the transport called inline with the
+  window; nothing of the transport kept [Phantom_04, Phantom_07]
+  - [ ] Red: two wanted tiles whose span fits the window give one window
+    holding both and every tile between them; a lone wanted tile gives its
+    exact range; two threads never plan windows that share a byte
+- [ ] **LandWindow_20.5** — `land(window, result)`: the span cut into the tile
+  table, each cut checked against its tile frame, a stale generation and a
+  failed read refused, their tiles wanted again [Phantom_05]
+  - [ ] Red: a window landed one byte off is refused naming the tile index its
+    frame carries
+- [ ] **PhantomReads_20.6** — `get_slide_tile` on a phantom returns the
+  resident bytes or not resident as a value; `read_slide_tile` decodes from
+  them; the arena freed whole with the last owner [Phantom_06]
+  - [ ] Red: a tile read before its window lands returns not resident, and
+    the same tile after landing decodes to the pixels a `Slide` gives
+- [ ] **VERIFY:** the maintainer reviews the phantom's API and the test
+  transport's request count
+- [ ] **Gate:** CI green on the pull request
+
 ## PublicRelease_19 — public when it is right `todo` · needs every sprint above
 
 Purpose: the repository stays private while the work continues and is
@@ -1023,6 +1074,8 @@ audit marked closed with its commit
 | X6 | EnumerationsFollowIfe_4.4 (`blocked`) |
 | X7 | TileEncodingAv1Refused_3.6 (pins the paired branch), PortsPinMain_17.6 |
 | X8 | TileEncodingBlocksRefused_3.7 (pins the paired branch), PortsPinMain_17.6 |
+| X9 | PhantomTileTable_20.3, FetchMissing_20.4 (the arena claim) |
+| X10 | PhantomOpen_20.1 (the summary block, used when present) |
 | E1 | AttributesNeverIdentify_6.1 (writing), HeadersTakeIfeEnumerations_11.4 (values) |
 | E2 | AttributesNeverIdentify_6.1 |
 | E3 | TileLengthFromTheFile_3.2 |
@@ -1141,3 +1194,14 @@ audit marked closed with its commit
   **Next:** merge IFE#11, re-pin the IFE port to its commit on IFE `main` if
   the merge rewrote it, and merge #4; then BoundaryHelper_12.1's one boundary
   helper.
+- **2026-11-26, a remote slide read through a phantom (D13).** A slide on a
+  network share or in an object store is to be read through
+  `IrisSlide::Phantom`, which plans each read as a window of the tiles that
+  lie together in the file, reserves the reply's bytes in its own arena before
+  the request is sent, and hands the window to the caller's transport, called
+  inline and never stored; the caller lands the bytes with `land`. Iris-Slide
+  gains no network library and starts no thread. D13, X9 (Iris-Headers' arena
+  claim), X10 (IFE's optional summary block), Goal_23, Phantom_01 to
+  Phantom_07 and the sprint PhantomSlide_20 added; no code changes.
+  **Next:** Iris-Headers' arena claim (X9), then PhantomSlide_20 once
+  ResultBoundaries_12 has merged.
