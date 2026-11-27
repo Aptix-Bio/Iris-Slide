@@ -1,4 +1,4 @@
-// RTM Testing_01, Dicom_05, Dicom_03
+// RTM Testing_01, Dicom_05, Dicom_03, Dicom_04
 // LocalSlideInputs_22.6 and OpenJpegFrames_22.3. Decided 2026-11-27: while the encoder is
 // developed, the tests that need a real slide read the maintainer's own slides from the folder the
 // CMake cache variable IRIS_SLIDE_TEST_SLIDES names; no slide file enters the repository. An
@@ -14,17 +14,27 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
+
+using Catch::Matchers::ContainsSubstring;
 
 extern "C" {
 #include <dicom/dicom.h>
 }
 
+#include "IrisSlidePriv.hpp"
 #include "IrisSlideDicomSeries.hpp"
 #include "IrisSlideOpenJpeg.hpp"
 #include "IrisSlideSourceCodec.hpp"
 
+namespace IrisSlide {
+// The current encoder's DICOM bridge (src/IrisSlideDcmBridge.cpp), declared where it is called.
+DcmFile open_dicom_file (const std::filesystem::path&);
+} // END IRIS SLIDE NAMESPACE
+
 namespace {
 constexpr std::uint32_t RGB_CHANNELS = 3;
+constexpr std::uint32_t IRIS_TILE_SIDE = 256;   // the current encoder reads only 256-pixel frames
 constexpr std::uint32_t SAMPLED_FRAMES = 16;   // spread over the instance, first and last included
 constexpr std::uint32_t TAG_SOP_INSTANCE_UID = 0x00080018;
 constexpr std::uint32_t TAG_NUMBER_OF_FRAMES = 0x00280008;
@@ -204,4 +214,19 @@ TEST_CASE("Each local slide's series yields its highest VOLUME instance, TILED_F
              << source.columns << " px frames, spacing " << source.spacing.row_mm << " x "
              << source.spacing.column_mm << " mm");
     }
+}
+
+TEST_CASE("The current encoder refuses a JPEG 2000 or HTJ2K series, naming its transfer syntax",
+          "[Testing_01][Dicom_04]")
+{
+    // Until the rebuilt encoder decodes them, only baseline JPEG frames pass through as IFE JPEG
+    // tiles; the bridge checks the frame size first, so only 256-pixel instances reach this refusal.
+    std::size_t refused = 0;
+    for (const auto& local : jpeg2000_instances(slide_folder())) {
+        if (local.shape.columns != IRIS_TILE_SIDE || local.shape.rows != IRIS_TILE_SIDE) continue;
+        INFO(local.path.filename());
+        CHECK_THROWS_WITH(IrisSlide::open_dicom_file(local.path), ContainsSubstring(local.syntax));
+        ++refused;
+    }
+    REQUIRE(refused > 0);   // the folder holds a 256-pixel JPEG 2000 or HTJ2K instance
 }
