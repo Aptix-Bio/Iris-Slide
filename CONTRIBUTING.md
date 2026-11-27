@@ -16,7 +16,8 @@ file, and each of its findings names the rule it applies.
   One exception (decided 2026-11-27): a pull request that only moves the review bot's pin
   (`GOVERNANCE_COMMIT` in `review.yml`) opens beside the open one and merges first, because a
   review runs `main`'s workflow, so the open pull request is judged by the new bot only once the pin
-  is on `main`; it touches one line no other branch changes, so it conflicts with none.
+  is on `main`; it changes only the `GOVERNANCE_COMMIT` line and its comment, which no other
+  branch changes, so it conflicts with none.
   The branch is `feature/<SprintName>_<n>`, named before the first push, since renaming a pull
   request's head branch closes the pull request.
 - **The description follows `.github/pull_request_template.md`.** Its WBS and RTM sections name

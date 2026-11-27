@@ -25,7 +25,7 @@ using Catch::Matchers::ContainsSubstring;
 
 namespace {
 constexpr std::uint32_t FRAME_SIDE = 240;  // the maintainer's lossless slide's frame size
-constexpr std::uint32_t RGB_CHANNELS = 3;
+constexpr std::size_t RGB_CHANNELS = IrisSlide::RGB_BYTES;
 constexpr std::uint32_t PATTERN_SEED = 20261127;
 constexpr int RESOLUTIONS = 4;             // 240 px down to 30 px
 

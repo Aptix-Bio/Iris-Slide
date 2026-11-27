@@ -16,7 +16,7 @@
 
 namespace {
 constexpr std::uint32_t SEED = 20261127;
-constexpr std::uint32_t RGBA = 4;
+constexpr std::size_t RGBA = IrisSlide::RGBA_BYTES;
 constexpr std::uint8_t WHITE = 0xFF;
 constexpr std::size_t REGION_BYTES = std::size_t{IrisSlide::REDUCE_REGION} * IrisSlide::REDUCE_REGION * RGBA;
 constexpr std::size_t TILE_BYTES = std::size_t{IrisSlide::RECUT_TILE} * IrisSlide::RECUT_TILE * RGBA;
@@ -107,7 +107,8 @@ TEST_CASE("At the slide's edge the edge pixel repeats, and beyond the next layer
     // is 200 and a clamp repeats 200 where a white pad would pull the edge toward 255.
     constexpr std::uint32_t WIDTH = 300, HEIGHT = 200, SPLIT = WIDTH / 2;
     constexpr std::uint8_t LEFT_GREY = 100, RIGHT_GREY = 200;
-    constexpr std::uint32_t TILE = IrisSlide::RECUT_TILE, RGB = 3;
+    constexpr std::uint32_t TILE = IrisSlide::RECUT_TILE;
+    constexpr std::size_t RGB = IrisSlide::RGB_BYTES;
     const IrisSlide::LayerSize layer {.width = WIDTH, .height = HEIGHT};
     std::vector<std::vector<std::uint8_t>> tiles(2, std::vector<std::uint8_t>(TILE_BYTES, WHITE));
     for (std::uint32_t t = 0; t < 2; ++t)

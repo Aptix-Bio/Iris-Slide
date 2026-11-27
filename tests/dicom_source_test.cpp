@@ -28,7 +28,7 @@ constexpr std::uint32_t FRAME = 240;                      // a frame side that i
 constexpr std::uint32_t WIDTH = 300, HEIGHT = 260;        // 2 x 2 frames, 2 x 2 tiles, partly beyond
 constexpr std::uint32_t FRAMES_ACROSS = 2, FRAMES_DOWN = 2;
 constexpr int QUALITY = 95;
-constexpr std::size_t RGB = 3, RGBA = 4;
+constexpr std::size_t RGB = IrisSlide::RGB_BYTES, RGBA = IrisSlide::RGBA_BYTES;
 constexpr std::uint8_t WHITE = 0xFF;
 constexpr double PSNR_FLOOR_DB = 36.0;                    // quality 95, 4:4:4, a smooth pattern
 constexpr double MICRONS_PER_MILLIMETRE = 1000.0;

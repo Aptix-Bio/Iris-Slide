@@ -36,7 +36,7 @@ extern "C" {
 #include "IrisSlideSourceCodec.hpp"
 
 namespace {
-constexpr std::uint32_t RGB_CHANNELS = 3;
+constexpr std::size_t RGB_CHANNELS = IrisSlide::RGB_BYTES;
 constexpr std::uint32_t SAMPLED_FRAMES = 16;   // spread over the instance, first and last included
 constexpr std::uint32_t TAG_SOP_INSTANCE_UID = 0x00080018;
 constexpr std::uint32_t TAG_PHOTOMETRIC_INTERPRETATION = 0x00280004;
@@ -225,7 +225,7 @@ TEST_CASE("Each local slide's series yields its highest VOLUME instance, TILED_F
 
 namespace {
 constexpr std::uint32_t RGBA_CHANNELS = 4;
-constexpr std::uint8_t ALPHA_OPAQUE = 0xFF;
+using IrisSlide::ALPHA_OPAQUE;
 constexpr double JPEG_PSNR_FLOOR_DB = 35.0;   // quality 90, 4:2:2 on stained tissue
 constexpr auto ENCODER_POLL = std::chrono::milliseconds(50);
 

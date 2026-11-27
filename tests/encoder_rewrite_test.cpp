@@ -25,7 +25,7 @@
 using Catch::Matchers::ContainsSubstring;
 
 namespace {
-constexpr std::uint32_t RGBA = 4;
+constexpr std::size_t RGBA = IrisSlide::RGBA_BYTES;
 constexpr std::uint8_t WHITE = 0xFF;
 constexpr double JPEG_PSNR_FLOOR_DB = 35.0;   // quality 90, 4:2:2 on a smooth pattern
 constexpr auto POLL = std::chrono::milliseconds(20);

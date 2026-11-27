@@ -23,8 +23,8 @@ namespace {
 constexpr int SIDE = 240;
 constexpr int OTHER_SIDE = 256;          // a size the instance may declare that the stream is not
 constexpr int QUALITY = 95;
-constexpr std::size_t RGB = 3, RGBA = 4;
-constexpr std::uint8_t ALPHA_OPAQUE = 0xFF;   // named so: <wingdi.h> defines OPAQUE as a macro
+constexpr std::size_t RGB = IrisSlide::RGB_BYTES, RGBA = IrisSlide::RGBA_BYTES;
+using IrisSlide::ALPHA_OPAQUE;
 constexpr double PSNR_FLOOR_DB = 38.0;   // quality 95, 4:4:4 on a smooth pattern
 
 std::vector<std::uint8_t> pattern()

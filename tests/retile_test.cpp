@@ -18,9 +18,9 @@
 namespace {
 constexpr std::uint32_t SEED = 20261127;
 constexpr std::uint8_t WHITE = 0xFF;
-constexpr std::uint8_t ALPHA_OPAQUE = 0xFF;   // named so: <wingdi.h> defines OPAQUE as a macro
-constexpr std::uint32_t RGB = 3;
-constexpr std::uint32_t RGBA = 4;
+using IrisSlide::ALPHA_OPAQUE;
+constexpr std::size_t RGB = IrisSlide::RGB_BYTES;
+constexpr std::size_t RGBA = IrisSlide::RGBA_BYTES;
 constexpr std::uint32_t FRAME = 240;   // the source frame side the 256-pixel tiles are re-cut from
 constexpr std::uint32_t TILE = IrisSlide::RECUT_TILE;
 
