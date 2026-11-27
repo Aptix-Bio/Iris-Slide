@@ -1,4 +1,4 @@
-// RTM Testing_01, Dicom_05, Dicom_03, Dicom_04, Encode_10
+// RTM Testing_01, Dicom_05, Dicom_03, Dicom_04, Dicom_06, Encode_10
 // LocalSlideInputs_22.6 and OpenJpegFrames_22.3. Decided 2026-11-27: while the encoder is
 // developed, the tests that need a real slide read the maintainer's own slides from the folder the
 // CMake cache variable IRIS_SLIDE_TEST_SLIDES names; no slide file enters the repository. An
@@ -28,6 +28,7 @@ extern "C" {
 
 #include "IrisSlidePriv.hpp"
 #include "IrisSlideDicomSeries.hpp"
+#include "IrisSlideDicomFrames.hpp"
 #include "IrisSlideDicomSource.hpp"
 #include "IrisSlideEncoder_.hpp"
 #include "IrisSlideRetile.hpp"
@@ -385,4 +386,24 @@ TEST_CASE("The rebuilt encoder reads an HTJ2K slide directly and writes every la
     CHECK(psnr >= JPEG_PSNR_FLOOR_DB);
     std::error_code ignored;
     std::filesystem::remove_all(out, ignored);
+}
+
+TEST_CASE("Each local slide's frame index gives libdicom's exact frame bytes", "[Testing_01][Dicom_06]")
+{
+    for (const auto& local : jpeg2000_instances(slide_folder())) {
+        INFO(local.path.filename());
+        const IrisSlide::DicomFrameIndex index(local.path, local.frames);
+        REQUIRE(index.frames() == local.frames);
+        std::vector<std::uint8_t> joined;
+        for (const auto number : sampled_frames(local.frames)) {
+            DcmError* error = nullptr;
+            std::unique_ptr<DcmFrame, decltype(&dcm_frame_destroy)> frame(
+                dcm_filehandle_read_frame(&error, local.handle.get(), number), &dcm_frame_destroy);
+            REQUIRE(frame);
+            const auto* bytes = static_cast<const std::uint8_t*>(static_cast<const void*>(dcm_frame_get_value(frame.get())));
+            const auto indexed = index.frame(number - 1, joined);
+            CHECK(std::vector<std::uint8_t>(indexed.begin(), indexed.end()) ==
+                  std::vector<std::uint8_t>(bytes, bytes + dcm_frame_get_length(frame.get())));
+        }
+    }
 }
