@@ -37,9 +37,10 @@
     {
       "name": "ci",
       "inherits": "vcpkg",
-      "displayName": "CI: the library and the encoder, Release",
+      "displayName": "CI: the library, the encoder and the tests, Release",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "IRIS_SLIDE_BUILD_TESTS": "ON"
       }
     }
   ],
@@ -78,6 +79,19 @@
     {
       "name": "debug",
       "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "local"
+        }
+      }
+    },
+    {
+      "name": "ci",
+      "displayName": "CI: every test but the real-slide ones (CiRunsTests_1.5)",
+      "configurePreset": "ci",
       "output": {
         "outputOnFailure": true
       },

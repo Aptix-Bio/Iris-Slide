@@ -19,6 +19,7 @@
 #include "IrisSlideTypes.hpp"
 
 namespace IrisSlide {
+// RTM Encode_09, Bindings_01
 /// The chroma subsamplings by the names callers type, in enumeration order.
 constexpr std::array<std::string_view, 3> SUBSAMPLING_NAMES {"444", "422", "420"};
 

@@ -36,6 +36,10 @@ constexpr std::uint64_t VR_AT = 4, VR_SIZE = 2, ELEMENT_HEADER = 8;
 /// The width of the group-length value (UL) and of each offset-table entry: PS3.5 A.4 (32-bit
 /// Basic Offset Table entries), PS3.3 C.7.6.3.1.8 (64-bit Extended Offset Table entries).
 constexpr std::uint32_t UL_WIDTH = 4, BASIC_WIDTH = 4, EXTENDED_WIDTH = 8;
+/// The widths of a length field: 16 bits after a short VR, 32 bits after a long VR or in an item.
+constexpr std::uint32_t SHORT_LENGTH_WIDTH = 2, LONG_LENGTH_WIDTH = 4;
+/// A tag is its 16-bit group, then its 16-bit element number.
+constexpr std::uint32_t TAG_PART_WIDTH = 2;
 /// PS3.5 Table 7.1-1: the VRs whose length is 32 bits after two reserved bytes.
 constexpr std::array<std::string_view, 13> LONG_VRS {"OB", "OD", "OF", "OL", "OV", "OW", "SQ", "SV", "UC", "UN", "UR", "UT", "UV"};
 
@@ -59,8 +63,11 @@ struct Reader {
         for (std::uint32_t i = 0; i < width; ++i) v |= std::uint64_t{bytes[at + i]} << (8 * i);
         return v;
     }
-    std::uint16_t group (std::uint64_t at) const { return static_cast<std::uint16_t>(value(at, 2)); }
-    std::uint16_t element (std::uint64_t at) const { return static_cast<std::uint16_t>(value(at + 2, 2)); }
+    std::uint16_t group (std::uint64_t at) const { return static_cast<std::uint16_t>(value(at, TAG_PART_WIDTH)); }
+    std::uint16_t element (std::uint64_t at) const
+    {
+        return static_cast<std::uint16_t>(value(at + TAG_PART_WIDTH, TAG_PART_WIDTH));
+    }
 };
 
 /// An explicit-VR element's value position and length (UNDEFINED_LENGTH when undefined).
@@ -73,8 +80,8 @@ Element element_at (const Reader& reader, std::uint64_t at)
     reader.need(at, ELEMENT_HEADER);
     const std::string_view vr(reinterpret_cast<const char*>(reader.bytes.data() + at + VR_AT), VR_SIZE);
     const bool is_long = std::find(LONG_VRS.begin(), LONG_VRS.end(), vr) != LONG_VRS.end();
-    if (is_long) return {.value_at = at + LONG_VALUE_AT, .length = static_cast<std::uint32_t>(reader.value(at + LONG_LENGTH_AT, 4))};
-    return {.value_at = at + SHORT_VALUE_AT, .length = static_cast<std::uint32_t>(reader.value(at + SHORT_LENGTH_AT, 2))};
+    if (is_long) return {.value_at = at + LONG_VALUE_AT, .length = static_cast<std::uint32_t>(reader.value(at + LONG_LENGTH_AT, LONG_LENGTH_WIDTH))};
+    return {.value_at = at + SHORT_VALUE_AT, .length = static_cast<std::uint32_t>(reader.value(at + SHORT_LENGTH_AT, SHORT_LENGTH_WIDTH))};
 }
 
 /// The position after an undefined-length sequence whose items start at @p at. Items and nested
@@ -94,7 +101,7 @@ std::uint64_t skip_sequence (const Reader& reader, std::uint64_t at)
             continue;
         }
         const std::uint16_t marker = reader.element(at);
-        const auto length = static_cast<std::uint32_t>(reader.value(at + ITEM_LENGTH_AT, 4));
+        const auto length = static_cast<std::uint32_t>(reader.value(at + ITEM_LENGTH_AT, LONG_LENGTH_WIDTH));
         at += ITEM_HEADER;
         const Open expected = marker == ITEM_END ? Open::ITEM : Open::SEQUENCE;
         if (open.back() != expected || (marker != ITEM && marker != ITEM_END && marker != SEQUENCE_END))
@@ -156,7 +163,7 @@ _path (path)
     if (reader.group(pixels.value_at) != ITEM_GROUP || reader.element(pixels.value_at) != ITEM)
         reader.refuse(pixels.value_at, "does not begin Pixel Data with its Basic Offset Table item");
     const Element basic {.value_at = pixels.value_at + ITEM_HEADER,
-                         .length = static_cast<std::uint32_t>(reader.value(pixels.value_at + ITEM_LENGTH_AT, 4))};
+                         .length = static_cast<std::uint32_t>(reader.value(pixels.value_at + ITEM_LENGTH_AT, LONG_LENGTH_WIDTH))};
     const std::vector<std::uint64_t> basic_offsets = table_of(reader, basic, BASIC_WIDTH);
     const std::uint64_t first = basic.value_at + basic.length;
 
@@ -165,7 +172,7 @@ _path (path)
     for (std::uint64_t item = first; reader.element(item) != SEQUENCE_END;) {
         if (reader.group(item) != ITEM_GROUP || reader.element(item) != ITEM)
             reader.refuse(item, "holds something other than a fragment item in Pixel Data");
-        const std::uint64_t length = reader.value(item + ITEM_LENGTH_AT, 4);
+        const std::uint64_t length = reader.value(item + ITEM_LENGTH_AT, LONG_LENGTH_WIDTH);
         reader.need(item + ITEM_HEADER, length);
         item_starts.push_back(item - first);
         _fragments.push_back({.offset = item + ITEM_HEADER, .length = length});
@@ -178,6 +185,8 @@ _path (path)
     if (!starts.empty() && starts.size() != frames)
         reader.refuse(first, "has an offset table of " + std::to_string(starts.size()) + " frames where " +
                              std::to_string(frames) + " are declared");
+    if (extended_offsets.empty() && !extended_lengths.empty())
+        reader.refuse(first, "has Extended Offset Table Lengths without the Extended Offset Table it measures");
     if (!extended_offsets.empty() && extended_lengths.size() != extended_offsets.size())
         reader.refuse(first, "has an Extended Offset Table of " + std::to_string(extended_lengths.size()) + " lengths for " +
                              std::to_string(extended_offsets.size()) + " frames");

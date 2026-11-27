@@ -18,6 +18,7 @@
 #include "IrisSlideEncoder.hpp"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <concepts>
@@ -76,33 +77,30 @@ std::uint64_t physical_memory ()
 #endif
 }
 
+/// The tile encodings this encoder writes, each with its file-name word; one row per encoding, so
+/// adding one (AV1, UASTC, XUASTC) is a row here and a case in compress_tile.
+struct WrittenEncoding {
+    Encoding         encoding;
+    std::string_view word;
+};
+constexpr std::array<WrittenEncoding, 1> WRITTEN_ENCODINGS {{
+    {TILE_ENCODING_JPEG, "jpeg"},
+}};
+
 /// Whether this encoder writes @p encoding.
 bool is_written_encoding (Encoding encoding) noexcept
 {
-    switch (encoding) {
-        case TILE_ENCODING_JPEG:      return true;
-        case TILE_ENCODING_UNDEFINED:
-        case TILE_ENCODING_IRIS:
-        case TILE_ENCODING_AV1:
-        case TILE_ENCODING_UASTC:
-        case TILE_ENCODING_XUASTC:    return false;
-    }
-    return false;
+    return std::any_of(WRITTEN_ENCODINGS.begin(), WRITTEN_ENCODINGS.end(),
+                       [encoding](const WrittenEncoding& row) { return row.encoding == encoding; });
 }
-/// The encoding's name as IFE's specification spells it (IFE's generated member_name).
 /// The file-name word of an encoding this encoder writes; throws for any other.
-std::string encoding_word (Encoding encoding)
+std::string_view encoding_word (Encoding encoding)
 {
-    switch (encoding) {
-        case TILE_ENCODING_JPEG:      return "jpeg";
-        case TILE_ENCODING_UNDEFINED:
-        case TILE_ENCODING_IRIS:
-        case TILE_ENCODING_AV1:
-        case TILE_ENCODING_UASTC:
-        case TILE_ENCODING_XUASTC:    break;
-    }
+    for (const auto& row : WRITTEN_ENCODINGS)
+        if (row.encoding == encoding) return row.word;
     throw std::runtime_error("tile encoding " + std::to_string(int(encoding)) + " has no file-name word here");
 }
+/// The encoding's name as IFE's specification spells it (IFE's generated member_name).
 std::string encoding_name (Encoding encoding)
 {
     return std::string(Iris::File::constants::member_name(static_cast<Iris::File::constants::TileEncodings>(encoding)));
@@ -111,8 +109,8 @@ std::string encoding_name (Encoding encoding)
 std::string file_name (const std::filesystem::path& source, Encoding encoding)
 {
     if (!is_written_encoding(encoding))
-        throw std::runtime_error(std::string("the rebuilt encoder does not write ") + encoding_name(encoding));
-    return source.stem().string() + "." + encoding_word(encoding) + ".iris";
+        throw std::runtime_error(std::string("the encoder does not write ") + encoding_name(encoding));
+    return source.stem().string() + "." + std::string(encoding_word(encoding)) + ".iris";
 }
 
 /// The encoder's one way out for pixels: a 256-pixel RGBA8 tile compressed in the IFE tile
@@ -136,7 +134,7 @@ Buffer compress_tile (const Context& context, Encoding encoding, const std::vect
         case TILE_ENCODING_XUASTC:
             break;
     }
-    throw std::runtime_error(std::string("the rebuilt encoder does not write ") + encoding_name(encoding));
+    throw std::runtime_error(std::string("the encoder does not write ") + encoding_name(encoding));
 }
 
 // RTM Identity_07
@@ -738,7 +736,7 @@ void check_desc (const EncoderDesc& desc)
     if (reductions_per_step(desc.layer_step) == 0)
         throw std::runtime_error("layer step " + std::to_string(desc.layer_step) + " is not a power of two from 2");
     if (!is_written_encoding(desc.encoding))
-        throw std::runtime_error(std::string("the rebuilt encoder does not write ") + encoding_name(desc.encoding));
+        throw std::runtime_error(std::string("the encoder does not write ") + encoding_name(desc.encoding));
     if (desc.quality < QUALITY_MIN || desc.quality > QUALITY_MAX)
         throw std::runtime_error("quality " + std::to_string(desc.quality) + " is outside 1-100");
     if (desc.concurrency == 0) throw std::runtime_error("concurrency 0 is refused: an encode needs at least 1 worker thread");

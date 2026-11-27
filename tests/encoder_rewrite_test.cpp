@@ -223,16 +223,15 @@ TEST_CASE("The same source and options give a byte-identical file", "[Encode_12]
     CHECK(bytes_a == bytes_b);
 }
 
-TEST_CASE("A slide whose decoded size is over twice the budget encodes within the budget", "[Encode_11]")
+TEST_CASE("A slide whose decoded size is over 4x the budget encodes within the budget", "[Encode_11]")
 {
-    // One tile wide and one worker: the smallest working set (5 rows of each layer and one worker's
-    // scratch), so a slide of 130 tiles is already over twice a budget the encoder accepts.
+    // Two workers, so frames are decoded in parallel: the case that once went over the budget
+    // (decoding's scratch uncharged, Red first of 2a3488d).
     const ScratchFolder folder;
-    constexpr std::uint32_t TILES_DOWN = 130;
-    const IrisSlide::LayerSize size {.width = IrisSlide::RECUT_TILE, .height = std::uint64_t{TILES_DOWN} * IrisSlide::RECUT_TILE};
-    constexpr std::uint64_t BUDGET = 16ull << 20;
-    constexpr std::uint32_t WORKERS = 1;
-    STATIC_CHECK(std::uint64_t{TILES_DOWN} * TILE_BYTES > 2 * BUDGET);
+    const IrisSlide::LayerSize size {.width = 2300, .height = 20400};   // 9 x 80 tiles, 189 MB decoded
+    constexpr std::uint64_t BUDGET = 40ull << 20;
+    constexpr std::uint32_t WORKERS = 2;
+    STATIC_CHECK(std::uint64_t{9} * 80 * TILE_BYTES > 4 * BUDGET);
     const auto done = encode(size, folder.path, BUDGET, WORKERS);
     INFO("peak " << done.peak_resident_bytes << " of " << BUDGET);
     CHECK(done.peak_resident_bytes <= BUDGET);
@@ -297,7 +296,7 @@ TEST_CASE("A dispatch that cannot make its file fails, and the encoder can still
 TEST_CASE("One worker and every worker give the same bytes", "[Encode_12]")
 {
     const ScratchFolder one, many;
-    const IrisSlide::LayerSize size {.width = 1000, .height = 1000};   // 4 x 4 tiles, three derived layers
+    const IrisSlide::LayerSize size {.width = 2300, .height = 2100};
     const auto a = encode(size, one.path, 0, 1), b = encode(size, many.path);
     CHECK(bytes_of(a.file) == bytes_of(b.file));
 }
@@ -413,6 +412,7 @@ TEST_CASE("The caller's I2S pairs are written as METADATA_I2S with their version
     desc.attributes.version = 1;   // I2S 0.1, packed major << 8 | minor (Q12)
     desc.attributes["Stain"] = u8"H&E";
     desc.attributes["ScanDate"] = u8"2026-11-27";
+    desc.attributes["ScannerSite"] = u8"Nußloch";   // non-ASCII UTF-8: carried byte for byte
     REQUIRE(IrisSlide::create_encoder(desc, std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 600, .height = 600}), encoder).succeeded());
     REQUIRE(IrisSlide::dispatch_encoder(encoder).succeeded());
     const auto done = wait_for(encoder);
@@ -423,8 +423,9 @@ TEST_CASE("The caller's I2S pairs are written as METADATA_I2S with their version
     REQUIRE(IrisSlide::get_slide_info(slide, info).succeeded());
     CHECK(info.metadata.attributes.type == IrisSlide::METADATA_I2S);
     CHECK(info.metadata.attributes.version == 1);
-    CHECK(info.metadata.attributes.size() == 2);
+    CHECK(info.metadata.attributes.size() == 3);
     CHECK(info.metadata.attributes.at("Stain") == u8"H&E");
+    CHECK(info.metadata.attributes.at("ScannerSite") == u8"Nu\u00DFloch");
 }
 
 TEST_CASE("Attributes IFE cannot hold, or an I2S claim with no version, are refused naming the pair", "[Identity_07]")

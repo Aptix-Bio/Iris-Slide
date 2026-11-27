@@ -3,8 +3,9 @@
 //  Iris
 //
 //  The DICOM source module (ARCHITECTURE D18): a whole-slide series' highest-resolution TILED_FULL
-//  instance as a Source. The container (libdicom: frame bytes by index) is this module's; the
-//  frames' codec is decode_frame's (IrisSlideFrameCodec.hpp), so a codec is added or removed there.
+//  instance as a Source. The container is this module's: libdicom reads the instance's attributes
+//  and DicomFrameIndex gives each frame's bytes from a read-only memory map; the frames' codec is
+//  decode_frame's (IrisSlideFrameCodec.hpp), so a codec is added or removed there.
 //
 #ifndef IrisSlideDicomSource_hpp
 #define IrisSlideDicomSource_hpp

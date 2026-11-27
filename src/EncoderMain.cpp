@@ -24,6 +24,8 @@
 #include "IrisSlideCore.hpp"
 #include "IrisSlideEncoderOptions.hpp"
 
+// RTM Encode_09
+
 namespace {
 constexpr auto PROGRESS_INTERVAL = std::chrono::milliseconds(500);
 constexpr double BYTES_PER_GIB = 1024.0 * 1024.0 * 1024.0;
@@ -64,7 +66,11 @@ std::uint64_t gib_of (std::string_view text)
     const double gib = std::strtod(copy.c_str(), &end);
     const bool is_positive = end == copy.c_str() + copy.size() && std::isfinite(gib) && gib > 0;
     if (!is_positive) throw std::invalid_argument("memory budget \"" + copy + "\" is not a positive number of GiB");
-    return static_cast<std::uint64_t>(gib * BYTES_PER_GIB);
+    // A double past 2^64 converted to uint64 is undefined behaviour: the largest budget is refused before it.
+    constexpr double MAX_BYTES = 18446744073709549568.0;   // the largest double below 2^64
+    const double bytes = gib * BYTES_PER_GIB;
+    if (bytes > MAX_BYTES) throw std::invalid_argument("memory budget " + copy + " GiB is above 2^64 bytes");
+    return static_cast<std::uint64_t>(bytes);
 }
 int usage (const std::string& why)
 {
@@ -105,13 +111,16 @@ IrisSlide::EncoderDesc desc_of (int argc, char const* argv[])
 int encode (const IrisSlide::EncoderDesc& desc)
 {
     IrisSlide::Encoder encoder;
-    if (const auto created = IrisSlide::create_encoder(desc, encoder); created.failed()) return encode_failed(created.message);
-    if (const auto started = IrisSlide::dispatch_encoder(encoder); started.failed()) return encode_failed(started.message);
+    const auto created = IrisSlide::create_encoder(desc, encoder);
+    if (created.failed()) return encode_failed(created.message);
+    const auto dispatched = IrisSlide::dispatch_encoder(encoder);
+    if (dispatched.failed()) return encode_failed(dispatched.message);
 
     const auto started = std::chrono::steady_clock::now();
     IrisSlide::EncoderProgress progress;
     for (;;) {
-        if (const auto read = IrisSlide::encoder_progress(encoder, progress); read.failed()) return encode_failed(read.message);
+        const auto read = IrisSlide::encoder_progress(encoder, progress);
+        if (read.failed()) return encode_failed(read.message);
         if (progress.state != IrisSlide::EncoderState::ACTIVE) break;
         std::cout << "\r" << std::fixed << std::setprecision(1) << progress.fraction * 100.f << "%  "
                   << progress.resident_bytes / BYTES_PER_MIB << " MiB held" << std::flush;

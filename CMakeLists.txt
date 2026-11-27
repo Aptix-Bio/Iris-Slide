@@ -319,7 +319,8 @@ if(IRIS_BUILD_PYTHON)
             TARGETS IrisSlideEncoderPython
             DESTINATION ${IRIS_INSTALL_PYTHON_LIBDIR}/Iris/Encoder
         )
-        # EncoderBindings_25.1 (RTM Bindings_01): the binding's tests, against the installed
+        # RTM Bindings_01
+        # EncoderBindings_25.1: the binding's tests, against the installed
         # module (cmake --install first), with the interpreter the module was built for.
         enable_testing()
         add_test(NAME python_encoder

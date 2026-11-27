@@ -1,15 +1,26 @@
 from __future__ import annotations
-import enum
+import typing
 
 __all__ = ["Encoder", "EncoderProgress", "EncoderState", "create_encoder", "dispatch_encoder",
            "encoder_output_name", "encoder_progress", "interrupt_encoder"]
 
-class EncoderState(enum.Enum):
-    READY = 0
-    ACTIVE = 1
-    DONE = 2
-    FAILED = 3
-    INTERRUPTED = 4
+class EncoderState:
+    """A pybind11 enumeration (py::enum_), not an enum.Enum: the encoder's public state."""
+    READY: typing.ClassVar[EncoderState]        # value = <EncoderState.READY: 0>
+    ACTIVE: typing.ClassVar[EncoderState]       # value = <EncoderState.ACTIVE: 1>
+    DONE: typing.ClassVar[EncoderState]         # value = <EncoderState.DONE: 2>
+    FAILED: typing.ClassVar[EncoderState]       # value = <EncoderState.FAILED: 3>
+    INTERRUPTED: typing.ClassVar[EncoderState]  # value = <EncoderState.INTERRUPTED: 4>
+    __members__: typing.ClassVar[dict[str, EncoderState]]
+    def __init__(self, value: int) -> None: ...
+    def __eq__(self, other: object) -> bool: ...
+    def __hash__(self) -> int: ...
+    def __index__(self) -> int: ...
+    def __int__(self) -> int: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> int: ...
 
 class EncoderProgress:
     @property

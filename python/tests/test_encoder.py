@@ -1,4 +1,5 @@
-"""Iris.Encoder's binding (RTM Bindings_01; EncoderBindings_25.1, decided 2026-11-27).
+# RTM Bindings_01
+"""Iris.Encoder's binding (Bindings_01; EncoderBindings_25.1, decided 2026-11-27).
 
 The binding converts Python's arguments to the encoder's EncoderDesc, takes its defaults from the
 core, and raises every refusal: ValueError for an argument it cannot convert, RuntimeError for a

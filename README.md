@@ -446,11 +446,10 @@ written = Encoder.encode_slide_file(
     quality=90,             # JPEG quality, 1-100
     subsampling='422',      # '444', '422' or '420'
     layer_step=2,           # 2, 4 or 8 between written layers
-    concurrency=0,          # 0: every core
-)
+)                           # an option left out takes the encoder's default (every core for concurrency)
 ```
 
-**Parameters:** `source`, `outdir` (default: the source's folder), `quality`, `subsampling`, `layer_step`, `memory_budget` (bytes; 0 is a quarter of physical memory), `concurrency`, `i2s_attributes` (the slide's Iris Interoperability Specification attributes as key and value text, written as its `METADATA_I2S` attributes; a key that is not ASCII or a value that is not UTF-8 is refused naming it), `i2s_version` (the I2S version, `major << 8 | minor`, so I2S 0.1 is 1; required with `i2s_attributes`), `show_progress`. The lower-level calls are `create_encoder`, `dispatch_encoder`, `encoder_progress` and `interrupt_encoder`.
+**Parameters:** `source`, `outdir` (default: the source's folder), `quality`, `subsampling`, `layer_step`, `memory_budget` (bytes; 0 is a quarter of physical memory), `concurrency` (at least 1; left out, every core), `i2s_attributes` (the slide's Iris Interoperability Specification attributes as key and value text, written as its `METADATA_I2S` attributes; a key that is not ASCII or a value that is not UTF-8 is refused naming it), `i2s_version` (the I2S version, `major << 8 | minor`, so I2S 0.1 is 1; required with `i2s_attributes`), `show_progress`. The lower-level calls are `create_encoder`, `dispatch_encoder`, `encoder_progress` and `interrupt_encoder`.
 
 ## JavaScript Detailed Examples
 

@@ -39,6 +39,7 @@ enum class Table { EXTENDED, BASIC, EMPTY };
 struct Faults {
     std::uint32_t missing_lengths = 0;   // Extended Offset Lengths entries left out
     std::uint32_t basic_table_pad = 0;   // bytes added to the Basic Offset Table item's length
+    bool lengths_only = false;           // Extended Offset Table Lengths written without its offsets
 };
 
 /// A small instance: file meta, a nested undefined-length sequence, NumberOfFrames, and Pixel Data
@@ -84,8 +85,10 @@ Built build(Table table, std::uint32_t frames = 3, Faults faults = {})
         at += split ? 8 + 4 + 8 + (built.frames[f].size() - 4) : 8 + built.frames[f].size();
     }
     if (table == Table::EXTENDED) {
-        long_header(b, 0x7FE0, 0x0001, "OV", frames * 8);
-        for (const auto s : starts) u64(b, s);
+        if (!faults.lengths_only) {
+            long_header(b, 0x7FE0, 0x0001, "OV", frames * 8);
+            for (const auto s : starts) u64(b, s);
+        }
         const std::uint32_t lengths = frames - faults.missing_lengths;
         long_header(b, 0x7FE0, 0x0002, "OV", lengths * 8);
         for (std::uint32_t f = 0; f < lengths; ++f) u64(b, built.frames[f].size());
@@ -181,5 +184,14 @@ TEST_CASE("An offset table whose length is not a whole number of entries is refu
     const auto built = build(Table::BASIC, 3, {.basic_table_pad = 2});
     const auto path = write(built.file, "bot_width");
     CHECK_THROWS_WITH(IrisSlide::DicomFrameIndex(path, 3), ContainsSubstring("14 bytes") && ContainsSubstring("4-byte"));
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("Extended Offset Table Lengths without its offsets is refused", "[Dicom_06]")
+{
+    // PS3.3 C.7.6.3.1.8: the lengths are required with the offsets and mean nothing alone.
+    const auto built = build(Table::EXTENDED, 3, {.missing_lengths = 1, .lengths_only = true});
+    const auto path = write(built.file, "eot_lengths_only");
+    CHECK_THROWS_WITH(IrisSlide::DicomFrameIndex(path, 3), ContainsSubstring("Extended Offset Table Lengths"));
     std::filesystem::remove(path);
 }
