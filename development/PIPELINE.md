@@ -147,8 +147,8 @@ flowchart LR
         F["pull request<br/>from a fork"] -->|pull_request_target| N["notice only"]
         W --> R["1. Aptix Review Agent<br/>ANTHROPIC_KEY · read-only"]
         W --> C["2. Update PR from Agent<br/>no key · pull-requests: write"]
-        G[("review bot<br/>pinned commit")] -->|"GOVERNANCE_READ_TOKEN<br/>checkout only"| R
-        G -->|"GOVERNANCE_READ_TOKEN<br/>checkout only"| C
+        G[("review bot<br/>pinned commit")] -->|"GOVERNANCE_READ_TOKEN<br/>checkout and planning-token"| R
+        G -->|"GOVERNANCE_READ_TOKEN<br/>checkout and planning-token"| C
         D[("default branch<br/>rubric · references · CODEOWNERS")] --> R
         D --> C
         R -->|"verdict artifact"| C

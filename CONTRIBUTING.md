@@ -53,15 +53,17 @@ file, and each of its findings names the rule it applies.
   removes it), OpenSlide and libdicom. A tile decode, the hot path, passes references and spans.
 - **The shared vocabulary is reused.** Iris-Headers' `Result`, `Buffer`, `Iris::FIFO::Queue` and
   `Iris::Async`, and IFE's `Parser` and `Builder`. A block's layout is written only through
-  `Builder` and read only through `Parser` (D1).
+  `Builder` and read through `Parser`, or, for a remote slide's phantom, through IFE's installed
+  generated block readers (D1, amended by D13).
 - **Named values come from IFE's data.** Encodings, formats and block types are referred to by the
   names generated from IFE's `spec/*.json`, and each convention is one function over its enum
   (one `bytes_per_pixel(Format)`).
-- **Python** is checked with `mypy --strict`; the type stubs are generated from the bindings.
+- **Python** is checked with `mypy --strict`, and the type stubs are to be generated from the
+  bindings (planned: Bindings_02).
 
 ## Code
 
-- **A walk over a DICOM sequence is a loop over an explicit queue.** No function calls itself,
+- **A walk over a DICOM sequence is a loop over an explicit queue** (planned: Dicom_02). No function calls itself,
   directly or through libdicom's `dcm_sequence_foreach` and `dcm_dataset_foreach` callbacks, so
   a deeply nested series cannot overflow the stack. Across threads, the one queue is
   `Iris::FIFO::Queue`.
