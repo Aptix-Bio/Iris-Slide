@@ -1,7 +1,7 @@
 # ARCHITECTURE.md — Iris-Slide: governance and provenance of every IFE block
 
 **Status:** draft contract. D1–D8 record the maintainer's decisions of
-2026-11-24 and D9 and D10 those of 2026-11-25, D11 to D13 those of 2026-11-25 and 2026-11-26, D14–D18 those of 2026-11-27; Q1 is resolved by D7 and Q12 by D10's amendment of 2026-11-25; Q2–Q11 wait on the maintainer's answers, and each has a work item in the plans, which are kept privately. A change is an owner amendment, dated, in
+2026-11-24 and D9 and D10 those of 2026-11-25, D11 to D13 those of 2026-11-25 and 2026-11-26, D14–D19 those of 2026-11-27; Q1 is resolved by D7, Q12 by D10's amendment of 2026-11-25, and Q13, Q14's choice of library and Q18–Q23 on 2026-11-27; Q2–Q11, Q14's size-parity margin, Q15, Q16 and Q17 wait on the maintainer's answers, and each has a work item in the plans, which are kept privately. A change is an owner amendment, dated, in
 the row it changes. · **Date:** 2026-11-24 · **Owner:** the maintainer
 
 Iris-Slide (formerly named Iris-Codec) is Aptix Bio's open-source (MIT) reader

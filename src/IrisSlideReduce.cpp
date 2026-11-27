@@ -41,7 +41,7 @@ HWY_INLINE void weighted_row (const In* const* rows, Out* HWY_RESTRICT out, std:
         // DemoteTo saturates: the second pass's clamp to 0-255.
         hn::StoreU(hn::DemoteTo(d_out, hn::ShiftRight<Shift>(sum)), d_out, out + v);
     }
-    for (; v < count; ++v) out[v] = detail::tap_sum<Out, Shift>([&](std::uint32_t k) { return rows[k][v]; });
+    for (; v < count; ++v) out[v] = detail::tap_sum<Out, Shift>([rows, v](std::uint32_t k) { return rows[k][v]; });
 }
 
 // RTM Pyramid_04
@@ -120,13 +120,13 @@ void reduce_2x_reference (std::span<const std::uint8_t> region, std::span<std::u
     for (std::uint32_t j = 0; j < RECUT_TILE; ++j)
         for (std::size_t v = 0; v < REGION_VALUES; ++v)
             first[std::size_t{j} * REGION_VALUES + v] = detail::tap_sum<std::int16_t, REDUCE_FIRST_SHIFT>(
-                [&](std::uint32_t k) { return region[(2 * std::size_t{j} + k) * REGION_VALUES + v]; });
+                [&region, j, v](std::uint32_t k) { return region[(2 * std::size_t{j} + k) * REGION_VALUES + v]; });
     // Second pass, horizontal: output value (j, i, c) reads first-pass row j at pixels 2i to 2i+7.
     for (std::uint32_t j = 0; j < RECUT_TILE; ++j)
         for (std::size_t value = 0; value < TILE_VALUES; ++value) {
             const std::size_t i = value / RGBA_BYTES, c = value % RGBA_BYTES;
             tile[std::size_t{j} * TILE_VALUES + value] = detail::tap_sum<std::uint8_t, REDUCE_SECOND_SHIFT>(
-                [&](std::uint32_t k) { return first[std::size_t{j} * REGION_VALUES + (2 * i + k) * RGBA_BYTES + c]; });
+                [&first, j, i, c](std::uint32_t k) { return first[std::size_t{j} * REGION_VALUES + (2 * i + k) * RGBA_BYTES + c]; });
         }
 }
 

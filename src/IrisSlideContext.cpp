@@ -415,6 +415,7 @@ inline Buffer COMPRESS_JPEG (const Buffer &src,
         return Buffer();
     }   return Buffer();
 }
+// RTM Decode_01
 /// A JPEG tile or associated image decoded by the library's one JPEG decoder (decode_jpeg), which
 /// refuses a stream whose header disagrees with width x height, a warning, or any precision but 8
 /// bits by throwing, so a corrupt tile is an error the caller sees.

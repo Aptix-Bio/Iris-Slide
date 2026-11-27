@@ -24,6 +24,13 @@ constexpr int STOP_ON_WARNING = 1;
 {
     throw std::runtime_error("JPEG stream refused: " + what);
 }
+/// The name of a colour space libjpeg-turbo reports for a stream (TJPARAM_COLORSPACE).
+std::string colour_space_name (int space)
+{
+    if (space == TJCS_YCbCr) return "YCbCr";
+    if (space == TJCS_RGB) return "RGB";
+    return "colour space " + std::to_string(space);
+}
 /// libjpeg-turbo's pixel layout and bytes per pixel for @p format; throws naming any other format.
 std::pair<TJPF, std::size_t> layout_of (Iris::Format format)
 {
@@ -62,7 +69,7 @@ void decode_jpeg (std::span<const std::uint8_t> stream, FrameShape expected, Iri
         const bool is_match = (*stored == FrameColor::YCBCR && space == TJCS_YCbCr) ||
                               (*stored == FrameColor::RGB && space == TJCS_RGB);
         if (!is_match)
-            refuse(std::string("it stores ") + (space == TJCS_YCbCr ? "YCbCr" : space == TJCS_RGB ? "RGB" : "colour space " + std::to_string(space)) +
+            refuse(std::string("it stores ") + colour_space_name(space) +
                    " where the instance's PhotometricInterpretation declares " +
                    (*stored == FrameColor::YCBCR ? "YCbCr (YBR_FULL or YBR_FULL_422)" : "RGB"));
     }

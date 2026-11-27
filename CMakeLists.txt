@@ -323,8 +323,9 @@ if(IRIS_BUILD_PYTHON)
             DESTINATION ${IRIS_INSTALL_PYTHON_LIBDIR}/Iris/Encoder
         )
         # EncoderStubs_25.2 (toward RTM Bindings_02, which also needs mypy --strict over the stubs):
-        # python/Iris/Encoder/encoder.pyi is generated from the installed module,
-        # never written by hand (cmake --install, then cmake --build <dir> --target python_stubs;
+        # python/Iris/Encoder/encoder.pyi is generated from the installed module, so it states what
+        # the binding declares; this target overwrites any edit to it (cmake --install, then
+        # cmake --build <dir> --target python_stubs;
         # needs pybind11-stubgen in the interpreter's environment).
         add_custom_target(python_stubs
             COMMAND ${Python_EXECUTABLE} -m pybind11_stubgen Iris.Encoder.encoder -o ${PROJECT_SOURCE_DIR}/python

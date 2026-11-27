@@ -41,10 +41,12 @@ def encode_slide_file(source: str, outdir: str = "", quality: int | None = None,
                              i2s_attributes=i2s_attributes or {}, i2s_version=i2s_version, **options)
     dispatch_encoder(encoder)
     try:
-        while (progress := encoder_progress(encoder)).state == EncoderState.ACTIVE:
+        progress = encoder_progress(encoder)
+        while progress.state == EncoderState.ACTIVE:
             if show_progress:
                 print(f"\r{progress.fraction * 100:5.1f}%", end="", file=sys.stdout, flush=True)
             time.sleep(_POLL_SECONDS)
+            progress = encoder_progress(encoder)
     except KeyboardInterrupt:
         interrupt_encoder(encoder)
         raise

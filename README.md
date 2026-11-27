@@ -37,6 +37,10 @@ The Iris Slide encoder reads a DICOM whole-slide image and writes it as an Iris 
 - **Deterministic and bounded**: the same source and options give a byte-identical file; memory held at once stays within a budget (a quarter of physical memory by default)
 - **Identity**: from DICOM only the pixel spacing, magnification and ICC profile are carried; the caller's I2S attributes are the slide's only attributes
 
+## How the codec sits on the Iris File Extension
+
+The [Iris File Extension](https://github.com/Aptix-Bio/Iris-File-Extension) owns the file; Iris Slide owns the pixels. The encoder reads sources, compresses tiles on its own threads and hands each stream to an `Iris::File::Builder`, which claims space in a sparse, never-remapped arena and writes every block. A slide reads through an `Iris::File::Parser`, which maps the file and hands back bounds-checked streams for the codec to decode. The codec maps no file and computes no offset itself.
+
 ```mermaid
 flowchart LR
     subgraph codec["Iris Slide"]

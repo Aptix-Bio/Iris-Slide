@@ -199,7 +199,9 @@ _path (path)
         if (found == item_starts.end() || *found != position)
             reader.refuse(first + position, "has an offset table entry for frame " + std::to_string(f) + " that starts no item");
         const auto from = static_cast<std::uint32_t>(found - item_starts.begin());
-        const std::uint64_t end = f + 1 < frames ? (starts.empty() ? item_starts[f + 1] : starts[f + 1]) : UINT64_MAX;
+        // The frame's fragments end where the next frame's first begins; the last frame's run to the end.
+        std::uint64_t end = UINT64_MAX;
+        if (f + 1 < frames) end = starts.empty() ? item_starts[f + 1] : starts[f + 1];
         std::uint32_t count = 0;
         while (from + count < item_starts.size() && item_starts[from + count] < end) ++count;
         if (!extended_lengths.empty()) _fragments[from].length = std::min(_fragments[from].length, extended_lengths[f]);

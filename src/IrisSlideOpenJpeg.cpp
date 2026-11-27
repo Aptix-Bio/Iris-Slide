@@ -96,9 +96,11 @@ void decode_jpeg2000_frame (std::span<const std::uint8_t> codestream,
     opj_set_error_handler(codec.get(), keep_error, &errors);
     opj_dparameters_t parameters;
     opj_set_default_decoder_parameters(&parameters);
-    if (!opj_setup_decoder(codec.get(), &parameters)) refuse("the decoder could not be set up", errors);
+    const bool is_set_up = opj_setup_decoder(codec.get(), &parameters);
+    if (!is_set_up) refuse("the decoder could not be set up", errors);
     // Strict mode makes a truncated codestream an error; by default OpenJPEG decodes what is there.
-    if (!opj_decoder_set_strict_mode(codec.get(), OPJ_TRUE)) refuse("strict mode could not be set", errors);
+    const bool is_strict = opj_decoder_set_strict_mode(codec.get(), OPJ_TRUE);
+    if (!is_strict) refuse("strict mode could not be set", errors);
 
     MemorySource source {.bytes = codestream};
     Stream stream(opj_stream_create(OPJ_J2K_STREAM_CHUNK_SIZE, OPJ_TRUE), &opj_stream_destroy);
@@ -110,7 +112,8 @@ void decode_jpeg2000_frame (std::span<const std::uint8_t> codestream,
     opj_stream_set_seek_function(stream.get(), seek_source);
 
     opj_image_t* header = nullptr;
-    if (!opj_read_header(stream.get(), codec.get(), &header))
+    const bool is_header_read = opj_read_header(stream.get(), codec.get(), &header);
+    if (!is_header_read)
         refuse("its header could not be read from " + std::to_string(codestream.size()) + " bytes", errors);
     const Image image(header, &opj_image_destroy);
 
@@ -145,8 +148,10 @@ void decode_jpeg2000_frame (std::span<const std::uint8_t> codestream,
         refuse("the destination holds " + std::to_string(rgb.size()) + " bytes where " +
                shape_text(columns, rows) + " RGB8 needs " + std::to_string(needed), errors);
 
-    if (!opj_decode(codec.get(), stream.get(), image.get()) || !opj_end_decompress(codec.get(), stream.get()))
-        refuse("its codestream did not decode", errors);
+    const bool is_decoded = opj_decode(codec.get(), stream.get(), image.get());
+    if (!is_decoded) refuse("its codestream did not decode", errors);
+    const bool is_ended = opj_end_decompress(codec.get(), stream.get());
+    if (!is_ended) refuse("its codestream did not end where its header says", errors);
 
     // OpenJPEG decodes each component into its own plane of 32-bit samples; the destination is
     // interleaved RGB8. Each sample is within 0-255, the 8-bit unsigned precision checked above.

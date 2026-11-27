@@ -17,6 +17,8 @@ constexpr std::uint32_t RECUT_TILE = 256;
 /// Bytes per pixel of interleaved 8-bit RGB (a decoded source frame) and RGBA (a tile).
 constexpr std::size_t RGB_BYTES  = 3;
 constexpr std::size_t RGBA_BYTES = 4;
+/// A tile's alpha: every pixel opaque. Named ALPHA_OPAQUE since <wingdi.h> defines OPAQUE as a macro.
+constexpr std::uint8_t ALPHA_OPAQUE = 0xFF;
 
 // RTM Dicom_05
 /// The pixel size an instance declares for each of its frames (DICOM Columns and Rows).

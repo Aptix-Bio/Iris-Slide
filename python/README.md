@@ -303,8 +303,10 @@ from Iris.Encoder import create_encoder, dispatch_encoder, encoder_progress, Enc
 
 encoder = create_encoder('input.dcm', './encoded/')
 dispatch_encoder(encoder)
-while (progress := encoder_progress(encoder)).state == EncoderState.ACTIVE:
+progress = encoder_progress(encoder)
+while progress.state == EncoderState.ACTIVE:
     time.sleep(0.5)
+    progress = encoder_progress(encoder)
 print(progress.state, progress.file, progress.error)
 ```
 

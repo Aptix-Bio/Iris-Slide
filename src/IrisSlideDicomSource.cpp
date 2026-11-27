@@ -54,8 +54,6 @@ _measurements   {.microns_per_pixel = instance.spacing ? instance.spacing->colum
                  .icc_profile       = instance.icc_profile},
 _index          (instance.path, instance.frames)
 {
-    if (!is_decodable(_codec))
-        refuse(instance, "has transfer syntax " + instance.transfer_syntax + ", whose frames this encoder does not decode");
     check_tiled_full(instance);
     // A slide records one microns-per-pixel value (IFE MICRONS_PIXEL): a pixel that is not square
     // would misstate one axis, so it is refused instead of averaged or taken from one axis.
@@ -104,7 +102,7 @@ void DicomSource::read_tile (std::uint32_t x, std::uint32_t y, std::span<std::ui
             decode_frame(_codec, _color, _index.frame(row * _frames_across + column, joined), _grid.frame, pixels);
         }
     recut_tile(_grid, x, y,
-               [&](std::uint32_t column, std::uint32_t row) {
+               [&frames, first_row, first_column, columns](std::uint32_t column, std::uint32_t row) {
                    return std::span<const std::uint8_t>(frames[(row - first_row) * columns + (column - first_column)]);
                },
                rgba);

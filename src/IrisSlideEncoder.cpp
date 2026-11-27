@@ -778,12 +778,12 @@ Encoder_t& encoder_of (const Encoder& encoder, const char* call)
 
 Result encoder_output_name (const std::filesystem::path& source, Encoding encoding, std::string& name) noexcept
 {
-    return at_boundary("encoder_output_name", [&] { name = file_name(source, encoding); });
+    return at_boundary("encoder_output_name", [&name, &source, encoding] { name = file_name(source, encoding); });
 }
 
 Result create_encoder (const EncoderDesc& desc, Encoder& encoder) noexcept
 {
-    return at_boundary("create_encoder", [&] {
+    return at_boundary("create_encoder", [&desc, &encoder] {
         check_desc(desc);   // refused before the source is opened
         encoder = make_encoder(desc, open_source(desc.source));
     });
@@ -791,21 +791,21 @@ Result create_encoder (const EncoderDesc& desc, Encoder& encoder) noexcept
 
 Result create_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source, Encoder& encoder) noexcept
 {
-    return at_boundary("create_encoder", [&] { encoder = make_encoder(desc, std::move(source)); });
+    return at_boundary("create_encoder", [&desc, &source, &encoder] { encoder = make_encoder(desc, std::move(source)); });
 }
 
 Result dispatch_encoder (const Encoder& encoder) noexcept
 {
-    return at_boundary("dispatch_encoder", [&] { encoder_of(encoder, "dispatch_encoder").dispatch(); });
+    return at_boundary("dispatch_encoder", [&encoder] { encoder_of(encoder, "dispatch_encoder").dispatch(); });
 }
 
 Result encoder_progress (const Encoder& encoder, EncoderProgress& progress) noexcept
 {
-    return at_boundary("encoder_progress", [&] { progress = encoder_of(encoder, "encoder_progress").snapshot(); });
+    return at_boundary("encoder_progress", [&encoder, &progress] { progress = encoder_of(encoder, "encoder_progress").snapshot(); });
 }
 
 Result interrupt_encoder (const Encoder& encoder) noexcept
 {
-    return at_boundary("interrupt_encoder", [&] { encoder_of(encoder, "interrupt_encoder").interrupt(); });
+    return at_boundary("interrupt_encoder", [&encoder] { encoder_of(encoder, "interrupt_encoder").interrupt(); });
 }
 } // END IRIS SLIDE NAMESPACE

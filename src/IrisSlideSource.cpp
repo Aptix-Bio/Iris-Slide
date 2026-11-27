@@ -40,16 +40,6 @@ std::unique_ptr<Source> open_source (const std::filesystem::path& path)
     throw std::runtime_error("the encoder's source " + path.string() + " is no kind it reads (" + declined + ")");
 }
 
-// RTM Dicom_05
-bool is_decodable (SourceCodec codec) noexcept
-{
-    switch (codec) {
-        case SourceCodec::JPEG:
-        case SourceCodec::JPEG_2000:
-        case SourceCodec::HTJ2K:    return true;
-    }
-    return false;
-}
 
 void decode_frame (SourceCodec codec, FrameColor color, std::span<const std::uint8_t> bytes, FrameShape shape,
                    std::span<std::uint8_t> rgb)

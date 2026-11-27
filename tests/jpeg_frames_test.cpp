@@ -64,7 +64,6 @@ TEST_CASE("A JPEG frame decodes to the pixels it was made from, within JPEG's lo
     const double psnr = 10 * std::log10(255.0 * 255.0 / (squared / double(rgb.size())));
     INFO("PSNR " << psnr << " dB");
     CHECK(psnr >= PSNR_FLOOR_DB);
-    CHECK(IrisSlide::is_decodable(IrisSlide::SourceCodec::JPEG));
 }
 
 TEST_CASE("A JPEG frame whose header disagrees with the instance is refused naming both sizes", "[Dicom_05]")

@@ -31,18 +31,18 @@ void rgb8_to_rgba8_row (const std::uint8_t* HWY_RESTRICT rgb, std::uint8_t* HWY_
 {
     const hn::ScalableTag<std::uint8_t> d;
     const std::size_t lanes = hn::Lanes(d);
-    const auto opaque = hn::Set(d, std::uint8_t{0xFF});
+    const auto opaque = hn::Set(d, ALPHA_OPAQUE);
     std::size_t i = 0;
     for (; i + lanes <= pixels; i += lanes) {
         hn::Vec<decltype(d)> r, g, b;
-        hn::LoadInterleaved3(d, rgb + 3 * i, r, g, b);
-        hn::StoreInterleaved4(r, g, b, opaque, d, rgba + 4 * i);
+        hn::LoadInterleaved3(d, rgb + RGB_BYTES * i, r, g, b);
+        hn::StoreInterleaved4(r, g, b, opaque, d, rgba + RGBA_BYTES * i);
     }
     for (; i < pixels; ++i) {
-        rgba[4 * i + 0] = rgb[3 * i + 0];
-        rgba[4 * i + 1] = rgb[3 * i + 1];
-        rgba[4 * i + 2] = rgb[3 * i + 2];
-        rgba[4 * i + 3] = 0xFF;
+        rgba[RGBA_BYTES * i + 0] = rgb[RGB_BYTES * i + 0];
+        rgba[RGBA_BYTES * i + 1] = rgb[RGB_BYTES * i + 1];
+        rgba[RGBA_BYTES * i + 2] = rgb[RGB_BYTES * i + 2];
+        rgba[RGBA_BYTES * i + 3] = ALPHA_OPAQUE;
     }
 }
 
@@ -82,7 +82,7 @@ void rgb8_to_rgba8_reference (std::span<const std::uint8_t> rgb, std::span<std::
         rgba[RGBA_BYTES * i + 0] = rgb[RGB_BYTES * i + 0];
         rgba[RGBA_BYTES * i + 1] = rgb[RGB_BYTES * i + 1];
         rgba[RGBA_BYTES * i + 2] = rgb[RGB_BYTES * i + 2];
-        rgba[RGBA_BYTES * i + 3] = 0xFF;
+        rgba[RGBA_BYTES * i + 3] = ALPHA_OPAQUE;
     }
 }
 
