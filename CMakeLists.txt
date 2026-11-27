@@ -319,6 +319,14 @@ if(IRIS_BUILD_PYTHON)
             TARGETS IrisSlideEncoderPython
             DESTINATION ${IRIS_INSTALL_PYTHON_LIBDIR}/Iris/Encoder
         )
+        # RTM Bindings_02
+        # EncoderStubs_25.2: python/Iris/Encoder/encoder.pyi is generated from the installed module,
+        # never written by hand (cmake --install, then cmake --build <dir> --target python_stubs;
+        # needs pybind11-stubgen in the interpreter's environment).
+        add_custom_target(python_stubs
+            COMMAND ${Python_EXECUTABLE} -m pybind11_stubgen Iris.Encoder.encoder -o ${PROJECT_SOURCE_DIR}/python
+            COMMENT "Generating python/Iris/Encoder/encoder.pyi from the installed module"
+            VERBATIM)
         # RTM Bindings_01
         # EncoderBindings_25.1: the binding's tests, against the installed
         # module (cmake --install first), with the interpreter the module was built for.

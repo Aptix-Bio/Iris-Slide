@@ -82,7 +82,9 @@ PYBIND11_MODULE(encoder, m)
           "<source stem>.jpeg.iris into destination; raises RuntimeError naming what it refuses",
           py::arg("source"), py::arg("destination"), py::arg("quality") = std::uint64_t{DEFAULTS.quality},
           py::arg("subsampling") = std::string(IrisSlide::subsampling_name(DEFAULTS.subsampling)),
-          py::arg("memory_budget") = DEFAULTS.memory_budget, py::arg("concurrency") = std::uint64_t{DEFAULTS.concurrency},
+          py::arg("memory_budget") = DEFAULTS.memory_budget,
+          // Shown as "..." in signatures and stubs: the default is this machine's hardware threads.
+          py::arg_v("concurrency", std::uint64_t{DEFAULTS.concurrency}, "..."),
           py::arg("layer_step") = std::uint64_t{DEFAULTS.layer_step},
           py::arg("i2s_attributes") = std::map<std::string, std::string>(), py::arg("i2s_version") = std::uint64_t{0});
     m.def("dispatch_encoder", [](const EncoderHandle& e) { raise_if_failed(IrisSlide::dispatch_encoder(e.encoder)); },
