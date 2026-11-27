@@ -43,6 +43,15 @@ struct LayerSize {
     std::uint64_t width  = 0;
     std::uint64_t height = 0;
 };
+/// Tiles across and down a layer of @p layer's size.
+constexpr std::uint32_t tiles_across (LayerSize layer) noexcept
+{
+    return static_cast<std::uint32_t>((layer.width + RECUT_TILE - 1) / RECUT_TILE);
+}
+constexpr std::uint32_t tiles_down (LayerSize layer) noexcept
+{
+    return static_cast<std::uint32_t>((layer.height + RECUT_TILE - 1) / RECUT_TILE);
+}
 /// The size of the layer a 2x reduction of @p layer makes: output pixel i covers source pixels
 /// 2i and 2i+1.
 constexpr LayerSize reduced (LayerSize layer) noexcept

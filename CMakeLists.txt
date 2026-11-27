@@ -155,7 +155,8 @@ set (
     ${SLIDE_SOURCE_DIR}/IrisSlideOpenJpeg.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideDicomSeries.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideRetile.cpp
-    ${SLIDE_SOURCE_DIR}/IrisSlideJpeg2000Source.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideDicomSource.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideSource.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideReduce.cpp
 )
 set (

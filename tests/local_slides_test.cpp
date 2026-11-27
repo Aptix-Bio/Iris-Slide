@@ -28,7 +28,7 @@ extern "C" {
 
 #include "IrisSlidePriv.hpp"
 #include "IrisSlideDicomSeries.hpp"
-#include "IrisSlideJpeg2000Source.hpp"
+#include "IrisSlideDicomSource.hpp"
 #include "IrisSlideRetile.hpp"
 #include "IrisSlideOpenJpeg.hpp"
 #include "IrisSlideSourceCodec.hpp"
@@ -277,10 +277,10 @@ TEST_CASE("An HTJ2K slide re-cut into 256-pixel tiles equals its lossless JPEG 2
         if (original == lossless_by_uid.end()) continue;
         ++pairs;
         INFO(copy.path.filename());
-        IrisSlide::Jpeg2000Source htj2k(IrisSlide::read_dicom_instance(copy.path));
-        IrisSlide::Jpeg2000Source j2k(IrisSlide::read_dicom_instance(original->second->path));
-        const auto grid = htj2k.grid();
-        REQUIRE(IrisSlide::tiles_across(grid) == IrisSlide::tiles_across(j2k.grid()));
+        IrisSlide::DicomSource htj2k(IrisSlide::read_dicom_instance(copy.path));
+        IrisSlide::DicomSource j2k(IrisSlide::read_dicom_instance(original->second->path));
+        const auto grid = htj2k.size();
+        REQUIRE(IrisSlide::tiles_across(grid) == IrisSlide::tiles_across(j2k.size()));
         // A band of tiles in row-major order, the order the encoder reads, then the far corner.
         auto a = tile_buffer(), b = tile_buffer();
         const std::uint32_t band = IrisSlide::tiles_down(grid) / 2;
@@ -301,8 +301,8 @@ TEST_CASE("A re-cut tile's pixels are the source frames' pixels at the same slid
 {
     for (const auto& local : jpeg2000_instances(slide_folder())) {
         INFO(local.path.filename());
-        IrisSlide::Jpeg2000Source source(IrisSlide::read_dicom_instance(local.path));
-        const auto grid = source.grid();
+        IrisSlide::DicomSource source(IrisSlide::read_dicom_instance(local.path));
+        const auto grid = source.size();
         std::mt19937 random(20261127);
         auto tile = tile_buffer();
         const std::uint32_t tx = IrisSlide::tiles_across(grid) / 3, ty = IrisSlide::tiles_down(grid) / 3;
@@ -319,5 +319,19 @@ TEST_CASE("A re-cut tile's pixels are the source frames' pixels at the same slid
             const auto* px = &tile[(std::size_t{y} * IrisSlide::RECUT_TILE + x) * RGBA_CHANNELS];
             CHECK((px[0] == frame[at] && px[1] == frame[at + 1] && px[2] == frame[at + 2] && px[3] == ALPHA_OPAQUE));
         }
+    }
+}
+
+TEST_CASE("open_source opens a local DICOM slide as its highest instance, with its measurements",
+          "[Testing_01][Encode_10]")
+{
+    for (const auto& local : jpeg2000_instances(slide_folder())) {
+        INFO(local.path.filename());
+        const auto source = IrisSlide::open_source(local.path);
+        REQUIRE(source);
+        CHECK(source->size().width == IrisSlide::read_dicom_instance(local.path).total_columns);
+        CHECK(source->measurements().microns_per_pixel > 0.0);
+        CHECK(source->measurements().magnification > 0.0);
+        CHECK_FALSE(source->measurements().icc_profile.empty());
     }
 }

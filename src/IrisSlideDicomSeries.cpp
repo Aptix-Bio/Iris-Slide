@@ -33,6 +33,9 @@ constexpr std::uint32_t TAG_PIXEL_MEASURES_SEQUENCE    = 0x00289110;
 constexpr std::uint32_t TAG_TOTAL_PIXEL_MATRIX_COLUMNS = 0x00480006;
 constexpr std::uint32_t TAG_TOTAL_PIXEL_MATRIX_ROWS    = 0x00480007;
 constexpr std::uint32_t TAG_SHARED_FUNCTIONAL_GROUPS   = 0x52009229;
+constexpr std::uint32_t TAG_ICC_PROFILE                = 0x00282000;
+constexpr std::uint32_t TAG_OPTICAL_PATH_SEQUENCE      = 0x00480105;
+constexpr std::uint32_t TAG_OBJECTIVE_LENS_POWER       = 0x00480112;
 constexpr std::uint32_t IMAGE_TYPE_FLAVOR_VALUE        = 2;   // ImageType value 3, zero-based
 constexpr char          VALUE_SEPARATOR                = '\\';
 constexpr std::string_view VOLUME     = "VOLUME";
@@ -99,6 +102,22 @@ const DcmDataSet* nested_item (const std::filesystem::path& path, const DcmDataS
         if (!data) refuse(path, tag, "has no item: " + take_error(error, "empty"));
     }
     return data;
+}
+/// The first optical path's objective power and ICC profile, each optional (PS3.3 C.8.12.5): an
+/// absent one stays 0 or empty, an unreadable one is refused naming it.
+void read_optical_path (const std::filesystem::path& path, const DcmDataSet* data, DicomInstance& instance)
+{
+    if (!element_of(data, TAG_OPTICAL_PATH_SEQUENCE)) return;
+    const DcmDataSet* optical = nested_item(path, data, std::array{TAG_OPTICAL_PATH_SEQUENCE});
+    if (element_of(optical, TAG_OBJECTIVE_LENS_POWER))
+        instance.objective_power = std::strtod(text_of(path, optical, TAG_OBJECTIVE_LENS_POWER).c_str(), nullptr);
+    DcmElement* icc = element_of(optical, TAG_ICC_PROFILE);
+    if (!icc) return;
+    DcmError* error = nullptr;
+    const void* bytes = nullptr;
+    if (!dcm_element_get_value_binary(&error, icc, &bytes) || !bytes)
+        refuse(path, TAG_ICC_PROFILE, "is unreadable: " + take_error(error, "no value"));
+    instance.icc_profile.assign(static_cast<const char*>(bytes), dcm_element_get_length(icc));
 }
 std::string trimmed (std::string_view text)
 {
@@ -186,6 +205,7 @@ DicomInstance read_dicom_instance (const std::filesystem::path& path)
     const DcmDataSet* measures = nested_item(path, data, PIXEL_SPACING_PATH);
     instance.spacing = parse_pixel_spacing(text_of(path, measures, TAG_PIXEL_SPACING, 0) + VALUE_SEPARATOR +
                                            text_of(path, measures, TAG_PIXEL_SPACING, 1));
+    read_optical_path(path, data, instance);
     return instance;
 }
 

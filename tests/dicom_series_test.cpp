@@ -12,7 +12,11 @@
 #include <catch2/matchers/catch_matchers_exception.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <filesystem>
+#include <fstream>
+
 #include "IrisSlideDicomSeries.hpp"
+#include "IrisSlideSource.hpp"
 
 using Catch::Matchers::ContainsSubstring;
 using IrisSlide::DicomInstance;
@@ -89,4 +93,14 @@ TEST_CASE("A Pixel Spacing that is not two positive decimals is refused naming t
     CHECK_THROWS_WITH(IrisSlide::parse_pixel_spacing("0.25\\abc"), ContainsSubstring("abc"));
     CHECK_THROWS_WITH(IrisSlide::parse_pixel_spacing("0\\0.25"), ContainsSubstring("0\\0.25"));
     CHECK_THROWS_WITH(IrisSlide::parse_pixel_spacing("0.25\\0.25\\0.25"), ContainsSubstring("0.25\\0.25\\0.25"));
+}
+
+TEST_CASE("open_source refuses a file no source kind reads, naming it and every kind", "[Encode_10]")
+{
+    const auto path = std::filesystem::temp_directory_path() / "IrisSlideTest_not_a_slide.txt";
+    { std::ofstream(path) << "not a slide"; }
+    CHECK_THROWS_WITH(IrisSlide::open_source(path),
+                      ContainsSubstring(path.string()) && ContainsSubstring("DICOM"));
+    std::filesystem::remove(path);
+    CHECK_THROWS_WITH(IrisSlide::open_source(path), ContainsSubstring("is not a file"));
 }

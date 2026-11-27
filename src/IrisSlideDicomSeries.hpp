@@ -36,6 +36,8 @@ struct DicomInstance {
     std::uint32_t         rows          = 0;       ///< Rows: a frame's height
     std::uint32_t         frames        = 0;       ///< NumberOfFrames, 1 when absent
     PixelSpacing          spacing;
+    double                objective_power = 0.0;   ///< OpticalPathSequence › ObjectiveLensPower; 0 when absent
+    std::string           icc_profile;             ///< OpticalPathSequence › ICCProfile, verbatim; empty when absent
 };
 
 /// The series' highest-resolution VOLUME instance: the largest TotalPixelMatrixColumns ×

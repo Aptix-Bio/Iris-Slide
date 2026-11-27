@@ -1,12 +1,14 @@
 //
-//  IrisSlideJpeg2000Source.cpp
+//  IrisSlideDicomSource.cpp
 //  Iris
 //
-//  libdicom reads each frame's codestream; OpenJPEG decodes it (decode_jpeg2000_frame); the
+//  libdicom reads each frame's bytes; decode_frame decodes them by the instance's codec; the
 //  re-cut assembles 256-pixel tiles from the decoded frames (recut_tile).
 //
-#include "IrisSlideJpeg2000Source.hpp"
+#include "IrisSlideDicomSource.hpp"
 
+#include <array>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 
@@ -14,13 +16,15 @@ extern "C" {
 #include <dicom/dicom.h>
 }
 
-#include "IrisSlideOpenJpeg.hpp"
-#include "IrisSlideSourceCodec.hpp"
+#include "IrisSlideFrameCodec.hpp"
 
 namespace IrisSlide {
 namespace {
 constexpr std::size_t RGB = 3;
 constexpr std::string_view TILED_FULL = "TILED_FULL";
+constexpr std::size_t DICOM_PREAMBLE = 128;                         // PS3.10 7.1
+constexpr std::array<char, 4> DICOM_PREFIX {'D', 'I', 'C', 'M'};
+constexpr double MICRONS_PER_MILLIMETRE = 1000.0;
 
 std::string take_error (DcmError*& error)
 {
@@ -35,16 +39,34 @@ std::string take_error (DcmError*& error)
 }
 } // namespace
 
-// RTM Encode_10, Dicom_05
-Jpeg2000Source::Jpeg2000Source (const DicomInstance& instance) :
-_instance   (instance),
-_grid       {.width = instance.total_columns, .height = instance.total_rows,
-             .frame = {.columns = instance.columns, .rows = instance.rows}},
-_handle     (nullptr, &dcm_filehandle_destroy)
+// RTM Encode_10
+bool is_dicom_file (const std::filesystem::path& path)
 {
-    const SourceCodec codec = source_codec(instance.transfer_syntax);   // refuses an unknown syntax
-    if (codec != SourceCodec::JPEG_2000 && codec != SourceCodec::HTJ2K)
-        refuse(instance, "has transfer syntax " + instance.transfer_syntax + ", which is not JPEG 2000 or HTJ2K");
+    std::ifstream file(path, std::ios::binary);
+    std::array<char, DICOM_PREFIX.size()> prefix {};
+    file.seekg(DICOM_PREAMBLE);
+    return file.read(prefix.data(), prefix.size()) && prefix == DICOM_PREFIX;
+}
+
+std::unique_ptr<Source> open_dicom_source (const std::filesystem::path& path)
+{
+    const auto series = read_dicom_series(path);
+    return std::make_unique<DicomSource>(highest_volume(series));
+}
+
+// RTM Encode_10, Dicom_05
+DicomSource::DicomSource (const DicomInstance& instance) :
+_instance       (instance),
+_codec          (source_codec(instance.transfer_syntax)),   // refuses a syntax outside the table
+_grid           {.width = instance.total_columns, .height = instance.total_rows,
+                 .frame = {.columns = instance.columns, .rows = instance.rows}},
+_measurements   {.microns_per_pixel = instance.spacing.column_mm * MICRONS_PER_MILLIMETRE,
+                 .magnification     = instance.objective_power,
+                 .icc_profile       = instance.icc_profile},
+_handle         (nullptr, &dcm_filehandle_destroy)
+{
+    if (!decodes(_codec))
+        refuse(instance, "has transfer syntax " + instance.transfer_syntax + ", whose frames this encoder does not decode");
     if (instance.dimension_organization != TILED_FULL)
         refuse(instance, "has DimensionOrganizationType \"" + instance.dimension_organization +
                          "\"; only TILED_FULL frames are in row-major order");
@@ -64,9 +86,9 @@ _handle     (nullptr, &dcm_filehandle_destroy)
         refuse(instance, "did not prepare its frames: " + take_error(error));
 }
 
-Jpeg2000Source::~Jpeg2000Source () = default;
+DicomSource::~DicomSource () = default;
 
-const std::vector<std::vector<std::uint8_t>>& Jpeg2000Source::frame_row (std::uint32_t row)
+const std::vector<std::vector<std::uint8_t>>& DicomSource::frame_row (std::uint32_t row)
 {
     const auto kept = _rows.find(row);
     if (kept != _rows.end()) return kept->second;
@@ -79,12 +101,12 @@ const std::vector<std::vector<std::uint8_t>>& Jpeg2000Source::frame_row (std::ui
         if (!frame) refuse(_instance, "frame " + std::to_string(number) + " did not read: " + take_error(error));
         const auto* bytes = static_cast<const std::uint8_t*>(static_cast<const void*>(dcm_frame_get_value(frame.get())));
         frames[column].resize(std::size_t{_grid.frame.columns} * _grid.frame.rows * RGB);
-        decode_jpeg2000_frame(std::span(bytes, dcm_frame_get_length(frame.get())), _grid.frame, frames[column]);
+        decode_frame(_codec, std::span(bytes, dcm_frame_get_length(frame.get())), _grid.frame, frames[column]);
     }
     return _rows.emplace(row, std::move(frames)).first->second;
 }
 
-void Jpeg2000Source::read_tile (std::uint32_t x, std::uint32_t y, std::span<std::uint8_t> rgba)
+void DicomSource::read_tile (std::uint32_t x, std::uint32_t y, std::span<std::uint8_t> rgba)
 {
     // Frame rows above this tile's first are not needed by this tile or any after it in
     // row-major order; a read out of that order decodes them again.
