@@ -13,6 +13,41 @@ namespace py    = pybind11;
 
 #include "IrisTypesPython.hpp"
 #include "IrisSlidePython.hpp"
+#include "IrisSlideEncoder_.hpp"
+
+// RTM Bindings_01
+// The rebuilt encoder (IrisSlideEncoder_.cpp), bound as Iris.Encoder.rebuilt until the cut-over
+// replaces the functions above. Every failing Result is raised as RuntimeError with its message.
+namespace {
+namespace Rebuilt = IrisSlide::Rebuilt;
+/// Python's handle on an encoder: Rebuilt::Encoder_t is defined in its .cpp only.
+struct RebuiltEncoder {
+    Rebuilt::Encoder encoder;
+};
+void raise_if_failed (const Iris::Result& result)
+{
+    if (result.failed()) throw std::runtime_error(result.message);
+}
+IrisSlide::Subsampling subsampling_of (const std::string& text)
+{
+    if (text == "444") return IrisSlide::SUBSAMPLE_444;
+    if (text == "422") return IrisSlide::SUBSAMPLE_422;
+    if (text == "420") return IrisSlide::SUBSAMPLE_420;
+    throw std::invalid_argument("subsampling \"" + text + "\" is not 444, 422 or 420");
+}
+RebuiltEncoder create_rebuilt (const std::string& source, const std::string& destination, unsigned quality,
+                               const std::string& subsampling, std::uint64_t memory_budget, unsigned concurrency)
+{
+    RebuiltEncoder handle;
+    raise_if_failed(Rebuilt::create_encoder({.source = source, .destination = destination,
+                                             .quality = static_cast<IrisSlide::Quality>(quality),
+                                             .subsampling = subsampling_of(subsampling),
+                                             .memory_budget = memory_budget,
+                                             .concurrency = concurrency ? concurrency : std::thread::hardware_concurrency()},
+                                            handle.encoder));
+    return handle;
+}
+} // namespace
 namespace IrisSlide {
 inline std::string to_string (EncoderStatus status)
 {
@@ -100,6 +135,38 @@ inline std::tuple<Result,std::string> _get_encoder_dst_path(const Encoder& encod
 PYBIND11_MODULE(encoder, m)
 {
     using namespace IrisSlide;
+    {
+        auto rebuilt = m.def_submodule("rebuilt", "The rebuilt encoder: reads a slide directly (DICOM JPEG 2000 or HTJ2K), "
+                                       "derives every layer by a 2x bicubic reduction, writes <name>.jpeg.iris");
+        py::enum_<Rebuilt::EncoderState>(rebuilt, "EncoderState")
+            .value("READY",       Rebuilt::EncoderState::READY)
+            .value("ACTIVE",      Rebuilt::EncoderState::ACTIVE)
+            .value("DONE",        Rebuilt::EncoderState::DONE)
+            .value("FAILED",      Rebuilt::EncoderState::FAILED)
+            .value("INTERRUPTED", Rebuilt::EncoderState::INTERRUPTED);
+        py::class_<Rebuilt::EncoderProgress>(rebuilt, "EncoderProgress")
+            .def_readonly("state",               &Rebuilt::EncoderProgress::state)
+            .def_readonly("fraction",            &Rebuilt::EncoderProgress::fraction)
+            .def_property_readonly("file",       [](const Rebuilt::EncoderProgress& p) { return p.file.string(); })
+            .def_readonly("error",               &Rebuilt::EncoderProgress::error)
+            .def_readonly("resident_bytes",      &Rebuilt::EncoderProgress::resident_bytes)
+            .def_readonly("peak_resident_bytes", &Rebuilt::EncoderProgress::peak_resident_bytes)
+            .def_readonly("memory_budget",       &Rebuilt::EncoderProgress::memory_budget);
+        py::class_<RebuiltEncoder>(rebuilt, "Encoder");
+        rebuilt.def("create_encoder", &create_rebuilt,
+                    "An encoder for one slide; raises RuntimeError naming what it refuses",
+                    py::arg("source"), py::arg("destination"), py::arg("quality") = 90,
+                    py::arg("subsampling") = "422", py::arg("memory_budget") = 0, py::arg("concurrency") = 0);
+        rebuilt.def("dispatch", [](const RebuiltEncoder& e) { raise_if_failed(Rebuilt::dispatch(e.encoder)); },
+                    "Starts the encode and returns; raises when the encoder was already dispatched", py::arg("encoder"));
+        rebuilt.def("progress", [](const RebuiltEncoder& e) {
+                        Rebuilt::EncoderProgress progress;
+                        raise_if_failed(Rebuilt::progress(e.encoder, progress));
+                        return progress;
+                    }, "A snapshot of the encode", py::arg("encoder"));
+        rebuilt.def("interrupt", [](const RebuiltEncoder& e) { raise_if_failed(Rebuilt::interrupt(e.encoder)); },
+                    "Stops an active encode; it leaves no file", py::arg("encoder"));
+    }
     py::enum_<EncoderStatus>                                (m,"EncoderStatus")
         .value("ENCODER_INACTIVE",      ENCODER_INACTIVE)
         .value("ENCODER_ACTIVE",        ENCODER_ACTIVE)
