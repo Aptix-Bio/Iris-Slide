@@ -158,6 +158,7 @@ set (
     ${SLIDE_SOURCE_DIR}/IrisSlideDicomSource.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideSource.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideReduce.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideEncoder_.cpp
 )
 set (
     IrisSlideInclude

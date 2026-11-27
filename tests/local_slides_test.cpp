@@ -29,6 +29,7 @@ extern "C" {
 #include "IrisSlidePriv.hpp"
 #include "IrisSlideDicomSeries.hpp"
 #include "IrisSlideDicomSource.hpp"
+#include "IrisSlideEncoder_.hpp"
 #include "IrisSlideRetile.hpp"
 #include "IrisSlideOpenJpeg.hpp"
 #include "IrisSlideSourceCodec.hpp"
@@ -334,4 +335,54 @@ TEST_CASE("open_source opens a local DICOM slide as its highest instance, with i
         CHECK(source->measurements().magnification > 0.0);
         CHECK_FALSE(source->measurements().icc_profile.empty());
     }
+}
+
+TEST_CASE("The rebuilt encoder reads an HTJ2K slide directly and writes every layer, its base close to the re-cut",
+          "[Testing_01][Encode_10]")
+{
+    std::filesystem::path htj2k;
+    for (const auto& local : jpeg2000_instances(slide_folder()))
+        if (htj2k.empty() && IrisSlide::source_codec(local.syntax) == IrisSlide::SourceCodec::HTJ2K) htj2k = local.path;
+    REQUIRE_FALSE(htj2k.empty());
+    const auto out = std::filesystem::temp_directory_path() / ("IrisSlideTest_htj2k_" + std::to_string(std::random_device{}()));
+    std::filesystem::create_directories(out);
+    IrisSlide::Rebuilt::Encoder encoder;
+    const auto created = IrisSlide::Rebuilt::create_encoder({.source = htj2k, .destination = out}, encoder);
+    INFO(created.message);
+    REQUIRE(created.succeeded());
+    REQUIRE(IrisSlide::Rebuilt::dispatch(encoder).succeeded());
+    IrisSlide::Rebuilt::EncoderProgress progress;
+    do {
+        std::this_thread::sleep_for(ENCODER_POLL);
+        REQUIRE(IrisSlide::Rebuilt::progress(encoder, progress).succeeded());
+    } while (progress.state == IrisSlide::Rebuilt::EncoderState::ACTIVE);
+    INFO(progress.error);
+    REQUIRE(progress.state == IrisSlide::Rebuilt::EncoderState::DONE);
+    CHECK(progress.file.filename() == htj2k.stem().string() + ".jpeg.iris");
+
+    const auto slide = IrisSlide::open_slide({.filePath = progress.file.string()});
+    REQUIRE(slide);
+    IrisSlide::SlideInfo info;
+    REQUIRE(IrisSlide::get_slide_info(slide, info).succeeded());
+    IrisSlide::DicomSource source(IrisSlide::read_dicom_instance(htj2k));
+    const auto& base = info.extent.layers.back();
+    CHECK(base.xTiles == IrisSlide::tiles_across(source.size()));
+    CHECK(base.yTiles == IrisSlide::tiles_down(source.size()));
+    CHECK(info.extent.layers.front().xTiles == 1);
+    CHECK(info.extent.layers.front().yTiles == 1);
+    CHECK(info.metadata.micronsPerPixel > 0.f);
+    CHECK_FALSE(info.metadata.ICC_profile.empty());
+    CHECK(info.metadata.attributes.empty());   // only measurements are carried from DICOM (D2)
+    auto recut = tile_buffer();
+    const std::uint32_t tx = base.xTiles / 2, ty = base.yTiles / 2;
+    source.read_tile(tx, ty, recut);
+    const auto decoded = IrisSlide::read_slide_tile({.slide = slide,
+        .layerIndex = static_cast<std::uint32_t>(info.extent.layers.size() - 1),
+        .tileIndex = ty * base.xTiles + tx, .desiredFormat = Iris::FORMAT_R8G8B8A8});
+    REQUIRE(decoded);
+    const double psnr = psnr_rgb(recut, static_cast<const std::uint8_t*>(decoded->data()));
+    INFO("PSNR " << psnr << " dB");
+    CHECK(psnr >= JPEG_PSNR_FLOOR_DB);
+    std::error_code ignored;
+    std::filesystem::remove_all(out, ignored);
 }

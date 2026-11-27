@@ -16,7 +16,7 @@ if (IRIS_BUILD_ENCODER)
     target_sources(IrisSlideTests PRIVATE ${IrisSlideEncoderSources} encoder_attributes_test.cpp
                    source_codec_test.cpp openjpeg_frames_test.cpp
                    local_slides_test.cpp dicom_series_test.cpp openslide_optional_test.cpp
-                   retile_test.cpp reduce_test.cpp)
+                   retile_test.cpp reduce_test.cpp encoder_rewrite_test.cpp)
     set(test_dependencies ${IrisSlideEncoderDependencies})
 endif()
 iris_slide_compile_settings(IrisSlideTests)
