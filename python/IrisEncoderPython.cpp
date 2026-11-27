@@ -134,7 +134,7 @@ PYBIND11_MODULE(encoder, m)
     m.def("create_encoder",&_create_encoder,
           "Method to create an encoder object",
           py::arg("source"),
-          "File path to the source WSI file (must be a compatible WSI format understood by OpenSlide)",
+          "File path to the source slide: DICOM or .iris, and vendor formats in an encoder built with IRIS_USE_OPENSLIDE=ON",
           py::arg("outdir") = std::string(),
           "File path to the output file directory. The encoder will name the file XXX.iris where XXX represents the previous file name (ex /path/to/slide.svs will be named /outdir/slide.iris)",
           py::arg("desired_encoding") = IrisSlide::TILE_ENCODING_DEFAULT,

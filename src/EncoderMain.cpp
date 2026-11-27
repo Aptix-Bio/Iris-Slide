@@ -34,7 +34,7 @@ constexpr char help_statement[] =
 The Iris Slide Encoder tool is Copyright (c) 2025 Ryan Landvater  \n \
 Arugments:\n \
 -h --help: Print this help text \n \
--s --source: File path to the source WSI file (must be a compatible WSI format understood by OpenSlide) \n \
+-s --source: File path to the source slide: DICOM or .iris, and vendor formats in an encoder built with IRIS_USE_OPENSLIDE=ON \n \
 -o --outdir: File path to the output file directory. The encoder will name the file XXX.iris where XXX \
 represents the previous file name (ex /path/to/slide.svs will be named /outdir/slide.iris) \n \
 -d --derive: Generate the lower resolution layers. Options are 2x, 4x, or use-source (default)\

@@ -12,7 +12,9 @@ option(IRIS_BUILD_SHARED "Build IrisSlide Shared Library" ON)
 option(IRIS_BUILD_STATIC "Build IrisSlide Static Library" ON)
 option(IRIS_BUILD_ENCODER "Build the IrisSlide Encoder executable" ON)
 option(IRIS_BUILD_PYTHON "Build IrisSlide Python modules" OFF)
-option(IRIS_USE_OPENSLIDE "Use openslide in the encoder (currently not supported on Windows Arm64)" ON)
+# RTM Build_07: OpenSlide is opt-in (decided 2026-11-27), so the encoder needs no OpenSlide library
+# to encode a DICOM or Iris source; ON adds vendor slide files (not supported on Windows Arm64).
+option(IRIS_USE_OPENSLIDE "Read vendor slide files in the encoder through OpenSlide (opt-in)" OFF)
 option(IRIS_SYSTEM_DEPENDENCIES "Find the third-party libraries installed on the system instead of through vcpkg" OFF)
 option(IRIS_SLIDE_BUILD_TESTS "Build the Catch2 tests in tests/ (vcpkg.json's tests feature)" OFF)
 

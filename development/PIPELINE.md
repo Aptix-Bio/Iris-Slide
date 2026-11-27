@@ -52,7 +52,10 @@ flowchart LR
    uncommitted changes are written into the port, so a package built from
    other source is never restored for it. Iris-Headers' downstream cell builds
    Iris-Slide this way.
-5. **Prebuilt over built.** OpenSlide is openslide-bin, OpenSlide's own
+5. **Prebuilt over built, and OpenSlide opt-in.** OpenSlide is a build option, `IRIS_USE_OPENSLIDE`,
+   off by default (decided 2026-11-27), so the encoder and its Python module need no OpenSlide
+   library to encode DICOM and `.iris` sources; CI's gcc cell builds the `ci-openslide` preset so
+   that path stays compiled, and the other cells and the releases build without it. OpenSlide is openslide-bin, OpenSlide's own
    release, as a port (`ports/openslide-bin`): vcpkg's openslide port builds
    glib and cairo, one of whose tools needs autoconf, automake and libtool
    installed on the system. OpenSlide (LGPL-2.1) stays a shared library; every

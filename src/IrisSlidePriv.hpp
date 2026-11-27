@@ -35,7 +35,7 @@
 #define F64_CAST(X)         static_cast<double>(X)
 #endif
 #ifndef IRIS_INCLUDE_OPENSLIDE
-#define IRIS_INCLUDE_OPENSLIDE 1
+#define IRIS_INCLUDE_OPENSLIDE 0   // RTM Build_07: opt-in
 #endif
 #include <iostream>
 #include <assert.h>

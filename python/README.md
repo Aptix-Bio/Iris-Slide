@@ -57,8 +57,8 @@ pip install iris-slide
 
 **With Encoder Support:**
 ```shell
-# For slide encoding capabilities (requires OpenSlide)
-pip install iris-slide openslide-bin
+# Encodes DICOM and .iris sources; vendor formats need a build with IRIS_USE_OPENSLIDE=ON
+pip install iris-slide
 ```
 
 > [!NOTE]

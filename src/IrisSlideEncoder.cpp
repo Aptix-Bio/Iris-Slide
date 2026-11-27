@@ -662,7 +662,7 @@ inline EncoderSource OPEN_SOURCE (const std::string& path_, const Context contex
     }
     throw std::runtime_error("Provided source file path was not recognized by any available decoders.");
     #else
-    throw std::runtime_error("Provided source file path was not recognized by any available decoders. You may need an encoder built with OpenSlide enabled.");
+    throw std::runtime_error("Provided source file path " + path_ + " was not recognized by any available decoder: this encoder was built without OpenSlide; a vendor slide file needs an encoder built with IRIS_USE_OPENSLIDE=ON");
     #endif
    
 }
@@ -676,7 +676,7 @@ inline Buffer GET_SOURCE_TILE (const EncoderSource& src, LayerIndex layer, TileI
             #if IRIS_INCLUDE_OPENSLIDE
             return NULL;
             #else
-            throw std::runtime_error("Openslide linkage was NOT compiled into this binary. Request a new version of Iris Slide with OpenSlide support if you would like to decode slide scanning vendor slide files only accessable to OpenSlide.");
+            throw std::runtime_error("this encoder was built without OpenSlide; a vendor slide file needs an encoder built with IRIS_USE_OPENSLIDE=ON");
             #endif
         case EncoderSource::ENCODER_SRC_DICOM:
             return GET_DICOM_TILE(src, layer, tile);
@@ -699,7 +699,7 @@ inline Buffer READ_SOURCE_TILE (const Context& ctx, const EncoderSource& src, La
             #if IRIS_INCLUDE_OPENSLIDE
             return READ_OPENSLIDE_TILE (src, layer, tile);
             #else
-            throw std::runtime_error("Openslide linkage was NOT compiled into this binary. Request a new version of Iris Slide with OpenSlide support if you would like to decode slide scanning vendor slide files only accessable to OpenSlide.");
+            throw std::runtime_error("this encoder was built without OpenSlide; a vendor slide file needs an encoder built with IRIS_USE_OPENSLIDE=ON");
             #endif
             
         case EncoderSource::ENCODER_SRC_DICOM: {
@@ -864,7 +864,7 @@ inline Metadata READ_METADATA (const EncoderSource& source, const Extent& extent
             #if IRIS_INCLUDE_OPENSLIDE
             return READ_OPENSLIDE_METADATA(source,extent,anonymize);
             #else
-            throw std::runtime_error("this encoder was built without OpenSlide (IRIS_USE_OPENSLIDE=OFF), so it cannot read a vendor slide file");
+            throw std::runtime_error("this encoder was built without OpenSlide; a vendor slide file needs an encoder built with IRIS_USE_OPENSLIDE=ON");   // RTM Build_07
             #endif
         case EncoderSource::ENCODER_SRC_DICOM:
             return READ_DICOM_METADATA(source,extent,anonymize);
@@ -905,7 +905,7 @@ inline void APPEND_ASSOCIATED_IMAGES (const Context& ctx,
                 });
                 break;
                 #else
-                throw std::runtime_error("this encoder was built without OpenSlide (IRIS_USE_OPENSLIDE=OFF), so it cannot read a vendor slide file");
+                throw std::runtime_error("this encoder was built without OpenSlide; a vendor slide file needs an encoder built with IRIS_USE_OPENSLIDE=ON");   // RTM Build_07
                 #endif
             case EncoderSource::ENCODER_SRC_DICOM:
                 throw std::runtime_error("DICOM associated images are not yet read");

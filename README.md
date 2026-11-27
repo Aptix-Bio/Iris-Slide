@@ -94,7 +94,7 @@ The build system provides several configurable options to customize your build:
 | `IRIS_BUILD_ENCODER` | `ON` | Build the encoder executable for converting WSI files |
 | `IRIS_BUILD_PYTHON` | `OFF` | Build Python bindings |
 | `IRIS_SYSTEM_DEPENDENCIES` | `OFF` | Find the dependencies installed on the system instead of through vcpkg |
-| `IRIS_USE_OPENSLIDE` | `ON` | Enable OpenSlide support (required for most WSI formats) |
+| `IRIS_USE_OPENSLIDE` | `OFF` | Read vendor slide files (.svs, .ndpi, …) in the encoder through OpenSlide; off by default, so DICOM and `.iris` sources need no OpenSlide |
 
 ## Python
 [![Conda Version](https://img.shields.io/conda/vn/conda-forge/iris-slide.svg?style=for-the-badge&logo=anaconda)](https://anaconda.org/conda-forge/iris-slide) 
@@ -107,7 +107,7 @@ The build system provides several configurable options to customize your build:
 conda install -c conda-forge iris-slide
 
 # PyPI
-pip install iris-slide openslide-bin
+pip install iris-slide
 ```
 
 ## JavaScript
@@ -151,7 +151,7 @@ const irisSlide = await createModule();
 
 **Available Arguments:**
 - `-h, --help`: Print help text
-- `-s, --source`: File path to the source WSI file (must be compatible with OpenSlide)
+- `-s, --source`: File path to the source slide: DICOM or `.iris`, and vendor formats in an encoder built with `IRIS_USE_OPENSLIDE=ON`
 - `-o, --outdir`: Output directory path (encoder names file as XXX.iris based on source filename)
 - `-d, --derive`: Generate lower resolution layers - Options: `2x`, `4x`, or `use-source` (default)
 - `-sm, --strip_metadata`: Strip patient identifiers from encoded metadata

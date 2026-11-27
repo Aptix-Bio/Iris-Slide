@@ -43,13 +43,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { runner: blacksmith-4vcpu-ubuntu-2404, cc: gcc, cxx: g++ }
-          - { runner: blacksmith-4vcpu-ubuntu-2404, cc: clang, cxx: clang++ }
-          - { runner: blacksmith-4vcpu-ubuntu-2404-arm, cc: clang, cxx: clang++ }
+          # RTM Build_07: OpenSlide is opt-in; the gcc cell builds the encoder with it, the rest without.
+          - { runner: blacksmith-4vcpu-ubuntu-2404, cc: gcc, cxx: g++, preset: ci-openslide }
+          - { runner: blacksmith-4vcpu-ubuntu-2404, cc: clang, cxx: clang++, preset: ci }
+          - { runner: blacksmith-4vcpu-ubuntu-2404-arm, cc: clang, cxx: clang++, preset: ci }
     uses: ./.github/workflows/_build.yml
     with:
       runner: ${{ matrix.runner }}
-      preset: ci
+      preset: ${{ matrix.preset }}
       cc: ${{ matrix.cc }}
       cxx: ${{ matrix.cxx }}
       access: quarantine
