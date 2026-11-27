@@ -13,7 +13,8 @@ add_executable(
 )
 set(test_dependencies ${IrisSlideDependencies})
 if (IRIS_BUILD_ENCODER)
-    target_sources(IrisSlideTests PRIVATE ${IrisSlideEncoderSources} encoder_attributes_test.cpp)
+    target_sources(IrisSlideTests PRIVATE ${IrisSlideEncoderSources} encoder_attributes_test.cpp
+                   source_codec_test.cpp)
     set(test_dependencies ${IrisSlideEncoderDependencies})
 endif()
 iris_slide_compile_settings(IrisSlideTests)

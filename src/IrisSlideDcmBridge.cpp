@@ -15,6 +15,7 @@
  *
  */
 #include "IrisSlidePriv.hpp"
+#include "IrisSlideSourceCodec.hpp"
 #include <filesystem>
 #include <sstream>
 
@@ -155,18 +156,18 @@ inline std::vector<std::filesystem::path> FIND_DICOM_FILE_WITH_STUDY_UID
     return result;
 }
 
-constexpr char DICOM_JPEG_8 []  = "1.2.840.10008.1.2.4.50";
-constexpr char DICOM_JPEG_12 [] = "1.2.840.10008.1.2.4.51";
-constexpr char DICOM_JPEG_Pr [] = "1.2.840.10008.1.2.4.70";
+// RTM Dicom_04: the transfer syntax's codec comes from the one table (IrisSlideSourceCodec.hpp),
+// which refuses an unknown syntax naming its UID. Until the rebuilt encoder decodes JPEG 2000 and
+// HTJ2K frames (OpenJpegFrames_22.3), only JPEG frames have a tile encoding to pass through as.
 inline Encoding PARSE_DICOM_ENCODING (DcmFilehandle* handle)
 {
     const char* TS_UID = dcm_filehandle_get_transfer_syntax_uid(handle);
-    if (!TS_UID) return TILE_ENCODING_UNDEFINED;
-
-    else if (!strcmp(TS_UID, DICOM_JPEG_8)) return TILE_ENCODING_JPEG;
-    else if (!strcmp(TS_UID, DICOM_JPEG_12)) return TILE_ENCODING_JPEG;
-    else if (!strcmp(TS_UID, DICOM_JPEG_Pr)) return TILE_ENCODING_JPEG;
-
+    if (!TS_UID) throw std::runtime_error("the DICOM file declares no transfer syntax");
+    switch (source_codec(TS_UID)) {
+        case SourceCodec::JPEG:         return TILE_ENCODING_JPEG;
+        case SourceCodec::JPEG_2000:
+        case SourceCodec::HTJ2K:        return TILE_ENCODING_UNDEFINED;
+    }
     return TILE_ENCODING_UNDEFINED;
 }
 
