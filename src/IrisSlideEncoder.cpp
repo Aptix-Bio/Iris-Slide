@@ -861,7 +861,11 @@ inline Metadata READ_METADATA (const EncoderSource& source, const Extent& extent
             } return metadata;
         }
         case EncoderSource::ENCODER_SRC_OPENSLIDE:
+            #if IRIS_INCLUDE_OPENSLIDE
             return READ_OPENSLIDE_METADATA(source,extent,anonymize);
+            #else
+            throw std::runtime_error("this encoder was built without OpenSlide (IRIS_USE_OPENSLIDE=OFF), so it cannot read a vendor slide file");
+            #endif
         case EncoderSource::ENCODER_SRC_DICOM:
             return READ_DICOM_METADATA(source,extent,anonymize);
         case EncoderSource::ENCODER_SRC_APERIO:
@@ -889,6 +893,7 @@ inline void APPEND_ASSOCIATED_IMAGES (const Context& ctx,
                 bytes   = source.irisSlide->get_assoc_image(label);
                 break;
             case EncoderSource::ENCODER_SRC_OPENSLIDE:
+                #if IRIS_INCLUDE_OPENSLIDE
                 info    = READ_OPENSLIDE_ASSOCIATED_IMAGE_INFO(source.openslide, label);
                 bytes   = ctx->compress_image(CompressImageInfo{
                     .pixelArray = READ_OPENSLIDE_ASSOCIATED_IMAGE(source.openslide, info),
@@ -899,6 +904,9 @@ inline void APPEND_ASSOCIATED_IMAGES (const Context& ctx,
                     .quality    = QUALITY_DEFAULT
                 });
                 break;
+                #else
+                throw std::runtime_error("this encoder was built without OpenSlide (IRIS_USE_OPENSLIDE=OFF), so it cannot read a vendor slide file");
+                #endif
             case EncoderSource::ENCODER_SRC_DICOM:
                 throw std::runtime_error("DICOM associated images are not yet read");
             case EncoderSource::ENCODER_SRC_APERIO:
