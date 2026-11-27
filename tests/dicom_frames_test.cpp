@@ -14,30 +14,19 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "IrisSlideDicomFrames.hpp"
+#include "dicom_builder.hpp"
 
 using Catch::Matchers::ContainsSubstring;
 
 namespace {
-using Bytes = std::vector<std::uint8_t>;
-constexpr std::uint32_t UNDEFINED = 0xFFFFFFFF;
-
-void u16(Bytes& b, std::uint16_t v) { b.push_back(std::uint8_t(v)); b.push_back(std::uint8_t(v >> 8)); }
-void u32(Bytes& b, std::uint32_t v) { for (int i = 0; i < 4; ++i) b.push_back(std::uint8_t(v >> (8 * i))); }
-void u64(Bytes& b, std::uint64_t v) { for (int i = 0; i < 8; ++i) b.push_back(std::uint8_t(v >> (8 * i))); }
-void tag(Bytes& b, std::uint16_t group, std::uint16_t element) { u16(b, group); u16(b, element); }
-/// An explicit-VR little-endian element with a short (16-bit) length.
-void short_element(Bytes& b, std::uint16_t g, std::uint16_t e, const char* vr, const std::string& value)
-{
-    tag(b, g, e); b.push_back(std::uint8_t(vr[0])); b.push_back(std::uint8_t(vr[1]));
-    u16(b, std::uint16_t(value.size()));
-    b.insert(b.end(), value.begin(), value.end());
-}
-/// An element with a 32-bit length (OB, OV, SQ, …): VR, two reserved bytes, the length.
-void long_header(Bytes& b, std::uint16_t g, std::uint16_t e, const char* vr, std::uint32_t length)
-{
-    tag(b, g, e); b.push_back(std::uint8_t(vr[0])); b.push_back(std::uint8_t(vr[1])); u16(b, 0); u32(b, length);
-}
-void item(Bytes& b, std::uint32_t length) { tag(b, 0xFFFE, 0xE000); u32(b, length); }
+using dicom_builder::Bytes;
+using dicom_builder::UNDEFINED;
+using dicom_builder::item;
+using dicom_builder::long_header;
+using dicom_builder::short_element;
+using dicom_builder::tag;
+using dicom_builder::u32;
+using dicom_builder::u64;
 
 struct Built {
     Bytes file;

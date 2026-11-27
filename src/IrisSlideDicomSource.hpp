@@ -35,7 +35,8 @@ std::unique_ptr<Source> open_dicom_source (const std::filesystem::path& path);
 class DicomSource final : public Source {
 public:
     /// Throws std::runtime_error naming the file when it is not TILED_FULL, its codec is not one
-    /// decode_frame decodes, its frame count is not one per position of one focal plane, or its
+    /// decode_frame decodes, its PhotometricInterpretation is not one its codec carries as 8-bit
+    /// colour, its Pixel Spacing is not square, its frame count is not one per position of one focal plane, or its
     /// frames cannot be indexed.
     explicit DicomSource (const DicomInstance& instance);
 
@@ -46,6 +47,7 @@ public:
 
 private:
     SourceCodec         _codec;
+    FrameColor          _color;
     SlideGrid           _grid;
     SourceMeasurements  _measurements;
     std::uint32_t       _frames_across = 0;

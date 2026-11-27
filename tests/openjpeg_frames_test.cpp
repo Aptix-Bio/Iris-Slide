@@ -110,7 +110,7 @@ TEST_CASE("A lossless JPEG 2000 frame decodes to the pixels it was made from", "
     const auto rgb = pattern_frame();
     const auto codestream = encode_lossless(rgb);
     std::vector<std::uint8_t> decoded(rgb.size());
-    IrisSlide::decode_jpeg2000_frame(codestream, {.columns = FRAME_SIDE, .rows = FRAME_SIDE}, decoded);
+    IrisSlide::decode_jpeg2000_frame(codestream, IrisSlide::FrameColor::YCBCR, {.columns = FRAME_SIDE, .rows = FRAME_SIDE}, decoded);
     CHECK(decoded == rgb);
 }
 
@@ -118,7 +118,7 @@ TEST_CASE("A frame whose header disagrees with the instance's Rows and Columns i
 {
     const auto codestream = encode_lossless(pattern_frame());
     std::vector<std::uint8_t> decoded(std::size_t{256} * 256 * RGB_CHANNELS);
-    CHECK_THROWS_WITH(IrisSlide::decode_jpeg2000_frame(codestream, {.columns = 256, .rows = 256}, decoded),
+    CHECK_THROWS_WITH(IrisSlide::decode_jpeg2000_frame(codestream, IrisSlide::FrameColor::YCBCR, {.columns = 256, .rows = 256}, decoded),
                       ContainsSubstring("240 x 240") && ContainsSubstring("256 x 256"));
 }
 
@@ -126,7 +126,7 @@ TEST_CASE("A destination of the wrong size is refused naming both sizes", "[Dico
 {
     const auto codestream = encode_lossless(pattern_frame());
     std::vector<std::uint8_t> decoded(100);
-    CHECK_THROWS_WITH(IrisSlide::decode_jpeg2000_frame(codestream, {.columns = FRAME_SIDE, .rows = FRAME_SIDE}, decoded),
+    CHECK_THROWS_WITH(IrisSlide::decode_jpeg2000_frame(codestream, IrisSlide::FrameColor::YCBCR, {.columns = FRAME_SIDE, .rows = FRAME_SIDE}, decoded),
                       ContainsSubstring("100") && ContainsSubstring("172800"));
 }
 
@@ -135,7 +135,7 @@ TEST_CASE("A truncated codestream is refused", "[Dicom_05]")
     auto codestream = encode_lossless(pattern_frame());
     codestream.resize(codestream.size() / 2);
     std::vector<std::uint8_t> decoded(std::size_t{FRAME_SIDE} * FRAME_SIDE * RGB_CHANNELS);
-    CHECK_THROWS_AS(IrisSlide::decode_jpeg2000_frame(codestream, {.columns = FRAME_SIDE, .rows = FRAME_SIDE}, decoded),
+    CHECK_THROWS_AS(IrisSlide::decode_jpeg2000_frame(codestream, IrisSlide::FrameColor::YCBCR, {.columns = FRAME_SIDE, .rows = FRAME_SIDE}, decoded),
                     std::runtime_error);
 }
 
@@ -143,6 +143,18 @@ TEST_CASE("Bytes that are not a codestream are refused", "[Dicom_05]")
 {
     const std::vector<std::uint8_t> garbage(64, 0xAB);
     std::vector<std::uint8_t> decoded(std::size_t{FRAME_SIDE} * FRAME_SIDE * RGB_CHANNELS);
-    CHECK_THROWS_AS(IrisSlide::decode_jpeg2000_frame(garbage, {.columns = FRAME_SIDE, .rows = FRAME_SIDE}, decoded),
+    CHECK_THROWS_AS(IrisSlide::decode_jpeg2000_frame(garbage, IrisSlide::FrameColor::YCBCR, {.columns = FRAME_SIDE, .rows = FRAME_SIDE}, decoded),
                     std::runtime_error);
+}
+
+TEST_CASE("A codestream whose colour transform disagrees with its PhotometricInterpretation is refused naming both",
+          "[Dicom_05]")
+{
+    // encode_lossless applies the reversible colour transform: the instance must say YBR_RCT, and
+    // "RGB" (no transform) is refused instead of decoded as if it matched.
+    const auto codestream = encode_lossless(pattern_frame());
+    std::vector<std::uint8_t> decoded(std::size_t{FRAME_SIDE} * FRAME_SIDE * RGB_CHANNELS);
+    CHECK_THROWS_WITH(IrisSlide::decode_jpeg2000_frame(codestream, IrisSlide::FrameColor::RGB,
+                                                       {.columns = FRAME_SIDE, .rows = FRAME_SIDE}, decoded),
+                      ContainsSubstring("colour transform") && ContainsSubstring("RGB"));
 }

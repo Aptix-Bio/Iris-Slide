@@ -39,6 +39,7 @@ namespace {
 constexpr std::uint32_t RGB_CHANNELS = 3;
 constexpr std::uint32_t SAMPLED_FRAMES = 16;   // spread over the instance, first and last included
 constexpr std::uint32_t TAG_SOP_INSTANCE_UID = 0x00080018;
+constexpr std::uint32_t TAG_PHOTOMETRIC_INTERPRETATION = 0x00280004;
 constexpr std::uint32_t TAG_NUMBER_OF_FRAMES = 0x00280008;
 constexpr std::uint32_t TAG_ROWS = 0x00280010;
 constexpr std::uint32_t TAG_COLUMNS = 0x00280011;
@@ -91,6 +92,7 @@ struct Instance {
     std::string           syntax;
     std::string           sop_uid;
     IrisSlide::FrameShape shape;
+    IrisSlide::FrameColor color = IrisSlide::FrameColor::RGB;
     std::uint32_t         frames = 0;
     Handle                handle {nullptr, &dcm_filehandle_destroy};
 
@@ -105,7 +107,7 @@ struct Instance {
         }
         const auto* bytes = static_cast<const std::uint8_t*>(static_cast<const void*>(dcm_frame_get_value(frame.get())));
         std::vector<std::uint8_t> rgb(std::size_t{shape.columns} * shape.rows * RGB_CHANNELS);
-        IrisSlide::decode_jpeg2000_frame(std::span(bytes, dcm_frame_get_length(frame.get())), shape, rgb);
+        IrisSlide::decode_jpeg2000_frame(std::span(bytes, dcm_frame_get_length(frame.get())), color, shape, rgb);
         return rgb;
     }
 };
@@ -144,6 +146,8 @@ std::vector<Instance> jpeg2000_instances(const std::filesystem::path& folder)
         }
         instance.sop_uid = text_of(data, TAG_SOP_INSTANCE_UID);
         instance.shape   = {.columns = integer_of(data, TAG_COLUMNS), .rows = integer_of(data, TAG_ROWS)};
+        instance.color   = IrisSlide::frame_color(IrisSlide::source_codec(instance.syntax),
+                                                  text_of(data, TAG_PHOTOMETRIC_INTERPRETATION));
         // PS3.3 C.7.6.6: an instance without NumberOfFrames holds one frame.
         instance.frames  = dcm_dataset_get(nullptr, data, TAG_NUMBER_OF_FRAMES)
                          ? static_cast<std::uint32_t>(std::stoul(text_of(data, TAG_NUMBER_OF_FRAMES))) : 1;   // IS: text
@@ -164,7 +168,7 @@ std::vector<std::uint32_t> sampled_frames(std::uint32_t frames)
 } // namespace
 
 TEST_CASE("Every JPEG 2000 and HTJ2K slide in the local folder decodes at its declared frame size",
-          "[Testing_01][Dicom_05]")
+          "[.local][Testing_01][Dicom_05]")
 {
     const auto instances = jpeg2000_instances(slide_folder());
     REQUIRE_FALSE(instances.empty());
@@ -176,7 +180,7 @@ TEST_CASE("Every JPEG 2000 and HTJ2K slide in the local folder decodes at its de
 }
 
 TEST_CASE("An HTJ2K copy of a lossless JPEG 2000 slide decodes to the same pixels, frame for frame",
-          "[Testing_01][Dicom_05]")
+          "[.local][Testing_01][Dicom_05]")
 {
     const auto instances = jpeg2000_instances(slide_folder());
     std::map<std::string, const Instance*> lossless_by_uid;
@@ -197,7 +201,7 @@ TEST_CASE("An HTJ2K copy of a lossless JPEG 2000 slide decodes to the same pixel
 }
 
 TEST_CASE("Each local slide's series yields its highest VOLUME instance, TILED_FULL, with its spacing",
-          "[Testing_01][Dicom_03]")
+          "[.local][Testing_01][Dicom_03]")
 {
     const auto instances = jpeg2000_instances(slide_folder());
     REQUIRE_FALSE(instances.empty());
@@ -245,7 +249,7 @@ double psnr_rgb(const std::vector<std::uint8_t>& a, const std::uint8_t* b)
 } // namespace
 
 TEST_CASE("An HTJ2K slide re-cut into 256-pixel tiles equals its lossless JPEG 2000 original's re-cut",
-          "[Testing_01][Encode_10]")
+          "[.local][Testing_01][Encode_10]")
 {
     const auto instances = jpeg2000_instances(slide_folder());
     std::map<std::string, const Instance*> lossless_by_uid;
@@ -278,7 +282,7 @@ TEST_CASE("An HTJ2K slide re-cut into 256-pixel tiles equals its lossless JPEG 2
 }
 
 TEST_CASE("A re-cut tile's pixels are the source frames' pixels at the same slide position",
-          "[Testing_01][Encode_10]")
+          "[.local][Testing_01][Encode_10]")
 {
     for (const auto& local : jpeg2000_instances(slide_folder())) {
         INFO(local.path.filename());
@@ -304,7 +308,7 @@ TEST_CASE("A re-cut tile's pixels are the source frames' pixels at the same slid
 }
 
 TEST_CASE("open_source opens a local DICOM slide as its highest instance, with its measurements",
-          "[Testing_01][Encode_10]")
+          "[.local][Testing_01][Encode_10]")
 {
     for (const auto& local : jpeg2000_instances(slide_folder())) {
         INFO(local.path.filename());
@@ -318,7 +322,7 @@ TEST_CASE("open_source opens a local DICOM slide as its highest instance, with i
 }
 
 TEST_CASE("The encoder reads an HTJ2K slide directly and writes every layer, its base close to the re-cut",
-          "[Testing_01][Encode_10]")
+          "[.local][Testing_01][Encode_10]")
 {
     std::filesystem::path htj2k;
     for (const auto& local : jpeg2000_instances(slide_folder()))
@@ -369,7 +373,7 @@ TEST_CASE("The encoder reads an HTJ2K slide directly and writes every layer, its
     CHECK(psnr >= JPEG_PSNR_FLOOR_DB);
 }
 
-TEST_CASE("Each local slide's frame index gives libdicom's exact frame bytes", "[Testing_01][Dicom_06]")
+TEST_CASE("Each local slide's frame index gives libdicom's exact frame bytes", "[.local][Testing_01][Dicom_06]")
 {
     for (const auto& local : jpeg2000_instances(slide_folder())) {
         INFO(local.path.filename());

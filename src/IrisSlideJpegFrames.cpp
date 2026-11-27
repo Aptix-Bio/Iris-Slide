@@ -39,7 +39,7 @@ std::pair<TJPF, std::size_t> layout_of (Iris::Format format)
 
 // RTM Dicom_05
 void decode_jpeg (std::span<const std::uint8_t> stream, FrameShape expected, Iris::Format format,
-                  std::span<std::uint8_t> pixels)
+                  std::span<std::uint8_t> pixels, std::optional<FrameColor> stored)
 {
     const auto [layout, pixel_bytes] = layout_of(format);
     std::unique_ptr<void, decltype(&tj3Destroy)> handle(tj3Init(TJINIT_DECOMPRESS), &tj3Destroy);
@@ -55,6 +55,16 @@ void decode_jpeg (std::span<const std::uint8_t> stream, FrameShape expected, Iri
     if (columns < 0 || rows < 0 || std::uint32_t(columns) != expected.columns || std::uint32_t(rows) != expected.rows)
         refuse("its header is " + std::to_string(columns) + " x " + std::to_string(rows) + " where " +
                std::to_string(expected.columns) + " x " + std::to_string(expected.rows) + " is declared");
+    // libjpeg-turbo reads the stored colour space from the stream's markers (JFIF, Adobe).
+    if (stored) {
+        const int space = tj3Get(handle.get(), TJPARAM_COLORSPACE);
+        const bool is_match = (*stored == FrameColor::YCBCR && space == TJCS_YCbCr) ||
+                              (*stored == FrameColor::RGB && space == TJCS_RGB);
+        if (!is_match)
+            refuse(std::string("it stores ") + (space == TJCS_YCbCr ? "YCbCr" : space == TJCS_RGB ? "RGB" : "colour space " + std::to_string(space)) +
+                   " where the instance's PhotometricInterpretation declares " +
+                   (*stored == FrameColor::YCBCR ? "YCbCr (YBR_FULL or YBR_FULL_422)" : "RGB"));
+    }
     const int precision = tj3Get(handle.get(), TJPARAM_PRECISION);
     if (precision != SAMPLE_BITS) refuse("its samples are " + std::to_string(precision) + "-bit where 8-bit are decoded");
     const std::size_t needed = std::size_t(columns) * std::size_t(rows) * pixel_bytes;
@@ -64,8 +74,9 @@ void decode_jpeg (std::span<const std::uint8_t> stream, FrameShape expected, Iri
     if (decoded != 0) refuse(std::string("its stream did not decode: ") + tj3GetErrorStr(handle.get()));
 }
 
-void decode_jpeg_frame (std::span<const std::uint8_t> stream, FrameShape expected, std::span<std::uint8_t> rgb)
+void decode_jpeg_frame (std::span<const std::uint8_t> stream, FrameColor stored, FrameShape expected,
+                        std::span<std::uint8_t> rgb)
 {
-    decode_jpeg(stream, expected, Iris::FORMAT_R8G8B8, rgb);
+    decode_jpeg(stream, expected, Iris::FORMAT_R8G8B8, rgb, stored);
 }
 } // END IRIS SLIDE NAMESPACE

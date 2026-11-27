@@ -80,6 +80,24 @@
       "configurePreset": "debug",
       "output": {
         "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "local"
+        }
+      }
+    },
+    {
+      "name": "local",
+      "displayName": "Local-slide parity tests (IRIS_SLIDE_TEST_SLIDES)",
+      "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "local"
+        }
       }
     }
   ]

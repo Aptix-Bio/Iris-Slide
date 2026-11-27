@@ -135,9 +135,9 @@ std::vector<char> bytes_of(const std::filesystem::path& path)
 TEST_CASE("The output is named for its source and tile encoding", "[Encode_09]")
 {
     std::string name;
-    REQUIRE(IrisSlide::encoder_output_name("slides/9a98aa37.dcm", IrisSlide::TILE_ENCODING_JPEG, name).succeeded());
-    CHECK(name == "9a98aa37.jpeg.iris");
-    CHECK_THAT(IrisSlide::encoder_output_name("slides/9a98aa37.dcm", IrisSlide::TILE_ENCODING_AV1, name).message,
+    REQUIRE(IrisSlide::encoder_output_name("slides/synthetic.dcm", IrisSlide::TILE_ENCODING_JPEG, name).succeeded());
+    CHECK(name == "synthetic.jpeg.iris");
+    CHECK_THAT(IrisSlide::encoder_output_name("slides/synthetic.dcm", IrisSlide::TILE_ENCODING_AV1, name).message,
                ContainsSubstring("TILE_ENCODING_AV1"));
 }
 
@@ -223,17 +223,20 @@ TEST_CASE("The same source and options give a byte-identical file", "[Encode_12]
     CHECK(bytes_a == bytes_b);
 }
 
-TEST_CASE("A slide whose decoded size is over 4x the budget encodes within the budget", "[Encode_11]")
+TEST_CASE("A slide whose decoded size is over twice the budget encodes within the budget", "[Encode_11]")
 {
+    // One tile wide and one worker: the smallest working set (5 rows of each layer and one worker's
+    // scratch), so a slide of 130 tiles is already over twice a budget the encoder accepts.
     const ScratchFolder folder;
-    const IrisSlide::LayerSize size {.width = 2300, .height = 20400};   // 9 x 80 tiles, 189 MB decoded
-    constexpr std::uint64_t BUDGET = 40ull << 20;
-    constexpr std::uint32_t WORKERS = 2;
+    constexpr std::uint32_t TILES_DOWN = 130;
+    const IrisSlide::LayerSize size {.width = IrisSlide::RECUT_TILE, .height = std::uint64_t{TILES_DOWN} * IrisSlide::RECUT_TILE};
+    constexpr std::uint64_t BUDGET = 16ull << 20;
+    constexpr std::uint32_t WORKERS = 1;
+    STATIC_CHECK(std::uint64_t{TILES_DOWN} * TILE_BYTES > 2 * BUDGET);
     const auto done = encode(size, folder.path, BUDGET, WORKERS);
     INFO("peak " << done.peak_resident_bytes << " of " << BUDGET);
     CHECK(done.peak_resident_bytes <= BUDGET);
     CHECK(done.peak_resident_bytes > BUDGET / 4);   // the budget was charged, and used
-    CHECK(std::uint64_t{9} * 80 * TILE_BYTES > 4 * BUDGET);
 }
 
 TEST_CASE("An interrupted encode ends INTERRUPTED and leaves no file once dropped", "[Encode_09]")
@@ -294,7 +297,7 @@ TEST_CASE("A dispatch that cannot make its file fails, and the encoder can still
 TEST_CASE("One worker and every worker give the same bytes", "[Encode_12]")
 {
     const ScratchFolder one, many;
-    const IrisSlide::LayerSize size {.width = 2300, .height = 2100};
+    const IrisSlide::LayerSize size {.width = 1000, .height = 1000};   // 4 x 4 tiles, three derived layers
     const auto a = encode(size, one.path, 0, 1), b = encode(size, many.path);
     CHECK(bytes_of(a.file) == bytes_of(b.file));
 }

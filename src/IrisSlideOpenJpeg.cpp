@@ -84,6 +84,7 @@ std::string shape_text (std::uint64_t columns, std::uint64_t rows)
 
 // RTM Dicom_05
 void decode_jpeg2000_frame (std::span<const std::uint8_t> codestream,
+                            FrameColor stored,
                             FrameShape expected,
                             std::span<std::uint8_t> rgb)
 {
@@ -119,6 +120,16 @@ void decode_jpeg2000_frame (std::span<const std::uint8_t> codestream,
     if (columns != expected.columns || rows != expected.rows)
         refuse("its header is " + shape_text(columns, rows) + " where the instance declares " +
                shape_text(expected.columns, expected.rows), errors);
+    // The codestream's multiple-component transform says what it stores: YCbCr when it is on.
+    using CodestreamInfo = std::unique_ptr<opj_codestream_info_v2_t, void (*)(opj_codestream_info_v2_t*)>;
+    const CodestreamInfo info(opj_get_cstr_info(codec.get()),
+                              [](opj_codestream_info_v2_t* held) { opj_destroy_cstr_info(&held); });
+    if (!info) refuse("its codestream information could not be read", errors);
+    const FrameColor transformed = info->m_default_tile_info.mct ? FrameColor::YCBCR : FrameColor::RGB;
+    if (transformed != stored)
+        refuse(std::string("its colour transform is ") + (info->m_default_tile_info.mct ? "on (YCbCr)" : "off (RGB)") +
+               " where the instance's PhotometricInterpretation declares " +
+               (stored == FrameColor::YCBCR ? "YCbCr (YBR_ICT or YBR_RCT)" : "RGB"), errors);
     if (image->numcomps != RGB_COMPONENTS)
         refuse("it has " + std::to_string(image->numcomps) + " components where RGB needs 3", errors);
     for (OPJ_UINT32 c = 0; c < image->numcomps; ++c) {

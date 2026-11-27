@@ -26,6 +26,7 @@ constexpr std::uint32_t TAG_IMAGE_TYPE                 = 0x00080008;
 constexpr std::uint32_t TAG_SOP_INSTANCE_UID           = 0x00080018;
 constexpr std::uint32_t TAG_SERIES_INSTANCE_UID        = 0x0020000E;
 constexpr std::uint32_t TAG_DIMENSION_ORGANIZATION     = 0x00209311;
+constexpr std::uint32_t TAG_PHOTOMETRIC                = 0x00280004;
 constexpr std::uint32_t TAG_NUMBER_OF_FRAMES           = 0x00280008;
 constexpr std::uint32_t TAG_ROWS                       = 0x00280010;
 constexpr std::uint32_t TAG_COLUMNS                    = 0x00280011;
@@ -242,6 +243,7 @@ DicomInstance read_dicom_instance (const std::filesystem::path& path)
     const DcmDataSet* measures = nested_item(path, data, PIXEL_SPACING_PATH);
     instance.spacing = parse_pixel_spacing(text_of(path, measures, TAG_PIXEL_SPACING, 0) + VALUE_SEPARATOR +
                                            text_of(path, measures, TAG_PIXEL_SPACING, 1));
+    instance.photometric = text_of(path, data, TAG_PHOTOMETRIC);
     read_optical_path(path, data, instance);
     return instance;
 }

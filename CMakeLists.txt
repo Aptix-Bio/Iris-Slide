@@ -135,6 +135,17 @@ set (
     ${SLIDE_SOURCE_DIR}/IrisSlide.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideJpegFrames.cpp
 )
+# The Highway kernels and the reduction are optimised in every build type: at -O0 each vector
+# intrinsic is an out-of-line call, which makes a debug encode tens of times slower without making
+# it easier to debug, since the scalar reference beside each kernel is what a test compares against.
+# Source properties are scoped to a directory, so each directory that compiles them calls this.
+function(iris_slide_optimise_kernels)
+    set_source_files_properties(
+        ${PROJECT_SOURCE_DIR}/src/IrisSlideReduce.cpp
+        ${PROJECT_SOURCE_DIR}/src/IrisSlideRetile.cpp
+        PROPERTIES COMPILE_OPTIONS "$<$<AND:$<CONFIG:Debug>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-O2>")   # MSVC refuses /O2 with its debug /RTC1
+endfunction()
+iris_slide_optimise_kernels()
 set (
     IrisSlideEncoderSources
     ${irisheaders_SOURCE_DIR}/src/IrisAsync.cpp

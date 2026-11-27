@@ -21,7 +21,7 @@ bool is_decodable (SourceCodec codec) noexcept;
 /// Decode one frame of @p codec into @p rgb, interleaved RGB8 of @p shape (sized from the
 /// codestream's own header and compared with @p shape). Throws std::runtime_error naming the codec
 /// when it is not one this build decodes, and the codec module's refusal otherwise.
-void decode_frame (SourceCodec codec, std::span<const std::uint8_t> bytes, FrameShape shape,
+void decode_frame (SourceCodec codec, FrameColor color, std::span<const std::uint8_t> bytes, FrameShape shape,
                    std::span<std::uint8_t> rgb);
 } // END IRIS SLIDE NAMESPACE
 #endif /* IrisSlideFrameCodec_hpp */

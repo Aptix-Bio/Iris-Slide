@@ -58,7 +58,7 @@ TEST_CASE("A JPEG frame decodes to the pixels it was made from, within JPEG's lo
     const auto rgb = pattern();
     const auto jpeg = compress(rgb);
     std::vector<std::uint8_t> decoded(rgb.size());
-    IrisSlide::decode_frame(IrisSlide::SourceCodec::JPEG, jpeg, {.columns = SIDE, .rows = SIDE}, decoded);
+    IrisSlide::decode_frame(IrisSlide::SourceCodec::JPEG, IrisSlide::FrameColor::YCBCR, jpeg, {.columns = SIDE, .rows = SIDE}, decoded);
     double squared = 0;
     for (std::size_t i = 0; i < rgb.size(); ++i) squared += (double(rgb[i]) - decoded[i]) * (double(rgb[i]) - decoded[i]);
     const double psnr = 10 * std::log10(255.0 * 255.0 / (squared / double(rgb.size())));
@@ -71,7 +71,7 @@ TEST_CASE("A JPEG frame whose header disagrees with the instance is refused nami
 {
     const auto jpeg = compress(pattern());
     std::vector<std::uint8_t> decoded(std::size_t{OTHER_SIDE} * OTHER_SIDE * RGB);
-    CHECK_THROWS_WITH(IrisSlide::decode_frame(IrisSlide::SourceCodec::JPEG, jpeg, {.columns = OTHER_SIDE, .rows = OTHER_SIDE}, decoded),
+    CHECK_THROWS_WITH(IrisSlide::decode_frame(IrisSlide::SourceCodec::JPEG, IrisSlide::FrameColor::YCBCR, jpeg, {.columns = OTHER_SIDE, .rows = OTHER_SIDE}, decoded),
                       ContainsSubstring("240 x 240") && ContainsSubstring("256 x 256"));
 }
 
@@ -80,7 +80,7 @@ TEST_CASE("A truncated JPEG frame is refused", "[Dicom_05]")
     auto jpeg = compress(pattern());
     jpeg.resize(jpeg.size() / 2);
     std::vector<std::uint8_t> decoded(std::size_t{SIDE} * SIDE * RGB);
-    CHECK_THROWS_AS(IrisSlide::decode_frame(IrisSlide::SourceCodec::JPEG, jpeg, {.columns = SIDE, .rows = SIDE}, decoded),
+    CHECK_THROWS_AS(IrisSlide::decode_frame(IrisSlide::SourceCodec::JPEG, IrisSlide::FrameColor::YCBCR, jpeg, {.columns = SIDE, .rows = SIDE}, decoded),
                     std::runtime_error);
 }
 
@@ -98,7 +98,7 @@ TEST_CASE("A JPEG frame of 12-bit samples is refused naming its precision", "[Di
     const std::vector<std::uint8_t> jpeg(out, out + size);
     tj3Free(out);
     std::vector<std::uint8_t> decoded(std::size_t{SIDE} * SIDE * RGB);
-    CHECK_THROWS_WITH(IrisSlide::decode_frame(IrisSlide::SourceCodec::JPEG, jpeg, {.columns = SIDE, .rows = SIDE}, decoded),
+    CHECK_THROWS_WITH(IrisSlide::decode_frame(IrisSlide::SourceCodec::JPEG, IrisSlide::FrameColor::YCBCR, jpeg, {.columns = SIDE, .rows = SIDE}, decoded),
                       ContainsSubstring("12-bit"));
 }
 
@@ -106,7 +106,7 @@ TEST_CASE("A JPEG frame refuses a destination of the wrong size naming both byte
 {
     const auto jpeg = compress(pattern());
     std::vector<std::uint8_t> decoded(std::size_t{SIDE} * SIDE * RGB - 1);
-    CHECK_THROWS_WITH(IrisSlide::decode_frame(IrisSlide::SourceCodec::JPEG, jpeg, {.columns = SIDE, .rows = SIDE}, decoded),
+    CHECK_THROWS_WITH(IrisSlide::decode_frame(IrisSlide::SourceCodec::JPEG, IrisSlide::FrameColor::YCBCR, jpeg, {.columns = SIDE, .rows = SIDE}, decoded),
                       ContainsSubstring(std::to_string(decoded.size())) &&
                       ContainsSubstring(std::to_string(std::size_t{SIDE} * SIDE * RGB)));
 }
@@ -126,4 +126,15 @@ TEST_CASE("A JPEG stream decodes into each 8-bit layout the reader offers, RGBA 
     CHECK(wrong == 0);
     CHECK_THROWS_WITH(IrisSlide::decode_jpeg(jpeg, {.columns = SIDE, .rows = SIDE}, Iris::FORMAT_UNDEFINED, as_rgb),
                       ContainsSubstring("format 0"));
+}
+
+TEST_CASE("A JPEG frame whose stored colour disagrees with its PhotometricInterpretation is refused naming both",
+          "[Dicom_05]")
+{
+    // libjpeg-turbo stores an RGB input as YCbCr by default: the instance would have to say YBR_FULL_422.
+    const auto jpeg = compress(pattern());
+    std::vector<std::uint8_t> decoded(std::size_t{SIDE} * SIDE * RGB);
+    CHECK_THROWS_WITH(IrisSlide::decode_frame(IrisSlide::SourceCodec::JPEG, IrisSlide::FrameColor::RGB, jpeg,
+                                              {.columns = SIDE, .rows = SIDE}, decoded),
+                      ContainsSubstring("YCbCr") && ContainsSubstring("RGB"));
 }

@@ -51,16 +51,16 @@ bool is_decodable (SourceCodec codec) noexcept
     return false;
 }
 
-void decode_frame (SourceCodec codec, std::span<const std::uint8_t> bytes, FrameShape shape,
+void decode_frame (SourceCodec codec, FrameColor color, std::span<const std::uint8_t> bytes, FrameShape shape,
                    std::span<std::uint8_t> rgb)
 {
     switch (codec) {
         case SourceCodec::JPEG_2000:
         case SourceCodec::HTJ2K:
-            decode_jpeg2000_frame(bytes, shape, rgb);
+            decode_jpeg2000_frame(bytes, color, shape, rgb);
             return;
         case SourceCodec::JPEG:
-            decode_jpeg_frame(bytes, shape, rgb);
+            decode_jpeg_frame(bytes, color, shape, rgb);
             return;
     }
     throw std::runtime_error("decode_frame was given an unknown source codec " + std::to_string(int(codec)));

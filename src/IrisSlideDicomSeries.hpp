@@ -37,6 +37,7 @@ struct DicomInstance {
     std::uint32_t         frames        = 0;       ///< NumberOfFrames, 1 when absent
     PixelSpacing          spacing;
     double                objective_power = 0.0;   ///< OpticalPathSequence › ObjectiveLensPower; 0 when absent
+    std::string           photometric;             ///< PhotometricInterpretation (0028,0004)
     std::string           icc_profile;             ///< OpticalPathSequence › ICCProfile, verbatim; empty when absent
 };
 
