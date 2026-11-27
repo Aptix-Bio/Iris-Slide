@@ -57,11 +57,13 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # The review bot's commit, governance 59cfd33 (the merge of its PR 13): the bot that reads the
+  # The review bot's commit, governance 1afbc99 (the merge of its PR 16): the bot that reads the
   # shared rules and items and this repository's privately kept plans from a read-only checkout
-  # its action makes with `planning-token`. Moving it is a reviewed change to this file, which
+  # its action makes with `planning-token`, and whose commit trace takes a work-item ID to hold a
+  # lowercase letter, so an UPPER_SNAKE constant in code is not traced as an item (moved
+  # 2026-11-27 from 59cfd33). Moving it is a reviewed change to this file, which
   # .github/CODEOWNERS gives to the maintainer.
-  GOVERNANCE_COMMIT: 59cfd336d368529ac2264ac316d8e93632e65b1c
+  GOVERNANCE_COMMIT: 1afbc996fc0426cbc190b6518c8fd7dcb0516b8e
 
 jobs:
   review:
