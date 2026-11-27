@@ -1,4 +1,4 @@
-# VcpkgCaching_2 (OneReusableBuild_2.5; RTM Build_02, Build_06): configure, build and, for a
+# VcpkgCaching_2 (OneReusableBuild_2.5; RTM Build_02, Build_06): configure, build, test and, for a
 # release, package one cell of Iris-Slide: the one reusable build every workflow calls, once per
 # platform. Each step is one CMake preset or script call; the logic is in CMakePresets.json,
 # javascript/CMakePresets.json and scripts/.
@@ -111,6 +111,13 @@ jobs:
           key: ${{ steps.tools.outputs.cache-primary-key }}
       - name: Build
         run: cmake --build --preset ${{ inputs.preset }}
+      # CiRunsTests_1.5 (RTM Testing_01): the suite on every native cell, a few seconds; the tests
+      # on real slides are opt-in (label local) and run on a maintainer's machine. The JavaScript
+      # module has no ctest suite, and only the `ci` configure preset has a test preset of its name
+      # among the presets callers pass, so the step runs for it alone.
+      - name: Test
+        if: inputs.source == '.' && inputs.preset == 'ci'
+        run: ctest --preset ${{ inputs.preset }}
       # From the repository's root, with relative paths: a Windows workspace path loses its
       # backslashes in bash (PR #2's second run).
       - name: Package

@@ -1,261 +1,156 @@
 /**
  * @file EncoderMain.cpp
- * @author Ryan Landvater
- * @brief 
- * @version 2025.1.0
- * @date 2025-01-23
- * 
- * Iris Slide Encoder tool for use in encoding slide files in the
- * Iris Slide File Extension format.
+ * @brief IrisSlideEncoder: encode a whole-slide image as an Iris slide (.iris) from the command line.
  *
- * The Iris Slide Encoder is licensed under the MIT software license
+ * The encoder is Iris-Slide's (ARCHITECTURE D14): it reads a DICOM whole-slide instance (JPEG,
+ * JPEG 2000 or HTJ2K frames), derives every lower layer by a 2x bicubic reduction and writes
+ * <source stem>.jpeg.iris. This file only parses arguments and reports progress.
  *
- * @copyright Copyright (c) Ryan Landvater, 2025
- * 
+ * The Iris Slide Encoder is licensed under the MIT software license.
  */
-#if _WIN32
-#include <io.h>
-#else
-#include <unistd.h>
-#include <sys/ioctl.h>
-#endif
-#include <thread>
-#include <sstream>
-#include <iostream>
+#include <charconv>
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <exception>
+#include <format>
 #include <iomanip>
-#include <filesystem>
-#include <set>
-#include <iomanip>   // for std::setfill, std::setw
+#include <iostream>
+#include <string>
+#include <string_view>
+#include <thread>
 
 #include "IrisSlideCore.hpp"
-constexpr char help_statement[] = 
-"Iris Slide Encoder allows for the encoding of whole slide image \
-(WSI) files into the Iris Slide file extension format (.iris)\n \
-The Iris Slide Encoder tool is Copyright (c) 2025 Ryan Landvater  \n \
-Arugments:\n \
--h --help: Print this help text \n \
--s --source: File path to the source WSI file (must be a compatible WSI format understood by OpenSlide) \n \
--o --outdir: File path to the output file directory. The encoder will name the file XXX.iris where XXX \
-represents the previous file name (ex /path/to/slide.svs will be named /outdir/slide.iris) \n \
--d --derive: Generate the lower resolution layers. Options are 2x, 4x, or use-source (default)\
--sm --strip_metadata: Strip patient identifiers from the encoded metadata within the slide file \
--e --encoding: JPEG (the default and only tile encoding Iris Slide writes)\
--c --concurrency: How many threads should this run on (defaults to all cores for fastest encoding)\
-\n";
-const std::u8string complt_char = u8"█";
-enum ArgumentFlag : uint32_t {
-    ARG_HELP    = 0,
-    ARG_SOURCE,
-    ARG_OUTDIR,
-    ARG_DERIVE,
-    ARG_STRIP_METADATA,
-    ARG_ENCODING,
-    ARG_CONCURRENCY,
-    ARG_INVALID = UINT32_MAX
-};
-inline ArgumentFlag PARSE_ARGUMENT (const char* arg_str) {
-    if (!strcmp(arg_str,"-h") || !strcmp(arg_str, "--help"))
-        return ARG_HELP;
-    if (!strcmp(arg_str,"-s") || !strcmp(arg_str, "--source"))
-        return ARG_SOURCE;
-    if (!strcmp(arg_str,"-o") || !strcmp(arg_str, "--outdir"))
-        return ARG_OUTDIR;
-    if (!strcmp(arg_str,"-d") || !strcmp(arg_str, "--derive"))
-        return ARG_DERIVE;
-    if (!strcmp(arg_str,"-sm") || !strcmp(arg_str, "--strip_metadata"))
-        return ARG_STRIP_METADATA;
-    if (!strcmp(arg_str, "-e") || !strcmp(arg_str, "--encoding"))
-        return ARG_ENCODING;
-    if (!strcmp(arg_str, "-c") || !strcmp(arg_str, "--concurrency"))
-        return ARG_CONCURRENCY;
-    return ARG_INVALID;
-}
-inline IrisSlide::Encoding PARSE_ENCODING (std::string arg)
-{
-    for (auto& c : arg) toupper(c);
-    if (!strcmp(arg.c_str(), "JPEG"))
-        return IrisSlide::TILE_ENCODING_JPEG;
-    return IrisSlide::TILE_ENCODING_UNDEFINED;
-}
-inline IrisSlide::EncoderDerivation::Layers PARSE_DERIVATION (std::string arg)
-{
-    for (auto& c : arg) tolower(c);
-    if (!strcmp(arg.c_str(), "2x") || !strcmp(arg.c_str(), "2"))
-        return IrisSlide::EncoderDerivation::ENCODER_DERIVE_2X_LAYERS;
-    if (!strcmp(arg.c_str(), "4x") || !strcmp(arg.c_str(), "4"))
-        return IrisSlide::EncoderDerivation::ENCODER_DERIVE_4X_LAYERS;
-    return IrisSlide::EncoderDerivation::ENCODER_DERIVE_UNDEFINED;
-}
-int main(int argc, char const *argv[])
-{
-    std::locale::global(std::locale("en_US.UTF-8"));
-    
-    IrisSlide::EncodeSlideInfo info;
-    IrisSlide::EncoderDerivation derivation;
-    bool strip_metadata     = false;
-    info.desiredEncoding    = IrisSlide::TILE_ENCODING_DEFAULT;
-    if (argc < 2) {
-        std::cerr << help_statement;
-        return EXIT_FAILURE;
-    } if (argc == 2) {
-        if (PARSE_ARGUMENT(argv[1]) == ARG_HELP) {
-            std::cerr << help_statement;
-            return EXIT_SUCCESS;
-        } info.srcFilePath = std::string(argv[1]);
-    } else for (auto argi = 1; argi < argc; ++argi) {
-        ARGUMENT_PARSING:
-        switch (PARSE_ARGUMENT(argv[argi])) {
-            case ARG_HELP:
-                std::cout << help_statement;
-                return EXIT_SUCCESS;
-            case ARG_SOURCE:
-                if (argi+1>=argc) {
-                    std::cerr<<"Source argument requires file path\n";
-                    return EXIT_FAILURE;
-                } info.srcFilePath  = std::string(argv[++argi]);
-                break;
-            case ARG_OUTDIR:
-                if (argi+1>=argc) {
-                    std::cerr<<"output argument requires dir path\n";
-                    return EXIT_FAILURE;
-                } info.dstFilePath  = std::string(argv[++argi]);
-                break;
-            case ARG_DERIVE:
-                if (argi+1>=argc) {
-                    std::cerr<<"if deriving layers, you must define the layer scale (2x, 4x)\n";
-                    return EXIT_FAILURE;
-                } derivation.layers = PARSE_DERIVATION(argv[++argi]);
-                if (derivation.layers == IrisSlide::EncoderDerivation::ENCODER_DERIVE_UNDEFINED){
-                    std::cerr   << "Undefined derived layer amount given " << argv[argi] << ". "
-                                << "Valid values include 2x (to generate each half-size layer like DZI files) "
-                                << "or 4x (to generate one layer for each 4x downsampling like SVS files).\n";
-                    return EXIT_FAILURE;
-                } info.derivation = &derivation;
-                break;
-            case ARG_STRIP_METADATA:
-                strip_metadata  = true;
-                break;
-            case ARG_ENCODING:
-                if (argi+1>=argc) {
-                    std::cerr<<"encoding argument requires valid encoding variable\n";
-                    return EXIT_FAILURE;
-                } info.desiredEncoding = PARSE_ENCODING(std::string(argv[++argi]));
-                if (info.desiredEncoding == IrisSlide::TILE_ENCODING_UNDEFINED) {
-                    std::cerr<<"Undefined encoding value given " << argv[argi] << "\n";
-                    return EXIT_FAILURE;
-                }
-                break;
-            case ARG_CONCURRENCY: {
-                if (argi+1>=argc) {
-                    std::cerr<<"concurrency argument requires a number of threads (should be less than cores)\n";
-                    return EXIT_FAILURE;
-                } auto arg = std::string(argv[++argi]);
-                try {info.concurrency = std::stoi(arg);}
-                catch (...) {
-                    std::cerr   << "Failed to parse a thread number for concurrency from the argument \""
-                    << arg << "\"\n";
-                    return EXIT_FAILURE;
-                } if (info.concurrency > std::thread::hardware_concurrency())
-                    std::cout   << "[WARNING] The thread concurrency given "
-                    << arg << "is greater than the number of cores"
-                    << std::thread::hardware_concurrency() << ". This is a "
-                    << "bad idea; the system works best when at the number of cores (which is the default)."
-                    << "If you want the greatest speed, do not define -c/--concurrency, or use it to lower performance.";
-            } break;
-            case ARG_INVALID:
-                std::cerr   << "Unknown argument \""
-                            << argv[argi]
-                            << "\"\n";
-                return EXIT_FAILURE;
-        }
-    }
-    if (info.srcFilePath.size() == 0) {
-        std::cerr << "Encoder requies at least an input file path of source slide file";
-        return EXIT_FAILURE;
-    }
-    if (info.dstFilePath.size() != 0)
-        if (std::filesystem::is_directory(info.dstFilePath) == false)
-            std::filesystem::create_directory(info.dstFilePath);
-    #if _WIN32
-    struct winsize {
-        unsigned short ws_col = 80;
-    } console_dim;
-    #else
-    winsize console_dim;
-    ioctl(STDOUT_FILENO, TIOCGWINSZ, &console_dim);
-    #endif
+#include "IrisSlideEncoderOptions.hpp"
 
-    auto encoder = IrisSlide::create_encoder(info);
-    if (!encoder) {
-        std::cerr   << "Failed to create a slide encoder. The system will exit.";
-        return EXIT_FAILURE;
+// RTM Encode_09
+
+namespace {
+constexpr auto PROGRESS_INTERVAL = std::chrono::milliseconds(500);
+constexpr double BYTES_PER_GIB = 1024.0 * 1024.0 * 1024.0;
+constexpr std::uint64_t BYTES_PER_MIB = 1024 * 1024;
+// Exit codes: 0 done, 1 the encode failed, 2 the arguments were wrong.
+constexpr int EXIT_DONE = 0, EXIT_ENCODE_FAILED = 1, EXIT_USAGE = 2;
+
+/// The help text, its defaults read from the encoder's own so they are stated once.
+std::string help ()
+{
+    const IrisSlide::EncoderDesc defaults;
+    return std::format(
+        "IrisSlideEncoder encodes a whole-slide image as an Iris slide (.iris).\n"
+        "  -s, --source PATH        the slide: a DICOM whole-slide instance (JPEG, JPEG 2000 or HTJ2K frames)\n"
+        "  -o, --outdir PATH        the folder <source stem>.jpeg.iris is written to (default: the source's)\n"
+        "  -q, --quality N          JPEG quality, 1-100 (default {})\n"
+        "      --subsampling S      JPEG chroma subsampling: 444, 422 or 420 (default {})\n"
+        "      --layer-step N       the scale between written layers, a power of two from 2 (default {})\n"
+        "      --memory-budget GIB  memory held at once (default: a quarter of physical memory)\n"
+        "  -c, --concurrency N      worker threads (default: every core, {} here)\n"
+        "  -h, --help               this text\n",
+        defaults.quality, IrisSlide::subsampling_name(defaults.subsampling), defaults.layer_step, defaults.concurrency);
+}
+/// A whole decimal number; throws std::invalid_argument naming @p flag and the text otherwise.
+std::uint64_t number_of (std::string_view flag, std::string_view text)
+{
+    std::uint64_t value = 0;
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+    const bool is_whole = error == std::errc() && end == text.data() + text.size();
+    if (!is_whole) throw std::invalid_argument(std::string(flag) + " takes a whole number, given \"" + std::string(text) + "\"");
+    return value;
+}
+/// A positive number of GiB as bytes; the whole text must be the number.
+std::uint64_t gib_of (std::string_view text)
+{
+    const std::string copy(text);
+    char* end = nullptr;
+    const double gib = std::strtod(copy.c_str(), &end);
+    const bool is_positive = end == copy.c_str() + copy.size() && std::isfinite(gib) && gib > 0;
+    if (!is_positive) throw std::invalid_argument("memory budget \"" + copy + "\" is not a positive number of GiB");
+    // A double past 2^64 converted to uint64 is undefined behaviour: the largest budget is refused before it.
+    constexpr double MAX_BYTES = 18446744073709549568.0;   // the largest double below 2^64
+    const double bytes = gib * BYTES_PER_GIB;
+    if (bytes > MAX_BYTES) throw std::invalid_argument("memory budget " + copy + " GiB is above 2^64 bytes");
+    return static_cast<std::uint64_t>(bytes);
+}
+int usage (const std::string& why)
+{
+    std::cerr << "IrisSlideEncoder: " << why << "\n" << help();
+    return EXIT_USAGE;
+}
+int encode_failed (const std::string& why)
+{
+    std::cerr << "\nIrisSlideEncoder: " << why << "\n";
+    return EXIT_ENCODE_FAILED;
+}
+
+/// The arguments as an EncoderDesc; throws std::invalid_argument naming the one refused.
+IrisSlide::EncoderDesc desc_of (int argc, char const* argv[])
+{
+    IrisSlide::EncoderDesc desc;
+    for (int i = 1; i < argc; ++i) {
+        const std::string_view flag = argv[i];
+        if (i + 1 >= argc) throw std::invalid_argument(std::string(flag) + " needs a value");
+        const std::string_view value = argv[++i];
+        if (flag == "-s" || flag == "--source") desc.source = std::string(value);
+        else if (flag == "-o" || flag == "--outdir") desc.destination = std::string(value);
+        else if (flag == "--subsampling") desc.subsampling = IrisSlide::subsampling_of(value);
+        else if (flag == "--memory-budget") desc.memory_budget = gib_of(value);
+        else if (flag == "-q" || flag == "--quality")
+            desc.quality = IrisSlide::narrowed<IrisSlide::Quality>(number_of(flag, value), "quality");
+        else if (flag == "--layer-step")
+            desc.layer_step = IrisSlide::narrowed<std::uint32_t>(number_of(flag, value), "layer step");
+        else if (flag == "-c" || flag == "--concurrency")
+            desc.concurrency = IrisSlide::narrowed<std::uint32_t>(number_of(flag, value), "concurrency");
+        else throw std::invalid_argument("unknown argument \"" + std::string(flag) + "\"");
     }
-    
-    // Dispatch the encoder. This will return immediately after
-    // initializing the encoding process on multiple asynchronous threads
-    auto result = IrisSlide::dispatch_encoder(encoder);
-    if (result.failed()) {
-        std::cerr   << "Encoder reported failure to begin encoding: "
-                    << result.message
-                    << "\n";
-        return EXIT_FAILURE;
-    }
-    
-    // Check on the encoder progress during the encoding process
-    namespace time = std::chrono;
+    if (desc.source.empty()) throw std::invalid_argument("a source slide is needed (-s)");
+    if (desc.destination.empty()) desc.destination = desc.source.has_parent_path() ? desc.source.parent_path() : ".";
+    return desc;
+}
+
+int encode (const IrisSlide::EncoderDesc& desc)
+{
+    IrisSlide::Encoder encoder;
+    const auto created = IrisSlide::create_encoder(desc, encoder);
+    if (created.failed()) return encode_failed(created.message);
+    const auto dispatched = IrisSlide::dispatch_encoder(encoder);
+    if (dispatched.failed()) return encode_failed(dispatched.message);
+
+    const auto started = std::chrono::steady_clock::now();
     IrisSlide::EncoderProgress progress;
-    result = IrisSlide::get_encoder_progress(encoder, progress);
-    std::cout << "Encoding slide file: " << progress.dstFilePath << "\n";
-    float cmplt = 0.001f;
-    auto  start = std::chrono::system_clock::now();
-    while (progress.status == IrisSlide::ENCODER_ACTIVE) {
-        
-        // Check on the current encoder progress
-        result = IrisSlide::get_encoder_progress(encoder, progress);
-        if (result.failed()) {
-            std::cerr   << "\r Error during progress check: "
-                        << result.message;
-            return EXIT_FAILURE;
-        }
-        
-        // Print the progress bar
-        cmplt           = progress.progress > cmplt ? progress.progress : cmplt;
-        auto DUR        = time::duration_cast<time::seconds>(time::system_clock::now() - start);
-        auto ETA        = static_cast<int>(static_cast<float>(DUR.count())/cmplt) - DUR.count();
-        int progress_bar_width = console_dim.ws_col>>1;
-        std::stringstream log;
-        log << "[";
-        for (int block_i = 0; block_i < progress_bar_width*cmplt; ++block_i)
-            log << std::string(reinterpret_cast<const char*>(complt_char.c_str()),complt_char.size());
-        std::ostringstream eta_stream;
-        eta_stream << std::setfill('0') << std::setw(2) << (ETA/60)
-                   << ":" << std::setfill('0') << std::setw(2) << (ETA%60);
-        std::ostringstream dur_stream;
-        dur_stream << std::setfill('0') << std::setw(2) << (DUR.count()/60)
-                   << ":" << std::setfill('0') << std::setw(2) << (DUR.count()%60);
-        log << std::string(progress_bar_width*(1-cmplt),'.')
-            << "] "
-            << std::setprecision(3) << cmplt*100.f
-            << "%  Time Remaining "
-            << eta_stream.str() << " (" << dur_stream.str() << " elapsed)";
-        std::cout << "\x1b[2K" << "\r" << log.str() << std::flush;
-        
-        // Sleep the thread for a second between checks / updates
-        std::this_thread::sleep_for(time::seconds(1));
+    for (;;) {
+        const auto read = IrisSlide::encoder_progress(encoder, progress);
+        if (read.failed()) return encode_failed(read.message);
+        if (progress.state != IrisSlide::EncoderState::ACTIVE) break;
+        std::cout << "\r" << std::fixed << std::setprecision(1) << progress.fraction * 100.f << "%  "
+                  << progress.resident_bytes / BYTES_PER_MIB << " MiB held" << std::flush;
+        std::this_thread::sleep_for(PROGRESS_INTERVAL);
     }
-    
-    result = IrisSlide::get_encoder_progress(encoder, progress);
-    if (result.failed()) {
-        std::cerr   << "\n Error during progress check: "
-                    << result.message;
-        return EXIT_FAILURE;
-    } else if (progress.status == IrisSlide::ENCODER_ERROR) {
-        std::cerr   << "\n Error during slide encoding: "
-                    << progress.errorMsg;
-    } else {
-        std::cout << "\nIris Encoder completed successfully\n";
-        return EXIT_SUCCESS;
-    }
-    
+    if (progress.state != IrisSlide::EncoderState::DONE) return encode_failed("the encode did not complete: " + progress.error);
+    const auto seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+    std::cout << "\rWrote " << progress.file.string() << " in " << std::fixed << std::setprecision(1) << seconds << " s\n";
+    return EXIT_DONE;
 }
+} // namespace
 
+int main (int argc, char const* argv[])
+{
+    // The command line's boundary: every exception becomes a message and a non-zero exit.
+    try {
+        for (int i = 1; i < argc; ++i) {
+            const std::string_view flag = argv[i];
+            if (flag == "-h" || flag == "--help") { std::cout << help(); return EXIT_DONE; }
+        }
+        IrisSlide::EncoderDesc desc;
+        try {
+            desc = desc_of(argc, argv);
+        } catch (const std::invalid_argument& refused) {
+            return usage(refused.what());
+        }
+        return encode(desc);
+    } catch (const std::exception& error) {
+        return encode_failed(error.what());
+    } catch (...) {
+        return encode_failed("an unknown exception reached main");
+    }
+}

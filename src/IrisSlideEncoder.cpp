@@ -2,87 +2,167 @@
 //  IrisSlideEncoder.cpp
 //  Iris
 //
-//  Created by Ryan Landvater on 8/2/22.
+//  The encoder (ARCHITECTURE D14), rebuilt from scratch and cut over 2026-11-27.
 //
+//  The work is a fixed schedule of rows: every row of every layer, in the order a sequential
+//  encode would make them, base rows read in order and each derived row as soon as the rows it
+//  reads are made. A row's tiles are worked as tasks on the encoder's thread pool (Iris::Async):
+//  each tile is a task that reads its source tile (a Source is read from any number of threads at
+//  once), compresses it and stores it; a derived row's tiles are reduced and compressed per tile. The task that finishes a row's last
+//  tile counts its row done and calls advance(), which starts what has become ready, writes
+//  finished rows to IFE's Builder in schedule order, and releases what no row still reads.
+//  advance() is claimed by one thread at a time with an atomic flag; a thread that finds it
+//  claimed leaves a request and moves on, and the claimant runs again for it (claim and move on,
+//  the style guide's Control flow), so nothing on the encode's path waits.
+//
+#include "IrisSlideEncoder.hpp"
+
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
-#include <cstring>
-#include <filesystem>
+#include <concepts>
+#include <atomic>
 #include <limits>
-#include <random>
 #include <string_view>
+#include <cstring>
+#include <stdexcept>
 #include <vector>
-#include "IrisSlidePriv.hpp"
-#include "IFE_Builder.hpp"   // the block tier: builder->claim / fill / append
 
-// TODO: Make max pending memory a runtime configurable
-constexpr size_t MAX_MEMORY_PRESSURE = 2E9; // 2 GB
+#if defined(__APPLE__)
+#include <sys/sysctl.h>
+#elif defined(_WIN32)
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
+#include "IrisSlidePriv.hpp"
+#include "IFE_Builder.hpp"
+#include "IrisSlideReduce.hpp"
 
 namespace IrisSlide {
-using Iris::File::Builder;
+namespace {
+constexpr std::uint64_t TILE_BYTES = std::uint64_t{RECUT_TILE} * RECUT_TILE * RGBA_BYTES;
+/// The default budget is this fraction of physical memory (Q20, decided 2026-11-27).
+constexpr std::uint64_t BUDGET_DIVISOR = 4;
+/// A derived row reads up to 4 rows of the layer below; with the row being made, 5 rows of each
+/// layer is the smallest working set an encode can progress in.
+constexpr std::uint64_t ROWS_HELD = 5;
+constexpr int QUALITY_MIN = 1, QUALITY_MAX = 100;
 
-inline void CHECK_ENCODER (const Encoder& encoder) {
-    if (!encoder)               throw std::runtime_error ("No valid encoder provided");
-}
-inline void CHECK_MUTABLE (const Encoder& encoder) {
-    CHECK_ENCODER(encoder);
-    switch (encoder->get_status()) {
-        case ENCODER_INACTIVE:  return;
-        case ENCODER_ACTIVE:    throw std::runtime_error("Encoder currently active and thus immutable");
-        case ENCODER_ERROR:     throw std::runtime_error("Encoder failed in error and must be reset first.");
-        case ENCODER_SHUTDOWN:  throw std::runtime_error("Encoder undergoing destruction and thus immutable");
-    }
-}
-inline std::string TO_STRING (EncoderStatus status)
+/// The machine's physical memory; throws naming the system call that could not say, so the
+/// default budget is never silently 0.
+std::uint64_t physical_memory ()
 {
-    switch (status) {
-        case ENCODER_INACTIVE:  return "ENCODER_INACTIVE";
-        case ENCODER_ACTIVE:    return "ENCODER_ACTIVE";
-        case ENCODER_ERROR:     return "ENCODER_ERROR";
-        case ENCODER_SHUTDOWN:  return "ENCODER_SHUTDOWN";
-    }   return "CORRUPT ENCODER STATUS IDENTIFIED";
+#if defined(__APPLE__)
+    std::uint64_t bytes = 0;
+    std::size_t length = sizeof(bytes);
+    const bool is_read = sysctlbyname("hw.memsize", &bytes, &length, nullptr, 0) == 0 && bytes > 0;
+    if (!is_read) throw std::runtime_error("sysctlbyname(hw.memsize) gave no physical memory size; pass a memory budget");
+    return bytes;
+#elif defined(_WIN32)
+    MEMORYSTATUSEX status {};
+    status.dwLength = sizeof(status);
+    const bool is_read = GlobalMemoryStatusEx(&status) && status.ullTotalPhys > 0;
+    if (!is_read) throw std::runtime_error("GlobalMemoryStatusEx gave no physical memory size (error " +
+                                           std::to_string(GetLastError()) + "); pass a memory budget");
+    return status.ullTotalPhys;
+#else
+    const long pages = sysconf(_SC_PHYS_PAGES), page = sysconf(_SC_PAGE_SIZE);
+    const bool is_read = pages > 0 && page > 0;
+    if (!is_read) throw std::runtime_error("sysconf gave " + std::to_string(pages) + " pages of " + std::to_string(page) +
+                                           " bytes; pass a memory budget");
+    return std::uint64_t(pages) * std::uint64_t(page);
+#endif
 }
-inline std::string TO_STRING (MetadataType type)
-{
-    switch (type) {
-        case METADATA_UNDEFINED:    return "METADATA_UNDEFINED";
-        case METADATA_I2S:          return "METADATA_I2S";
-        case METADATA_DICOM:        return "METADATA_DICOM";
-        case METADATA_FREE_TEXT:    return "METADATA_FREE_TEXT";
-    }   return "metadata type " + std::to_string(static_cast<int>(type));
-}
-// RTM Identity_07
-// The well-formed UTF-8 sequences of RFC 3629 section 4, one row per lead-byte range: the
-// sequence's length and the range its second byte must fall in. The second-byte ranges are what
-// exclude overlong forms, UTF-16 surrogates and code points past U+10FFFF; every later byte is a
-// continuation byte. A lead byte in no row (0x80-0xC1, 0xF5-0xFF) begins no sequence.
-struct Utf8Lead {
-    uint8_t first, last, length, second_low, second_high;
+
+/// The tile encodings this encoder writes, each with its file-name word; one row per encoding, so
+/// adding one (AV1, UASTC, XUASTC) is a row here and a case in compress_tile.
+struct WrittenEncoding {
+    Encoding         encoding;
+    std::string_view word;
 };
-constexpr uint8_t UTF8_CONTINUATION_LOW  = 0x80;
-constexpr uint8_t UTF8_CONTINUATION_HIGH = 0xBF;
-constexpr std::array<Utf8Lead, 9> UTF8_LEADS {{
-    {0x00, 0x7F, 1, 0x00, 0x00},
-    {0xC2, 0xDF, 2, 0x80, 0xBF},
-    {0xE0, 0xE0, 3, 0xA0, 0xBF},
-    {0xE1, 0xEC, 3, 0x80, 0xBF},
-    {0xED, 0xED, 3, 0x80, 0x9F},
-    {0xEE, 0xEF, 3, 0x80, 0xBF},
-    {0xF0, 0xF0, 4, 0x90, 0xBF},
-    {0xF1, 0xF3, 4, 0x80, 0xBF},
-    {0xF4, 0xF4, 4, 0x80, 0x8F},
+constexpr std::array<WrittenEncoding, 1> WRITTEN_ENCODINGS {{
+    {TILE_ENCODING_JPEG, "jpeg"},
 }};
+
+/// Whether this encoder writes @p encoding.
+bool is_written_encoding (Encoding encoding) noexcept
+{
+    return std::any_of(WRITTEN_ENCODINGS.begin(), WRITTEN_ENCODINGS.end(),
+                       [encoding](const WrittenEncoding& row) { return row.encoding == encoding; });
+}
+/// The file-name word of an encoding this encoder writes; throws for any other.
+std::string_view encoding_word (Encoding encoding)
+{
+    for (const auto& row : WRITTEN_ENCODINGS)
+        if (row.encoding == encoding) return row.word;
+    throw std::runtime_error("tile encoding " + std::to_string(int(encoding)) + " has no file-name word here");
+}
+/// The encoding's name as IFE's specification spells it (IFE's generated member_name).
+std::string encoding_name (Encoding encoding)
+{
+    return std::string(Iris::File::constants::member_name(static_cast<Iris::File::constants::TileEncodings>(encoding)));
+}
+/// <source stem>.<encoding word>.iris; throws naming an encoding this encoder does not write.
+std::string file_name (const std::filesystem::path& source, Encoding encoding)
+{
+    if (!is_written_encoding(encoding))
+        throw std::runtime_error(std::string("the encoder does not write ") + encoding_name(encoding));
+    return source.stem().string() + "." + std::string(encoding_word(encoding)) + ".iris";
+}
+
+/// The encoder's one way out for pixels: a 256-pixel RGBA8 tile compressed in the IFE tile
+/// encoding the file declares. An encoding is one case here (JPEG: libjpeg-turbo through the
+/// codec context).
+Buffer compress_tile (const Context& context, Encoding encoding, const std::vector<std::uint8_t>& rgba,
+                      Quality quality, Subsampling subsampling)
+{
+    switch (encoding) {
+        case TILE_ENCODING_JPEG:
+            return context->compress_tile({// The codec only reads the pixels; the buffer wrapper takes a mutable pointer.
+                                           .pixelArray  = Iris::Wrap_weak_buffer_fom_data(const_cast<std::uint8_t*>(rgba.data()), rgba.size()),
+                                           .format      = Iris::FORMAT_R8G8B8A8,
+                                           .encoding    = encoding,
+                                           .quality     = quality,
+                                           .subsampling = subsampling});
+        case TILE_ENCODING_UNDEFINED:
+        case TILE_ENCODING_IRIS:
+        case TILE_ENCODING_AV1:
+        case TILE_ENCODING_UASTC:
+        case TILE_ENCODING_XUASTC:
+            break;
+    }
+    throw std::runtime_error(std::string("the encoder does not write ") + encoding_name(encoding));
+}
+
+// RTM Identity_07
+// D10 (decided 2026-11-25): the caller's I2S attributes are refused before anything is opened when
+// IFE's attribute blocks cannot hold them. The well-formed UTF-8 sequences of RFC 3629 section 4,
+// one row per lead-byte range: the sequence's length and the range its second byte must fall in;
+// the second-byte ranges exclude overlong forms, UTF-16 surrogates and code points past U+10FFFF.
+struct Utf8Lead {
+    std::uint8_t first, last, length, second_low, second_high;
+};
+constexpr std::uint8_t UTF8_CONTINUATION_LOW  = 0x80;
+constexpr std::uint8_t UTF8_CONTINUATION_HIGH = 0xBF;
+constexpr std::array<Utf8Lead, 9> UTF8_LEADS {{
+    {0x00, 0x7F, 1, 0x00, 0x00}, {0xC2, 0xDF, 2, 0x80, 0xBF}, {0xE0, 0xE0, 3, 0xA0, 0xBF},
+    {0xE1, 0xEC, 3, 0x80, 0xBF}, {0xED, 0xED, 3, 0x80, 0x9F}, {0xEE, 0xEF, 3, 0x80, 0xBF},
+    {0xF0, 0xF0, 4, 0x90, 0xBF}, {0xF1, 0xF3, 4, 0x80, 0xBF}, {0xF4, 0xF4, 4, 0x80, 0x8F},
+}};
+constexpr unsigned char ASCII_LAST = 0x7F;
 /// The offset of the first byte that begins no well-formed UTF-8 sequence, or npos.
-inline std::size_t FIRST_INVALID_UTF8 (std::u8string_view text)
+std::size_t first_invalid_utf8 (std::u8string_view text)
 {
     for (std::size_t at = 0; at < text.size();) {
-        const auto lead = static_cast<uint8_t>(text[at]);
-        const auto row  = std::find_if(UTF8_LEADS.begin(), UTF8_LEADS.end(), [lead](const Utf8Lead& r)
-                                       { return lead >= r.first && lead <= r.last; });
+        const auto lead = static_cast<std::uint8_t>(text[at]);
+        const auto row  = std::find_if(UTF8_LEADS.begin(), UTF8_LEADS.end(),
+                                       [lead](const Utf8Lead& r) { return lead >= r.first && lead <= r.last; });
         if (row == UTF8_LEADS.end() || text.size() - at < row->length) return at;
         for (std::size_t i = 1; i < row->length; ++i) {
-            const auto byte = static_cast<uint8_t>(text[at + i]);
+            const auto byte = static_cast<std::uint8_t>(text[at + i]);
             const auto low  = i == 1 ? row->second_low  : UTF8_CONTINUATION_LOW;
             const auto high = i == 1 ? row->second_high : UTF8_CONTINUATION_HIGH;
             if (byte < low || byte > high) return at;
@@ -91,1173 +171,641 @@ inline std::size_t FIRST_INVALID_UTF8 (std::u8string_view text)
     }
     return std::u8string_view::npos;
 }
-constexpr unsigned char ASCII_LAST = 0x7F;
-/// The caller's attributes (EncodeSlideInfo::attributes), refused before the source is opened,
-/// naming the pair: an I2S claim with the I2S version it conforms to, and what IFE's attribute
-/// blocks require of the bytes (ife-attribute-sizes: a 16-bit KEY_SIZE; ife-attribute-bytes:
-/// ASCII keys, UTF-8 values, a 32-bit COUNT of every key and value byte). Whether a key belongs
-/// to I2S is I2S's check: Iris-Slide does not depend on I2S (ARCHITECTURE D10).
-inline void CHECK_CALLER_ATTRIBUTES (const Attributes& attributes)
+std::string format_name (MetadataType type)
+{
+    switch (type) {
+        case METADATA_UNDEFINED: return "METADATA_UNDEFINED";
+        case METADATA_I2S:       return "METADATA_I2S";
+        case METADATA_DICOM:     return "METADATA_DICOM";
+        case METADATA_FREE_TEXT: return "METADATA_FREE_TEXT";
+    }
+    return "metadata type " + std::to_string(static_cast<int>(type));
+}
+/// Refuses, naming the pair, what IFE's attribute blocks cannot hold (ife-attribute-sizes: a
+/// 16-bit KEY_SIZE; ife-attribute-bytes: ASCII keys, UTF-8 values, a 32-bit COUNT of every key and
+/// value byte), a format other than METADATA_I2S (D2), and version 0, an unversioned I2S claim.
+/// Whether a key belongs to I2S is I2S's check.
+void check_attributes (const Attributes& attributes)
 {
     if (attributes.empty()) return;
-    // D2: Iris-Slide writes a caller's pairs only under the claim that they identify no one.
-    if (attributes.type != METADATA_I2S) throw std::runtime_error
-        ("[ERROR] The encoder refused the caller's attributes declared " + TO_STRING(attributes.type) +
-         ": a caller's pairs are written only as METADATA_I2S");
-    // IFE reads an I2S claim with no version as free text (ife-attributes); the packing of an
-    // I2S version into the 16-bit VERSION is the caller's to pass (ARCHITECTURE Q12).
-    if (attributes.version == 0) throw std::runtime_error
-        ("[ERROR] The encoder refused the caller's METADATA_I2S attributes at version 0: "
-         "an I2S claim names the I2S version its pairs conform to");
-    uint64_t bytes = 0;
+    if (attributes.type != METADATA_I2S)
+        throw std::runtime_error("the encoder refused the caller's attributes declared " + format_name(attributes.type) +
+                                 ": a caller's pairs are written only as METADATA_I2S");
+    if (attributes.version == 0)
+        throw std::runtime_error("the encoder refused the caller's METADATA_I2S attributes at version 0: "
+                                 "an I2S claim names the I2S version its pairs conform to");
+    std::uint64_t bytes = 0;
     for (const auto& [key, value] : attributes) {
-        const auto wide = std::find_if(key.begin(), key.end(), [](char c)
-                                       { return static_cast<unsigned char>(c) > ASCII_LAST; });
-        if (wide != key.end()) throw std::runtime_error
-            ("[ERROR] The encoder refused the attribute key \"" + key + "\": byte " +
-             std::to_string(wide - key.begin()) + " is not ASCII");
-        if (key.size() > std::numeric_limits<uint16_t>::max()) throw std::runtime_error
-            ("[ERROR] The encoder refused the attribute key \"" + key + "\": " +
-             std::to_string(key.size()) + " bytes, past the 16-bit KEY_SIZE");
-        const auto invalid = FIRST_INVALID_UTF8(value);
-        if (invalid != std::u8string_view::npos) throw std::runtime_error
-            ("[ERROR] The encoder refused the value of attribute key \"" + key + "\": byte " +
-             std::to_string(invalid) + " begins no UTF-8 sequence");
+        const auto wide = std::find_if(key.begin(), key.end(), [](char c) { return static_cast<unsigned char>(c) > ASCII_LAST; });
+        if (wide != key.end())
+            throw std::runtime_error("the encoder refused the attribute key \"" + key + "\": byte " +
+                                     std::to_string(wide - key.begin()) + " is not ASCII");
+        if (key.size() > std::numeric_limits<std::uint16_t>::max())
+            throw std::runtime_error("the encoder refused the attribute key \"" + key + "\": " +
+                                     std::to_string(key.size()) + " bytes, past the 16-bit KEY_SIZE");
+        const auto invalid = first_invalid_utf8(value);
+        if (invalid != std::u8string_view::npos)
+            throw std::runtime_error("the encoder refused the value of attribute key \"" + key + "\": byte " +
+                                     std::to_string(invalid) + " begins no UTF-8 sequence");
         bytes += key.size() + value.size();
     }
-    if (bytes > std::numeric_limits<uint32_t>::max()) throw std::runtime_error
-        ("[ERROR] The encoder refused the caller's attributes: " + std::to_string(bytes) +
-         " key and value bytes, past ATTRIBUTE_BYTES' 32-bit COUNT");
-}
-Encoder create_encoder(EncodeSlideInfo &info) noexcept
-{
-    try {
-        // Check the context status; If no context, create one.
-        Context& context = info.context;
-        if (context == nullptr) {
-            ContextCreateInfo context_info {nullptr};
-            context = std::make_shared<Context_t>(context_info);
-        } if (context == nullptr)
-            throw std::runtime_error("No valid context created or available");
-        
-        // Set the destination file directory to the source directory
-        // if it does not exist
-        std::filesystem::path source_file_path = info.srcFilePath;
-        auto source_name = source_file_path.filename();
-        auto source_dir  = source_file_path.parent_path();
-        
-        if (std::filesystem::exists(source_file_path) == false)
-            throw std::runtime_error("source slide file "+info.srcFilePath+" does not exist");
-        
-        if (info.dstFilePath.size() == 0 ||
-            std::filesystem::is_directory(info.dstFilePath) == false)
-            info.dstFilePath = source_dir.string();
-        
-        // Return the newly constructed encoder object
-        return std::make_shared<Encoder_t>(info);
-        
-    } catch (std::runtime_error&e) {
-        std::cerr   << "Failed to create a valid slide encoder: "
-        << e.what() << "\n";
-        return NULL;
-    }   return NULL;
-}
-Result reset_encoder(Encoder &encoder) noexcept
-{
-    try {
-        CHECK_ENCODER(encoder);
-        return encoder->reset_encoder();
-    } catch (std::runtime_error&e) {
-        return codec_failure(SlideError::ENCODER_FAILED, e.what());
-    }
-}
-Result dispatch_encoder (const Encoder& encoder) noexcept
-{
-    try {
-        CHECK_ENCODER(encoder);
-        return encoder->dispatch_encoder();
-    } catch (std::runtime_error& e) {
-        encoder->reset_encoder();
-        return codec_failure(SlideError::ENCODER_FAILED, e.what());
-    }
-}
-Result interrupt_encoder(const Encoder & encoder) noexcept
-{
-    try {
-        CHECK_ENCODER(encoder);
-        return encoder->interrupt_encoder();
-    } catch (std::runtime_error&e) {
-        return codec_failure(SlideError::ENCODER_FAILED, e.what());
-    }
-}
-Result get_encoder_progress (const Encoder &encoder, EncoderProgress &progress) noexcept
-{
-    try {
-        CHECK_ENCODER(encoder);
-        return encoder->get_encoder_progress(progress);
-    } catch (std::runtime_error&e) {
-        return codec_failure(SlideError::ENCODER_FAILED, e.what());
-    }
-}
-Result get_encoder_src(const Encoder &encoder, std::string &src_string) noexcept
-{
-    try {
-        CHECK_ENCODER(encoder);
-        src_string = encoder->get_src_path();
-        return Iris::Result::success();
-    } catch (std::runtime_error&e) {
-        return codec_failure(SlideError::ENCODER_FAILED, e.what());
-    }
-}
-Result get_encoder_dst_path(const Encoder &encoder, std::string &dst_string) noexcept
-{
-    try {
-        CHECK_ENCODER(encoder);
-        dst_string = encoder->get_dst_path();
-        return Iris::Result::success();
-    } catch (std::runtime_error&e) {
-        return codec_failure(SlideError::ENCODER_FAILED, e.what());
-    }
-}
-Result set_encoder_src(const Encoder &encoder, const std::string &source_path) noexcept
-{
-    try {
-        CHECK_ENCODER(encoder);
-        CHECK_MUTABLE(encoder);
-        encoder->set_src_path(source_path);
-        return Iris::Result::success();
-    } catch (std::runtime_error&e) {
-        return codec_failure(SlideError::ENCODER_FAILED, e.what());
-    }
-}
-Result set_encoder_dst_path(const Encoder &encoder, const std::string &dst_path) noexcept
-{
-    try {
-        CHECK_ENCODER(encoder);
-        CHECK_MUTABLE(encoder);
-        encoder->set_dst_path(dst_path);
-        return Iris::Result::success();
-    } catch (std::runtime_error&e) {
-        return codec_failure(SlideError::ENCODER_FAILED, e.what());
-    }
-}
-Encoder_t::Encoder_t    (const EncodeSlideInfo& __i) :
-_concurrency                                (__i.concurrency),
-_derive                                     (__i.derivation),
-_context                                    (__i.context),
-_srcPath                                    (__i.srcFilePath),
-_dstPath                                    (__i.dstFilePath),
-_anonymize                                  (__i.anonymize),
-_encoding                                   (__i.desiredEncoding),
-_derivation                                 (_derive?*__i.derivation:EncoderDerivation()),
-_attributes                                 (__i.attributes),
-_status                                     (ENCODER_INACTIVE)
-{
-    
-}
-Encoder_t::~Encoder_t   ()
-{
-    while (_status == ENCODER_ACTIVE) {
-        _status.wait(ENCODER_ACTIVE);
-        auto STATUS = ENCODER_INACTIVE;
-        _status.compare_exchange_strong(STATUS, ENCODER_SHUTDOWN);
-        switch (STATUS) {
-            case ENCODER_INACTIVE:
-                _status = ENCODER_SHUTDOWN;
-            case ENCODER_SHUTDOWN:
-            case ENCODER_ERROR:
-                break;
-            case ENCODER_ACTIVE:
-                continue;
-        }
-    } for (auto& thread : _threads)
-        if (thread.joinable()) thread.join();
-}
-// MARK: Getters
-EncoderStatus Encoder_t::get_status() const
-{
-    return _status;
-}
-Context Encoder_t::get_context() const
-{
-    return _context;
-}
-std::string Encoder_t::get_src_path() const
-{
-    return _srcPath;
-}
-std::string Encoder_t::get_dst_path() const
-{
-    return _dstPath;
-}
-Encoding Encoder_t::get_encoding() const {
-    return _encoding;
-}
-Result Encoder_t::get_encoder_progress (EncoderProgress &progress) const
-{
-    progress.dstFilePath    = _dstPath;
-    progress.status         = _status.load();
-    switch (progress.status) {
-        case ENCODER_ACTIVE:
-            if (_tracker.total == 0)
-                return codec_failure(SlideError::ENCODER_NO_TILES, "Tracker returned 0 total tiles in slide");
-            progress.progress       = static_cast<float>(_tracker.completed.load())
-                                    / static_cast<float>(_tracker.total);
-            progress.dstFilePath    = _tracker.dst_path;
-            progress.errorMsg       = _tracker.error_msg;
-            return Iris::Result::success();
-            
-        case ENCODER_ERROR: {
-            MutexLock __ (const_cast<Mutex&>(_tracker.error_msg_mutex));
-            progress.errorMsg       = _tracker.error_msg;
-        }
-        case ENCODER_INACTIVE:
-        case ENCODER_SHUTDOWN:
-            return Iris::Result::success();
-    }   return codec_failure(SlideError::ENCODER_STATUS_UNKNOWN, "encoder status " + std::to_string(static_cast<int>(progress.status)));
-}
-// MARK: Setters
-void Encoder_t::set_src_path(const std::string &source)
-{
-    switch (_status) {
-        case ENCODER_INACTIVE:break;
-        default:
-            throw std::runtime_error("Encoder is currently active; cannot change source path");
-    }
-    _srcPath = source;
-}
-void Encoder_t::set_dst_path(const std::string &destination)
-{
-    switch (_status) {
-        case ENCODER_INACTIVE:break;
-        default:
-            throw std::runtime_error("Encoder is currently active; cannot change destination path");
-    }
-    _dstPath = destination;
-}
-void Encoder_t::set_encoding(Encoding desired_encoding)
-{
-    switch (_status) {
-        case ENCODER_INACTIVE:break;
-        default:
-            std::cerr << "Encoder is currently active; cannot change encoding\n";
-            return;
-    }
-    _encoding = desired_encoding;
-}
-Result Encoder_t::reset_encoder()
-{
-    switch (_status) {
-        case ENCODER_INACTIVE:
-        case ENCODER_ACTIVE:
-            _status.store(ENCODER_ERROR);
-        case ENCODER_ERROR:
-            _status.notify_all();
-            for (auto& thread : _threads)
-                if (thread.joinable()) thread.join();
-            break;
-            
-        case ENCODER_SHUTDOWN:  return codec_failure(SlideError::ENCODER_SHUT_DOWN, "Cannot reset an encoder in SHUTDOWN");
-    }
-    
-    MutexLock __ (_tracker.error_msg_mutex);
-    _tracker.dst_path.clear();
-    _tracker.error_msg.clear();
-    _tracker.completed = 0;
-    _status.store(ENCODER_INACTIVE);
-    
-    return Iris::Result::success();
+    if (bytes > std::numeric_limits<std::uint32_t>::max())
+        throw std::runtime_error("the encoder refused the caller's attributes: " + std::to_string(bytes) +
+                                 " key and value bytes, past ATTRIBUTE_BYTES' 32-bit COUNT");
 }
 
-// MARK: - OPENSLIDE METHODS
-#if IRIS_INCLUDE_OPENSLIDE
-#include <openslide/openslide.h>
-inline Extent READ_EXTENT_OPENSLIDE (openslide_t* openslide)
+/// The encoder's phase. SEALING is the end of an encode: the file's structure is written and
+/// it is renamed into place, which an interrupt cannot stop halfway. Callers see it as ACTIVE.
+enum class Phase : std::uint8_t { READY, ACTIVE, SEALING, DONE, FAILED, INTERRUPTED };
+EncoderState public_state (Phase phase) noexcept
 {
-    Extent          extent;
-    
-    int64_t L0_width, L0_height;
-    openslide_get_level0_dimensions(openslide,&L0_width,&L0_height);
-
-    auto n_levels = openslide_get_level_count(openslide);
-    int64_t width, height;
-    openslide_get_level_dimensions(openslide, n_levels-1, &width, &height);
-    extent.width        = U32_CAST(width);
-    extent.height       = U32_CAST(height);
-    extent.layers       = LayerExtents(n_levels);
-    auto extent_IT     = extent.layers.begin();
-    auto f_level        = U32_CAST(0);
-    auto r_level        = U32_CAST(extent.layers.size() - 1);
-    for (; extent_IT  != extent.layers.end(); f_level++, r_level--, extent_IT++) {
-        auto& _SL_      = *extent_IT;
-        openslide_get_level_dimensions(openslide, r_level, &width, &height);
-        _SL_.xTiles      = U32_CAST(std::ceil(F32_CAST(width)/F32_CAST(TILE_PIX_LENGTH)));
-        _SL_.yTiles      = U32_CAST(std::ceil(F32_CAST(height)/F32_CAST(TILE_PIX_LENGTH)));
-        _SL_.scale       =  width > height ?
-        F32_CAST(width)/F32_CAST(extent.width) :
-        F32_CAST(height)/F32_CAST(extent.height);
+    switch (phase) {
+        case Phase::READY:       return EncoderState::READY;
+        case Phase::ACTIVE:
+        case Phase::SEALING:     return EncoderState::ACTIVE;
+        case Phase::DONE:        return EncoderState::DONE;
+        case Phase::FAILED:      return EncoderState::FAILED;
+        case Phase::INTERRUPTED: return EncoderState::INTERRUPTED;
     }
-    for (extent_IT = extent.layers.begin(); extent_IT != extent.layers.end(); extent_IT++)
-        extent_IT->downsample = extent.layers.back().scale / extent_IT->scale;
-    
-    return extent;
+    return EncoderState::FAILED;
 }
-inline Buffer READ_OPENSLIDE_TILE (const EncoderSource src, LayerIndex __LI, TileIndex __TI)
+const char* phase_name (Phase phase) noexcept
 {
-    const auto os       = src.openslide;
-    if (os == NULL)                                     return NULL;
-    const auto extent   = src.extent;
-    if (__LI    >= extent.layers.size())                return NULL;
-    auto& __LE   = extent.layers[__LI];
-    if (__TI    >= __LE.xTiles * __LE.yTiles)           return NULL;
-    auto buffer         = Create_strong_buffer  (TILE_PIX_BYTES_RGBA);
-    auto& level_extent  = extent.layers[__LI];
-    auto openSlideLevel = static_cast<uint32_t> ((extent.layers.size()-1)-__LI);
-    auto x_tile_index   = static_cast<float>    (__TI % level_extent.xTiles);
-    auto y_tile_index   = static_cast<float>    (__TI / level_extent.xTiles);
-    openslide_read_region(os, static_cast<uint32_t*>(buffer->append(TILE_PIX_BYTES_RGBA)),
-                          static_cast<int64_t>  (std::round(x_tile_index * TILE_PIX_LENGTH * level_extent.downsample)),
-                          static_cast<int64_t>  (std::round(y_tile_index * TILE_PIX_LENGTH * level_extent.downsample)),
-                          openSlideLevel,
-                          TILE_PIX_LENGTH, TILE_PIX_LENGTH);
-    return buffer;
+    switch (phase) {
+        case Phase::READY:       return "READY";
+        case Phase::ACTIVE:      return "ACTIVE";
+        case Phase::SEALING:     return "SEALING";
+        case Phase::DONE:        return "DONE";
+        case Phase::FAILED:      return "FAILED";
+        case Phase::INTERRUPTED: return "INTERRUPTED";
+    }
+    return "an unknown phase";
 }
-enum OpenSlideProperties {
-    NOT_OPENSLIDE,
-    UNUSED,
-    MPP,
-    OBJECTIVE_POWER,
-    
+/// The longest failure message kept; a longer one is cut. Fixed, so recording a failure never allocates.
+constexpr std::size_t ERROR_CAPACITY = 1024;
+
+/// One row of one layer: its tiles' pixels (kept while a row above still reads them) and their
+/// compressed streams (kept until written).
+struct Row {
+    enum class Stage : std::uint8_t { WAITING, WORKING, DONE, WRITTEN };
+    std::vector<std::vector<std::uint8_t>> pixels;
+    std::vector<Buffer>                    streams;
+    std::atomic<std::uint32_t>             remaining {0};
+    std::atomic<Stage>                     stage {Stage::WAITING};
+    std::uint32_t                          readers = 0;   // rows above that still read this one
 };
-inline OpenSlideProperties PARSE_OPENSLIDE_PROPERTY (const char* const key_chars) {
-    if (strstr(key_chars, "openslide") == NULL) return NOT_OPENSLIDE;
-    if (strcmp(key_chars, OPENSLIDE_PROPERTY_NAME_MPP_X) == 0) return MPP;
-    if (strcmp(key_chars, OPENSLIDE_PROPERTY_NAME_OBJECTIVE_POWER) == 0) return OBJECTIVE_POWER;
-    return UNUSED;
-}
-inline Metadata READ_OPENSLIDE_METADATA (const EncoderSource src, const Extent& extent, bool anonymize) {
-    openslide_t* os = src.openslide;
-    Metadata metadata;
-    
-    metadata.codec = get_codec_version();
-    // Insert the attributes
-    metadata.attributes.type = METADATA_FREE_TEXT;
-    const char* const* attributes = openslide_get_property_names(os);
-    for (int index = 0; attributes[index] != NULL; ++index) {
-        switch (PARSE_OPENSLIDE_PROPERTY(attributes[index])) {
-            // Unused openslie parameter, probably duplicated elsewhere
-            case UNUSED: continue;
-            
-            // Break and encode as is. It's likely a vendor feature
-            case NOT_OPENSLIDE: break;
-                
-            // MpPN (Normalized MPP to layer scale)
-            // We multiply because this value is currently norm
-            // relative to the highest resolution layer (ex 1/64x)
-            // This will allow for direct comp with on-screen pixels
-            // Because viewers work in relative zoom.
-            // We want this 1:1 lowest res layer (layer scale = 1)
-            case MPP: {
-                metadata.micronsPerPixel = round(atof
-                (openslide_get_property_value(os, attributes[index])) *
-                 extent.layers.front().downsample * 1000.f)/1000.f;
-                // You will note it's rounded to the 1000ths
-                continue;
-            }
-                
-            // Normalize the magnification coefficient ratio
-            // to the layer scale. This allows for multiplying
-            // with relative zoom for direct comp with on-screen pixels
-            case OBJECTIVE_POWER:
-                metadata.magnification = round(atof
-                (openslide_get_property_value(os, attributes[index])) /
-                 extent.layers.front().downsample * 1000.f)/1000.f;
-                // You will note it's rounded to the 1000ths
-                continue;
-        }
-        if (auto attribute = openslide_get_property_value(os, attributes[index])) {
-            auto __key = std::string(attributes[index]);
-            auto __str = std::string(attribute);
-            metadata.attributes[__key] = std::u8string(__str.begin(),__str.end());
-        }
-    }
-    
-    // Insert the associated image labels
-    const char* const* image_labels = openslide_get_associated_image_names(os);
-    for (int label = 0; image_labels[label] != NULL; ++label)
-        metadata.associatedImages.insert(std::string(image_labels[label]));
-    
-    // Insert the ICC profile (if present)
-    int64_t icc_bytes = openslide_get_icc_profile_size(os);
-    if (icc_bytes > 0) {
-        metadata.ICC_profile.resize(icc_bytes);
-        openslide_read_icc_profile(os, metadata.ICC_profile.data());
-    }
-    
-    return metadata;
-}
-inline AssociatedImageInfo READ_OPENSLIDE_ASSOCIATED_IMAGE_INFO (openslide_t* os, const std::string& label)
+struct Layer {
+    LayerSize         size;
+    bool              written = true;   // false for a 2x layer a larger layer step skips
+    std::uint32_t     across = 0, down = 0;
+    std::vector<Row>  rows;
+};
+struct Job {
+    std::uint32_t depth;   // 0 is the source's own layer, the highest resolution
+    std::uint32_t row;
+};
+/// How many 2x reductions one layer step is: log2(step), or 0 when the step is not a power of two from 2.
+std::uint32_t reductions_per_step (std::uint32_t step) noexcept
 {
-    int64_t width, height;
-    openslide_get_associated_image_dimensions(os, label.c_str(), &width, &height);
-    if (width > UINT32_MAX) throw std::runtime_error
-        ("openslide associated image width is greater than 32-bit max value");
-    if (height > UINT32_MAX) throw std::runtime_error
-        ("openslide associated image height is greater than 32-bit max value");
-    return AssociatedImageInfo {
-        .imageLabel     = label,
-        .width          = static_cast<uint32_t>(width),
-        .height         = static_cast<uint32_t>(height),
-        .encoding       = IMAGE_ENCODING_DEFAULT,
-        .sourceFormat   = Iris::FORMAT_B8G8R8A8, // Openslide is alway ARGB (big-endian)
-        .orientation    = ORIENTATION_0
-    };
+    return step >= 2 && (step & (step - 1)) == 0 ? static_cast<std::uint32_t>(std::countr_zero(step)) : 0;
 }
-inline Buffer READ_OPENSLIDE_ASSOCIATED_IMAGE (openslide_t* os, const AssociatedImageInfo& info)
+/// Whether the layer at @p depth 2x reductions below the source ends the pyramid: it is written
+/// and fits one tile.
+bool is_last_layer (LayerSize size, std::uint32_t depth, std::uint32_t per_step) noexcept
 {
-    size_t image_size = info.width * info.height * sizeof(uint32_t);
-    Buffer dst = Create_strong_buffer(image_size);
-    openslide_read_associated_image(os, info.imageLabel.c_str(), static_cast<uint32_t*>(dst->data()));
-    dst->set_size(image_size);
-    return dst;
+    return depth % per_step == 0 && tiles_across(size) == 1 && tiles_down(size) == 1;
 }
-#endif
-// MARK: - DICOM SPECIFIC METHODS
-using DcmFile = std::shared_ptr<struct DcmFile_t>;
-DcmFile  open_dicom_file             (const std::filesystem::path&);
-uint32_t get_dicom_number_of_levels  (DcmFile dicom);
-uint32_t get_dicom_number_of_frames  (DcmFile dicom, unsigned level);
-uint32_t get_dicom_layer_tile_width  (DcmFile dicom, unsigned level);
-uint32_t get_dicom_layer_tile_height (DcmFile dicom, unsigned level);
-uint32_t get_dicom_layer_width       (DcmFile dicom, unsigned level);
-uint32_t get_dicom_layer_height      (DcmFile dicom, unsigned level);
-Encoding get_dicom_encoding          (DcmFile dicom);
-Buffer   get_dicom_frame_buffer      (DcmFile dicom, unsigned levelIndex, unsigned frame);
-Metadata get_dicom_metadata          (DcmFile dicom, bool anonymize);
-inline Extent READ_EXTENT_DICOM (DcmFile dicom_file)
-{
-    Extent          extent;
 
-    // Get the total dimensions of the image
-    auto n_levels   = get_dicom_number_of_levels (dicom_file);
-    extent.width    = get_dicom_layer_width(dicom_file, 0);
-    extent.height   = get_dicom_layer_height(dicom_file, 0);
-    extent.layers   = LayerExtents(n_levels);
-    auto extent_IT  = extent.layers.begin();
-    auto f_level    = U32_CAST(0);
-    auto r_level    = U32_CAST(extent.layers.size() - 1);
-    for (; extent_IT  != extent.layers.end();
-         f_level++, r_level--, extent_IT++) {
-        auto& __e   = *extent_IT;
-        auto width  = get_dicom_layer_width(dicom_file, f_level);
-        auto height = get_dicom_layer_height(dicom_file, f_level);
-        __e.xTiles  = (width/TILE_PIX_LENGTH) + (width%TILE_PIX_LENGTH?1:0);
-        __e.yTiles  = (height/TILE_PIX_LENGTH) + (height%TILE_PIX_LENGTH?1:0);
-        __e.scale   =  width > height ?
-        round(F32_CAST(width)/F32_CAST(extent.width)*100.f)/100.f :
-        round(F32_CAST(height)/F32_CAST(extent.height)*100.f)/100.f;
-        assert(__e.xTiles*__e.yTiles == get_dicom_number_of_frames(dicom_file, f_level));
+/// The rows of layer depth - 1 that row @p row of layer depth reads: its region spans source
+/// rows 512·row - 3 to 512·row + 514, tile rows 2·row - 1 to 2·row + 2, clamped to the layer.
+std::pair<std::uint32_t, std::uint32_t> rows_read (std::uint32_t row, std::uint32_t down_below) noexcept
+{
+    const std::uint32_t first = row == 0 ? 0 : 2 * row - 1;
+    return {first, std::min(2 * row + 2, down_below - 1)};
+}
+} // namespace
+
+// RTM Encode_09, Encode_10, Encode_11, Encode_12, Concurrency_04
+class Encoder_t {
+public:
+    Encoder_t (const EncoderDesc& desc, std::unique_ptr<Source> source, std::uint64_t budget);
+    Encoder_t (const Encoder_t&) = delete;
+    Encoder_t& operator= (const Encoder_t&) = delete;
+    ~Encoder_t ();
+
+    void dispatch ();
+    EncoderProgress snapshot () const;
+    void interrupt ();
+
+private:
+    void advance () noexcept;
+    void step ();
+    bool is_base_row_admitted () const noexcept;
+    bool is_startable (const Job& job) const noexcept;
+    void start_tiles (std::uint32_t depth, std::uint32_t row);
+    void work_tile (std::uint32_t depth, std::uint32_t row, std::uint32_t x) noexcept;
+    void tile_done (std::uint32_t depth, std::uint32_t row) noexcept;
+    void write (const Job& job);
+    void release_pixels (Row& row) noexcept;
+    void finish ();
+    /// The layers as IFE numbers them: from the lowest resolution, whose scale is 1.
+    Iris::Extent ife_extent () const;
+    void fail (const std::string& why) noexcept;
+    void charge (std::int64_t bytes) noexcept;
+    void issue (std::invocable auto&& body);
+
+    EncoderDesc                  _desc;
+    std::filesystem::path        _file, _scratch;
+    std::unique_ptr<Source>      _source;
+    Context                      _context;
+    std::vector<Layer>           _layers;
+    std::vector<Job>             _schedule;
+    // advance()'s cursors, under its claim: base rows started in row order, derived rows started
+    // and every row written in schedule order.
+    std::uint32_t                _next_base = 0;
+    std::size_t                  _next_job = 0, _next_write = 0;
+    std::uint32_t                _rows_in_flight = 0;   // started and not yet written
+    std::uint64_t                _tiles_total = 0;
+    std::atomic<std::uint64_t>   _tiles_written {0};
+    std::uint64_t                _budget;
+    std::uint64_t                _reserve = 0;   // kept free for derived rows and every worker's scratch
+    std::atomic<std::int64_t>    _resident {0};
+    std::atomic<std::int64_t>    _peak {0};
+    std::atomic<bool>            _advancing {false};
+    std::atomic<std::uint32_t>   _advance_requests {0};
+    std::atomic<Phase>           _phase {Phase::READY};
+    std::atomic_flag             _failure_claimed = ATOMIC_FLAG_INIT;
+    std::array<char, ERROR_CAPACITY> _error {};
+    Iris::File::Builder          _builder;
+    // Declared last, destroyed first: the pool's destructor runs its pending tasks, so nothing
+    // above is destroyed while a task can still reach it.
+    std::unique_ptr<Iris::Async::Pool> _pool;
+};
+
+Encoder_t::Encoder_t (const EncoderDesc& desc, std::unique_ptr<Source> source, std::uint64_t budget) :
+_desc       (desc),
+_file       (desc.destination / file_name(desc.source, desc.encoding)),
+_scratch    (desc.destination / ("." + file_name(desc.source, desc.encoding) + ".partial")),
+_source     (std::move(source)),
+_context    (create_context(ContextCreateInfo {})),
+_budget     (budget),
+_pool       (std::make_unique<Iris::Async::Pool>(desc.concurrency))
+{
+    // The layers, the source's first, each the 2x reduction of the one before, every
+    // log2(step)-th written, until a written one fits one tile.
+    const std::uint32_t per_step = reductions_per_step(desc.layer_step);
+    for (LayerSize size = _source->size();; size = reduced(size)) {
+        const auto depth = static_cast<std::uint32_t>(_layers.size());
+        Layer& layer = _layers.emplace_back();
+        layer.size    = size;
+        layer.written = depth % per_step == 0;
+        layer.across = tiles_across(size);
+        layer.down   = tiles_down(size);
+        layer.rows   = std::vector<Row>(layer.down);
+        for (auto& row : layer.rows) {
+            row.pixels.resize(layer.across);
+            row.streams.resize(layer.across);
+        }
+        if (layer.written) _tiles_total += std::uint64_t{layer.across} * layer.down;
+        if (is_last_layer(size, depth, per_step)) break;
     }
-    for (extent_IT = extent.layers.begin(); extent_IT != extent.layers.end(); extent_IT++)
-        extent_IT->downsample = extent.layers.back().scale / extent_IT->scale;
-    
+    // A base row is read only with room left for one row of every derived layer and the scratch
+    // of every worker, so the rows that free memory can always start.
+    for (std::size_t d = 1; d < _layers.size(); ++d) _reserve += std::uint64_t{_layers[d].across} * TILE_BYTES;
+    _reserve += std::uint64_t{_desc.concurrency} *
+                std::max(_source->read_scratch_bytes(), REDUCE_SCRATCH_BYTES);
+    // The schedule: each base row, then every derived row whose last input row is now made.
+    std::vector<std::uint32_t> made(_layers.size(), 0);
+    for (std::uint32_t base = 0; base < _layers[0].down; ++base) {
+        _schedule.push_back({0, base});
+        made[0] = base + 1;
+        for (std::uint32_t d = 1; d < _layers.size(); ++d)
+            while (made[d] < _layers[d].down && rows_read(made[d], _layers[d - 1].down).second < made[d - 1])
+                _schedule.push_back({d, made[d]++});
+    }
+    // How many derived rows read each row, so a row's pixels go when its last reader is done.
+    for (std::uint32_t d = 1; d < _layers.size(); ++d)
+        for (std::uint32_t r = 0; r < _layers[d].down; ++r) {
+            const auto [first, last] = rows_read(r, _layers[d - 1].down);
+            for (std::uint32_t k = first; k <= last; ++k) ++_layers[d - 1].rows[k].readers;
+        }
+}
+
+Encoder_t::~Encoder_t ()
+{
+    // An active encode is interrupted first, so dropping the encoder stops it instead of waiting
+    // for it to end; a SEALING one completes, since the pool runs its last task.
+    auto active = Phase::ACTIVE;
+    const bool is_interrupted = _phase.compare_exchange_strong(active, Phase::INTERRUPTED);
+    if (is_interrupted) _pool->terminate();
+    _pool.reset();
+    _builder = Iris::File::Builder();                // releases the scratch file's mapping
+    if (_phase.load() != Phase::DONE) {
+        std::error_code ignored;                     // nothing to report: the file may never have been made
+        std::filesystem::remove(_scratch, ignored);
+    }
+}
+
+void Encoder_t::issue (std::invocable auto&& body)
+{
+    const bool is_issued = _pool->issue_task(std::forward<decltype(body)>(body));
+    if (!is_issued) fail("the encoder's thread pool refused a task: it was terminated");
+}
+
+void Encoder_t::dispatch ()
+{
+    auto ready = Phase::READY;
+    const bool is_claimed = _phase.compare_exchange_strong(ready, Phase::ACTIVE);
+    if (!is_claimed)
+        throw std::runtime_error(std::string("the encoder was already dispatched (") + phase_name(ready) +
+                                 "); an encoder encodes once");
+    try {
+        std::filesystem::remove(_scratch);
+        _builder = Iris::File::Builder::create({
+            // A compressed tile never outgrows its raw pixels; only written pages cost disk.
+            .capacity    = Iris::File::BuilderCreateInfo{}.capacity + _tiles_total * TILE_BYTES,
+            .filepath    = _scratch,
+            .tile_frames = false,
+        });
+        _builder.set_tile_table({.encoding = _desc.encoding, .format = Iris::FORMAT_R8G8B8A8, .extent = ife_extent()});
+    } catch (const std::exception& error) {
+        fail(error.what());
+        throw;
+    }
+    // The first step runs on the pool, so the caller's thread never does the encode's work.
+    issue([this] { advance(); });
+}
+
+Iris::Extent Encoder_t::ife_extent () const
+{
+    // The written layers, lowest resolution first; the lowest has scale 1 and each above it is
+    // layer_step times larger.
+    std::vector<const Layer*> written;
+    for (auto layer = _layers.rbegin(); layer != _layers.rend(); ++layer)
+        if (layer->written) written.push_back(&*layer);
+    Iris::Extent extent {.width  = static_cast<std::uint32_t>(written.front()->size.width),
+                         .height = static_cast<std::uint32_t>(written.front()->size.height)};
+    float scale = 1.f;
+    for (std::size_t l = 0; l < written.size(); ++l, scale *= float(_desc.layer_step))
+        extent.layers.push_back({.xTiles = written[l]->across, .yTiles = written[l]->down, .scale = scale,
+                                 .downsample = float(std::pow(double(_desc.layer_step), double(written.size() - 1 - l)))});
     return extent;
 }
-inline Buffer GET_DICOM_TILE (const EncoderSource src, LayerIndex __LI, TileIndex __TI)
-{
-    const auto dicom = src.dicomFile;
-    if (dicom == NULL)                      return NULL;
-    const auto extent = src.extent;
-    if (__LI >= extent.layers.size())       return NULL;
-    auto& __LE   = extent.layers[__LI];
-    if (__TI >= __LE.xTiles * __LE.yTiles)  return NULL;
-    
-    return get_dicom_frame_buffer(dicom, __LI, __TI+1);
-}
-inline Metadata READ_DICOM_METADATA (const EncoderSource src, const Extent& extent, bool anonymize) {
-    auto dicom = src.dicomFile;
-    
-    // Read the raw metadata from the DICOM image
-    Metadata metadata = get_dicom_metadata (dicom, anonymize);
-    
-    // Inject the current codec version
-    // NOTE: This is NOT the Iris File Extension version.
-    // That's written in under the hood.
-    metadata.codec = get_codec_version();
-    
-    // Normalize the magnification and Microns per pixel
-    // Relative to the first layer. This is more considerate for viewers
-    metadata.magnification /= extent.layers.front().downsample;
-    metadata.micronsPerPixel /= extent.layers.front().downsample;
-    
-    return metadata;
-}
-// MARK: - APERIO SPECIFIC METHODS
 
-// MARK: - FILE ENCODING METHODS
-inline EncoderSource OPEN_SOURCE (const std::string& path_, const Context context = NULL)
+void Encoder_t::advance () noexcept
 {
-    std::filesystem::path path (path_);
-    if (!std::filesystem::exists(path)) throw std::runtime_error
-        ("File system failed to identify source file " + path.string());
-    
-    if (is_iris_slide_file(path.string()).succeeded()) {
-        EncoderSource source;
-        source.sourceType   = EncoderSource::ENCODER_SRC_IRISSLIDE;
-        source.irisSlide    = open_slide(SlideOpenInfo {
-            .filePath       = path_,
-            .context        = context,
-            .writeAccess    = false,
-        });
-        if (!source.irisSlide) throw std::runtime_error
-            ("No valid Iris slide returned from IrisSlide::open_slide");
-        
-        source.extent       = source.irisSlide->get_slide_info().extent;
-        source.format       = source.irisSlide->get_slide_info().format;
-        source.encoding     = source.irisSlide->get_slide_info().encoding;
-            
-        return source;
-    }
-    
-    // If the path ends in a DICOM Extension, try DICOM
-    if (path.extension() == ".dcm") try {
-        if (auto handle = open_dicom_file(path)) {
-            EncoderSource source;
-            source.sourceType   = EncoderSource::ENCODER_SRC_DICOM;
-            source.dicomFile    = handle;
-            source.extent       = READ_EXTENT_DICOM(handle);
-            source.encoding     = get_dicom_encoding(handle);
-            
-            return source;
+    _advance_requests.fetch_add(1);
+    const bool is_claimed_elsewhere = _advancing.exchange(true);
+    if (is_claimed_elsewhere) return;                // the claimant will see the request
+    for (;;) {
+        _advance_requests.store(0);
+        try {
+            const bool is_active = _phase.load() == Phase::ACTIVE;
+            if (is_active) step();
+        } catch (const std::exception& error) {
+            fail(error.what());
         }
-    } catch (std::runtime_error &e) {
-        std::cout   << "[WARNING] Failed to establish DICOM source \'"
-                    << path_ << "\' as an encoder source: "
-                    << e.what() << ". Reattempting using OpenSlide.\n";
-        goto TRY_OPENSLIDE;
+        _advancing.store(false);
+        // A request that arrived after the store is taken here, unless another thread claimed it.
+        if (_advance_requests.load() == 0) return;
+        const bool is_reclaimed_elsewhere = _advancing.exchange(true);
+        if (is_reclaimed_elsewhere) return;
     }
-    
-    if (path.extension() == ".svs") try {
-        // SVS WILL GO HERE
-    } catch (std::runtime_error &e) {
-        std::cout   << "[WARNING] Failed to establish Aperio SVS source \'"
-                    << path_ << "\' as an encoder source: "
-                    << e.what() << ". Reattempting using OpenSlide.\n";
-        goto TRY_OPENSLIDE;
-    }
-    TRY_OPENSLIDE:
-    #if IRIS_INCLUDE_OPENSLIDE
-    if (openslide_detect_vendor(path_.c_str())) {
-        EncoderSource source;
-        source.sourceType   = EncoderSource::ENCODER_SRC_OPENSLIDE;
-        source.openslide    = openslide_open(path_.c_str());
-        
-        if (!source.openslide) throw std::runtime_error
-            ("No valid openslide handle returned from openslide_open");
-
-        source.extent       = READ_EXTENT_OPENSLIDE(source.openslide);
-        source.format       = FORMAT_B8G8R8A8; // OpenSlide always reads ARGB
-        
-        return source;
-    }
-    throw std::runtime_error("Provided source file path was not recognized by any available decoders.");
-    #else
-    throw std::runtime_error("Provided source file path was not recognized by any available decoders. You may need an encoder built with OpenSlide enabled.");
-    #endif
-   
 }
-inline Buffer GET_SOURCE_TILE (const EncoderSource& src, LayerIndex layer, TileIndex tile)
+
+bool Encoder_t::is_base_row_admitted () const noexcept
 {
-    switch (src.sourceType) {
-        case EncoderSource::ENCODER_SRC_UNDEFINED: throw std::runtime_error("Cannot read source tile; undefined source");
-        case EncoderSource::ENCODER_SRC_IRISSLIDE:
-            return src.irisSlide->get_slide_tile_entry(layer, tile);
-        case EncoderSource::ENCODER_SRC_OPENSLIDE:
-            #if IRIS_INCLUDE_OPENSLIDE
-            return NULL;
-            #else
-            throw std::runtime_error("Openslide linkage was NOT compiled into this binary. Request a new version of Iris Slide with OpenSlide support if you would like to decode slide scanning vendor slide files only accessable to OpenSlide.");
-            #endif
-        case EncoderSource::ENCODER_SRC_DICOM:
-            return GET_DICOM_TILE(src, layer, tile);
-        case EncoderSource::ENCODER_SRC_APERIO:
-            throw std::runtime_error("APERIO TIFF reads not yet built; Use openslide for the moment");
-    }
-    return NULL;
+    if (_next_base >= _layers[0].down) return false;
+    // With no row in flight, no memory will be freed without this one: it is read whatever the
+    // budget, so an encode always progresses. The comparison is unsigned, so a budget of
+    // UINT64_MAX means no limit.
+    const std::uint64_t resident = std::uint64_t(std::max<std::int64_t>(0, _resident.load()));
+    return _rows_in_flight == 0 || resident + std::uint64_t{_layers[0].across} * TILE_BYTES + _reserve <= _budget;
 }
-inline Buffer READ_SOURCE_TILE (const Context& ctx, const EncoderSource& src, LayerIndex layer, TileIndex tile)
+
+bool Encoder_t::is_startable (const Job& job) const noexcept
 {
-    switch (src.sourceType) {
-        case EncoderSource::ENCODER_SRC_UNDEFINED: throw std::runtime_error("Cannot read source tile; undefined source");
-        case EncoderSource::ENCODER_SRC_IRISSLIDE:
-            return IrisSlide::read_slide_tile (SlideTileReadInfo{
-                .slide          = src.irisSlide,
-                .layerIndex     = layer,
-                .tileIndex      = tile,
-                .desiredFormat  = FORMAT_R8G8B8A8});
-        case EncoderSource::ENCODER_SRC_OPENSLIDE:
-            #if IRIS_INCLUDE_OPENSLIDE
-            return READ_OPENSLIDE_TILE (src, layer, tile);
-            #else
-            throw std::runtime_error("Openslide linkage was NOT compiled into this binary. Request a new version of Iris Slide with OpenSlide support if you would like to decode slide scanning vendor slide files only accessable to OpenSlide.");
-            #endif
-            
-        case EncoderSource::ENCODER_SRC_DICOM: {
-            return ctx->decompress_tile({
-                .compressed     = GET_DICOM_TILE(src, layer, tile),
-                .desiredFormat  = FORMAT_R8G8B8A8,
-                .encoding       = get_dicom_encoding(src.dicomFile)
-            });
-        }
-        case EncoderSource::ENCODER_SRC_APERIO:
-            throw std::runtime_error("APERIO TIFF reads not yet built; Use openslide for the moment");
-    }
-    return NULL;
+    const auto [first, last] = rows_read(job.row, _layers[job.depth - 1].down);
+    for (std::uint32_t k = first; k <= last; ++k)
+        if (_layers[job.depth - 1].rows[k].stage.load() < Row::Stage::DONE) return false;
+    return true;
 }
-inline static void ENCODE_SOURCE_PYRAMID (const Context ctx,
-                                          const EncoderSource& src,
-                                          const Builder builder,
-                                          const Encoding encoding,
-                                          EncoderTracker* _tracker,
-                                          AtomicEncoderStatus* _status)
+
+void Encoder_t::step ()
 {
-    auto& extent    = src.extent;
-    auto& tracker   = *_tracker;
-    auto& status    = *_status;
-
-    // Allocate a layer and tile index counter.
-    uint32_t __LI           = 0;
-    uint32_t __TI           = 0;
-    uint32_t __LAYERS       = U32_CAST(extent.layers.size());
-
-    try { for (__LI = 0; __LI < __LAYERS; ++__LI) {
-        auto& layer_tracker = tracker.layers[__LI];
-        for (__TI = 0; __TI < layer_tracker.size(); ++__TI) {
-            // System check step: Only continue if the encoder is active
-            if (status != ENCODER_ACTIVE) return;
-            
-            //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-            //  CAPTURE TILE STEP
-            //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-            auto& tile  = layer_tracker[__TI];
-            auto STATUS = TILE_FREE;
-            if (tile.status.compare_exchange_strong(STATUS, TILE_READING)==false)
-                continue;
-            
-            //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-            //  READ TILE STEP
-            //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-            auto bytes           = GET_SOURCE_TILE (src, __LI, __TI);
-            if  (bytes == NULL) {
-                auto pixel_array = READ_SOURCE_TILE (ctx, src, __LI, __TI);
-                if (!pixel_array) throw std::runtime_error
-                    ("Failed to read slide image data");
-                bytes           = ctx->compress_tile({
-                    .pixelArray = pixel_array,
-                    .format     = src.format,
-                    .encoding   = encoding
-                });
-            }
-            if (!bytes) throw std::runtime_error("Failed to compress slide image data");
-
-            //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-            //  WRITE TO FILE STEP
-            //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-            //  An Iris source's tiles pass through as they are: an empty stream
-            //  is its NULL_TILE, still "no tile at this position", and a
-            //  Z-stacked stream keeps the plane count its frame records.
-            uint16_t planes = 0;   // RTM Api_06: an Iris source's plane count, through IFE's Result
-            if (bytes->size() != 0 && src.irisSlide)
-                throw_if_failed(src.irisSlide->get_slide_parser().tile_planes(__LI, __TI, planes));
-            if (bytes->size() == 0) builder.append_null_tile(__LI, __TI);
-            else builder.append_tile(__LI, __TI, static_cast<const BYTE*>(bytes->data()), bytes->size(), planes);
-
-            //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-            //  RELEASE TILE STEP
-            //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-            tile.status.store(TILE_COMPLETE);
-            tracker.completed++;
-        }
+    while (is_base_row_admitted()) start_tiles(0, _next_base++);
+    // Derived rows start in schedule order as their inputs are made; base rows have their own cursor.
+    for (; _next_job < _schedule.size(); ++_next_job) {
+        const Job& job = _schedule[_next_job];
+        if (job.depth == 0) continue;
+        if (!is_startable(job)) break;
+        start_tiles(job.depth, job.row);
     }
-    } catch (const std::exception&e) {   // the Builder refuses with logic_error kinds too
-        status.store(ENCODER_ERROR);
-        MutexLock __ (tracker.error_msg_mutex);
-        tracker.error_msg += std::string("Slide tile encoding failed: ") +
-                             e.what() + "\n";
-        status.notify_all();
-        return;
-    }
-    
+    while (_next_write < _schedule.size() &&
+           _layers[_schedule[_next_write].depth].rows[_schedule[_next_write].row].stage.load() == Row::Stage::DONE)
+        write(_schedule[_next_write++]);
+    if (_next_write == _schedule.size()) finish();
 }
-inline static void ENCODE_DERIVE_PYRAMID (const Context ctx,
-                                          const EncoderSource& src,
-                                          EncoderTracker* _tracker,
-                                          AtomicEncoderStatus* _status,
-                                          const std::function <void(uint32_t layer_index,
-                                                                    uint32_t y_index,
-                                                                    uint32_t x_index)>
-                                          & ENQUEUE_TILE)
+
+/// A row's tiles go to the pool as tasks, one per tile; the pool's lock-free queue hands each to
+/// one worker, which makes the whole tile on its own thread: a base tile is read, decoded,
+/// re-cut and compressed (work_tile), a derived tile reduced and compressed.
+void Encoder_t::start_tiles (std::uint32_t depth, std::uint32_t r)
 {
-    const auto& src_extent   = src.extent;
-    const auto& layer_extent = src_extent.layers.back();
-    auto& layer_tracker      = _tracker->layers.back();
+    Row& row = _layers[depth].rows[r];
+    const std::uint32_t across = _layers[depth].across;
+    row.remaining.store(across);
+    row.stage.store(Row::Stage::WORKING);
+    ++_rows_in_flight;
+    charge(std::int64_t(across * TILE_BYTES));
+    for (std::uint32_t x = 0; x < across; ++x)
+        issue([this, depth, r, x] { work_tile(depth, r, x); });
+}
+
+void Encoder_t::work_tile (std::uint32_t depth, std::uint32_t r, std::uint32_t x) noexcept
+{
     try {
-        uint32_t src_l = U32_CAST(src_extent.layers.size()-1);
-        uint32_t dst_l = U32_CAST(_tracker->layers.size()-1);
-        for (uint32_t y = 0; y < layer_extent.yTiles; ++y) {
-            for (uint32_t x = 0; x < layer_extent.xTiles; ++x) {
-                if (_status->load() != ENCODER_ACTIVE) return;
-                
-                uint32_t __TI = y * layer_extent.xTiles + x;
-                //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-                //  CAPTURE TILE STEP
-                //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-                auto& tile  = layer_tracker[__TI];
-                auto STATUS = TILE_FREE;
-                if (tile.status.compare_exchange_strong(STATUS, TILE_READING)==false)
-                    continue;
-                //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-                //  READ TILE STEP
-                //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-                tile.stream     = GET_SOURCE_TILE (src, src_l, __TI);
-                if (tile.stream) {
-                    // Decode into the tile table's format: derived tiles are
-                    // downsampled and recompressed as that format.
-                    tile.pixels = ctx->decompress_tile({
-                        .compressed     = tile.stream,
-                        .desiredFormat  = src.format,
-                        .encoding       = src.encoding,
-                    });
-                }
-                if (tile.pixels == NULL)
-                    tile.pixels = READ_SOURCE_TILE(ctx, src, src_l, __TI);
-                if (!tile.pixels) throw std::runtime_error("Failed to read slide image data");
-                //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-                //  PROPOGATE TILE ENCODING STEP
-                //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
-                tile.status.store(TILE_PENDING);
-                ENQUEUE_TILE (dst_l,y,x);
-            }
+        if (_phase.load() != Phase::ACTIVE) return;
+        Row& row = _layers[depth].rows[r];
+        // The scratch this tile holds while it is made, charged for as long as it is held.
+        const std::int64_t scratch = std::int64_t(depth == 0 ? _source->read_scratch_bytes() : REDUCE_SCRATCH_BYTES);
+        charge(scratch);
+        struct Uncharge { Encoder_t* encoder; std::int64_t bytes; ~Uncharge() { encoder->charge(-bytes); } } uncharge {this, scratch};
+        if (depth == 0) {
+            row.pixels[x].resize(TILE_BYTES);
+            _source->read_tile(x, r, row.pixels[x]);
+        } else {
+            // Gather this tile's region from the layer below, reduce it, and make what lies
+            // beyond this layer's extent white.
+            const Layer& below = _layers[depth - 1];
+            std::vector<std::uint8_t> region(std::size_t{REDUCE_REGION} * REDUCE_REGION * RGBA_BYTES);
+            gather_region(below.size, x, r,
+                          [&below](std::uint32_t tx, std::uint32_t ty) {
+                              return std::span<const std::uint8_t>(below.rows[ty].pixels[tx]);
+                          },
+                          region);
+            row.pixels[x].resize(TILE_BYTES);
+            reduce_2x(region, row.pixels[x]);
+            whiten_beyond(_layers[depth].size, x, r, row.pixels[x]);
         }
-    } catch (const std::exception&e) {   // an Iris source's Parser reports out_of_range
-        _status->store(ENCODER_ERROR);
-        MutexLock __ (_tracker->error_msg_mutex);
-        _tracker->error_msg += std::string("Slide tile encoding failed: ") +
-                             e.what() + "\n";
-        _status->notify_all();
+        if (!_layers[depth].written) { tile_done(depth, r); return; }   // only reduced from, never stored
+        row.streams[x] = compress_tile(_context, _desc.encoding, row.pixels[x], _desc.quality, _desc.subsampling);
+        if (!row.streams[x]) throw std::runtime_error("tile (" + std::to_string(x) + ", " + std::to_string(r) +
+                                                      ") of layer " + std::to_string(depth) + " did not compress");
+        charge(std::int64_t(row.streams[x]->size()));
+    } catch (const std::exception& error) {
+        fail(error.what());
         return;
     }
+    tile_done(depth, r);
 }
-inline Metadata READ_METADATA (const EncoderSource& source, const Extent& extent, bool anonymize) {
-    switch (source.sourceType) {
-        case EncoderSource::ENCODER_SRC_UNDEFINED:
-            throw std::runtime_error
-            ("READ_METADATA failed due to ENCODER_SRC_UNDEFINED source type");
-        case EncoderSource::ENCODER_SRC_IRISSLIDE: {
-            auto metadata = source.irisSlide->get_slide_info().metadata;
-            if (anonymize)  {
-                metadata.attributes.clear();
-                metadata.associatedImages.clear();
-            } return metadata;
-        }
-        case EncoderSource::ENCODER_SRC_OPENSLIDE:
-            return READ_OPENSLIDE_METADATA(source,extent,anonymize);
-        case EncoderSource::ENCODER_SRC_DICOM:
-            return READ_DICOM_METADATA(source,extent,anonymize);
-        case EncoderSource::ENCODER_SRC_APERIO:
-            //TODO: APERIO READ METADATA
-            throw std::runtime_error
-            ("READ_METADATA failed as APERIO TIFF reads not yet built; Use openslide for the moment");
-    } throw std::runtime_error
-    ("READ_METADATA due to invalid source type value ("+std::to_string(source.sourceType)+")");
-}
-inline void APPEND_ASSOCIATED_IMAGES (const Context& ctx,
-                                      const Builder& builder,
-                                      const EncoderSource& source,
-                                      const Metadata& metadata)
+
+void Encoder_t::tile_done (std::uint32_t depth, std::uint32_t r) noexcept
 {
-    // One IMAGE_BYTES block per label, in label order. An image that cannot be
-    // read is reported and skipped; it does not fail the slide.
-    for (auto& label : metadata.associatedImages) try {
-        AssociatedImageInfo info;
-        Buffer bytes;
-        switch (source.sourceType) {
-            case EncoderSource::ENCODER_SRC_UNDEFINED:
-                throw std::runtime_error("undefined source type");
-            case EncoderSource::ENCODER_SRC_IRISSLIDE:
-                info    = source.irisSlide->get_assoc_image_info(label);
-                bytes   = source.irisSlide->get_assoc_image(label);
-                break;
-            case EncoderSource::ENCODER_SRC_OPENSLIDE:
-                info    = READ_OPENSLIDE_ASSOCIATED_IMAGE_INFO(source.openslide, label);
-                bytes   = ctx->compress_image(CompressImageInfo{
-                    .pixelArray = READ_OPENSLIDE_ASSOCIATED_IMAGE(source.openslide, info),
-                    .width      = info.width,
-                    .height     = info.height,
-                    .format     = info.sourceFormat,
-                    .encoding   = info.encoding,
-                    .quality    = QUALITY_DEFAULT
-                });
-                break;
-            case EncoderSource::ENCODER_SRC_DICOM:
-                throw std::runtime_error("DICOM associated images are not yet read");
-            case EncoderSource::ENCODER_SRC_APERIO:
-                throw std::runtime_error("APERIO TIFF reads not yet built; Use openslide for the moment");
+    Row& row = _layers[depth].rows[r];
+    const std::uint32_t were_remaining = row.remaining.fetch_sub(1);
+    if (were_remaining != 1) return;                 // another tile of the row is still working
+    row.stage.store(Row::Stage::DONE);
+    advance();
+}
+
+void Encoder_t::write (const Job& job)
+{
+    Layer& layer = _layers[job.depth];
+    Row& row = layer.rows[job.row];
+    if (layer.written) {
+        // IFE numbers written layers from the lowest resolution.
+        const std::uint32_t per_step = reductions_per_step(_desc.layer_step);
+        const auto ife_layer = static_cast<std::uint32_t>((_layers.size() - 1) / per_step - job.depth / per_step);
+        for (std::uint32_t x = 0; x < layer.across; ++x) {
+            Buffer& stream = row.streams[x];
+            _builder.append_tile(ife_layer, job.row * layer.across + x,
+                                 static_cast<const BYTE*>(stream->data()), stream->size(), 0);
+            charge(-std::int64_t(stream->size()));
+            stream = nullptr;
         }
-        if (!bytes) throw std::runtime_error("no compressed image stream");
-        builder.append_image(info, static_cast<const BYTE*>(bytes->data()), bytes->size());
-    } catch (const std::exception &error) {
-        std::cout   << "Failed to store associated image labeled \""
-                    << label << "\": " << error.what() << "\n";
+        _tiles_written.fetch_add(layer.across);
+    }
+    row.stage.store(Row::Stage::WRITTEN);
+    if (row.readers == 0) release_pixels(row);
+    --_rows_in_flight;
+    if (job.depth == 0) return;
+    const auto [first, last] = rows_read(job.row, _layers[job.depth - 1].down);
+    for (std::uint32_t k = first; k <= last; ++k) {
+        Row& below = _layers[job.depth - 1].rows[k];
+        const auto readers_left = --below.readers;
+        if (readers_left == 0 && below.stage.load() == Row::Stage::WRITTEN) release_pixels(below);
     }
 }
-inline Iris::File::BuilderFinalizeInfo WRITE_SLIDE_STRUCTURE (const Context& ctx,
-                                                              const Iris::File::BuilderTileTableInfo& grid,
-                                                              const Builder& builder,
-                                                              const EncoderSource& source,
-                                                              const Metadata& metadata)
+
+void Encoder_t::release_pixels (Row& row) noexcept
 {
+    std::int64_t freed = 0;
+    for (auto& pixels : row.pixels) {
+        freed += std::int64_t(pixels.capacity() ? TILE_BYTES : 0);
+        std::vector<std::uint8_t>().swap(pixels);
+    }
+    charge(-freed);
+}
+
+void Encoder_t::finish ()
+{
+    auto active = Phase::ACTIVE;
+    const bool is_sealing = _phase.compare_exchange_strong(active, Phase::SEALING);
+    if (!is_sealing) return;                         // interrupted or failed meanwhile
     using namespace Iris::File::Serialization;
-    // The layout after the tiles puts blocks that never change ahead of those an
-    // edit replaces: TILE TABLE | METADATA | ICC | IMAGES | ATTRIBUTES, with
-    // annotations to follow. The grid is the caller's (it set it on the
-    // Builder); the Builder reports where it placed the tiles.
-    const auto tiles  = builder.tile_offsets();
-    const auto planes = grid.planes.empty()
-        ? std::vector<uint16_t>(grid.extent.layers.size(), 0) : grid.planes;
+    // The structure after the tiles, as IFE lays it out: the source's measurements (D2) and the
+    // caller's attributes (D10); no associated images.
+    const auto& measured = _source->measurements();
+    const float to_lowest = float(1u << (_layers.size() - 1));   // the lowest layer's downsample
     std::vector<LayerExtentEntry> extents;
-    extents.reserve(grid.extent.layers.size());
-    for (std::size_t l = 0; l < grid.extent.layers.size(); ++l)
-        extents.push_back({.X_TILES  = grid.extent.layers[l].xTiles,
-                           .Y_TILES  = grid.extent.layers[l].yTiles,
-                           .SCALE    = grid.extent.layers[l].scale,
-                           .Z_PLANES = planes[l]});
-    const Offset offsets_at = builder->append(TileOffsetsCreateInfo{.entries = tiles});
-    const Offset extents_at = builder->append(LayerExtentsCreateInfo{.entries = extents});
-    const Offset table_at   = builder->append(TileTableCreateInfo{
-        .ENCODING             = static_cast<Iris::File::constants::TileEncodings>(grid.encoding),
-        .FORMAT               = static_cast<Iris::File::constants::PixelFormats>(grid.format),
+    for (const auto& layer : ife_extent().layers)
+        extents.push_back({.X_TILES = layer.xTiles, .Y_TILES = layer.yTiles, .SCALE = layer.scale, .Z_PLANES = 0});
+    const Offset offsets_at = _builder->append(TileOffsetsCreateInfo{.entries = _builder.tile_offsets()});
+    const Offset extents_at = _builder->append(LayerExtentsCreateInfo{.entries = extents});
+    const Offset table_at   = _builder->append(TileTableCreateInfo{
+        .ENCODING             = static_cast<Iris::File::constants::TileEncodings>(_desc.encoding),
+        .FORMAT               = static_cast<Iris::File::constants::PixelFormats>(Iris::FORMAT_R8G8B8A8),
         .TILE_OFFSETS_OFFSET  = offsets_at,
         .LAYER_EXTENTS_OFFSET = extents_at,
-        .X_EXTENT             = grid.extent.width,
-        .Y_EXTENT             = grid.extent.height,
-        .TILE_LENGTH          = grid.tileLength});
-    const Offset metadata_at    = builder->claim(METADATA::header_size);
-    const Offset icc_at         = metadata.ICC_profile.empty() ? NULL_OFFSET :
-        builder->append(IccProfileCreateInfo{
-            .bytes = reinterpret_cast<const BYTE*>(metadata.ICC_profile.data()),
-            .count = metadata.ICC_profile.size()});
-    APPEND_ASSOCIATED_IMAGES (ctx, builder, source, metadata);
-    const auto   images         = builder.image_entries();
-    const Offset images_at      = images.empty() ? NULL_OFFSET
-        : builder->append(ImagesCreateInfo{.entries = images});
-    std::vector<AttributeSizeEntry> pairs;
-    pairs.reserve(metadata.attributes.size());
-    for (const auto& [key, value] : metadata.attributes)
-        pairs.push_back({.key   = key,
-                         .value = std::string(reinterpret_cast<const char*>(value.data()),
-                                              value.size())});
-    Offset attributes_at        = NULL_OFFSET;
-    if (!metadata.attributes.empty()) {
-        const Offset sizes_at = builder->append(AttributeSizesCreateInfo{.entries = pairs});
-        const Offset bytes_at = builder->append(AttributeBytesCreateInfo{.entries = pairs});
-        attributes_at = builder->append(AttributesCreateInfo{
-            .FORMAT       = static_cast<Iris::File::constants::MetadataFormats>(metadata.attributes.type),
-            .VERSION      = metadata.attributes.version,
+        .X_EXTENT             = static_cast<std::uint32_t>(_layers.back().size.width),
+        .Y_EXTENT             = static_cast<std::uint32_t>(_layers.back().size.height),
+        .TILE_LENGTH          = RECUT_TILE});
+    const Offset metadata_at = _builder->claim(METADATA::header_size);
+    const Offset icc_at = measured.icc_profile.empty() ? NULL_OFFSET :
+        _builder->append(IccProfileCreateInfo{.bytes = reinterpret_cast<const BYTE*>(measured.icc_profile.data()),
+                                              .count = measured.icc_profile.size()});
+    // RTM Identity_07: the caller's I2S pairs are the slide's one attributes block (D10).
+    Offset attributes_at = NULL_OFFSET;
+    if (!_desc.attributes.empty()) {
+        std::vector<AttributeSizeEntry> pairs;
+        pairs.reserve(_desc.attributes.size());
+        for (const auto& [key, value] : _desc.attributes)
+            pairs.push_back({.key = key, .value = std::string(reinterpret_cast<const char*>(value.data()), value.size())});
+        const Offset sizes_at = _builder->append(AttributeSizesCreateInfo{.entries = pairs});
+        const Offset bytes_at = _builder->append(AttributeBytesCreateInfo{.entries = pairs});
+        attributes_at = _builder->append(AttributesCreateInfo{
+            .FORMAT       = static_cast<Iris::File::constants::MetadataFormats>(_desc.attributes.type),
+            .VERSION      = _desc.attributes.version,
             .SIZES_OFFSET = sizes_at,
             .BYTES_OFFSET = bytes_at});
     }
-    // TODO: annotations. Neither the Builder nor this encoder writes them yet.
-    builder->fill(metadata_at, MetadataCreateInfo{
-        .CODEC_MAJOR        = U16_CAST(metadata.codec.major),
-        .CODEC_MINOR        = U16_CAST(metadata.codec.minor),
-        .CODEC_BUILD        = U16_CAST(metadata.codec.build),
-        .ATTRIBUTES_OFFSET  = attributes_at,
-        .IMAGES_OFFSET      = images_at,
-        .ICC_COLOR_OFFSET   = icc_at,
-        .MICRONS_PIXEL      = metadata.micronsPerPixel,
-        .MAGNIFICATION      = metadata.magnification,
-        // An Iris source's Z-stack spacing passes through with its planes.
-        .MICRONS_PLANE      = source.irisSlide ?
-            source.irisSlide->abstraction().micronsPerPlane : 0.f,
+    const Version codec = get_codec_version();
+    _builder->fill(metadata_at, MetadataCreateInfo{
+        .CODEC_MAJOR       = static_cast<std::uint16_t>(codec.major),
+        .CODEC_MINOR       = static_cast<std::uint16_t>(codec.minor),
+        .CODEC_BUILD       = static_cast<std::uint16_t>(codec.build),
+        .ATTRIBUTES_OFFSET = attributes_at,
+        .ICC_COLOR_OFFSET  = icc_at,
+        // IFE normalises both to layer scale 1, the lowest resolution.
+        .MICRONS_PIXEL     = float(measured.microns_per_pixel) * to_lowest,
+        .MAGNIFICATION     = float(measured.magnification) / to_lowest,
     });
-    return {.tileTable = table_at, .metadata = metadata_at};
+    _builder.finalize({.tileTable = table_at, .metadata = metadata_at});
+    _builder = Iris::File::Builder();   // the mapping is released before the rename
+    std::filesystem::rename(_scratch, _file);
+    _phase.store(Phase::DONE);
 }
-inline void RESET_TRACKER (EncoderTracker &_tracker, const std::string &dst_path, const Extent &extent) {
-    _tracker.dst_path   = dst_path;
-    _tracker.completed  = 0;
-    _tracker.total      = 0;
-    _tracker.layers     = EncoderTracker::Layers(extent.layers.size());
-    for (auto __li = 0; __li < _tracker.layers.size(); ++__li) {
-        auto& __le              = extent.layers[__li];
-        auto  n_tiles           = __le.xTiles*__le.yTiles;
-        _tracker.layers[__li]   = EncoderTracker::Layer(n_tiles);
-        _tracker.total         += n_tiles;
-    }
-}
-/// The focal planes per layer an Iris source passes through: a Z-stacked
-/// layer's streams each hold several planes, which the output layer must
-/// declare. Single-plane layers stay 0, as this encoder has always written them;
-/// derived layers and every other source are single-plane.
-inline std::vector<uint16_t> SOURCE_PLANES (const EncoderSource& source, bool derive)
+
+void Encoder_t::fail (const std::string& why) noexcept
 {
-    if (derive || !source.irisSlide) return {};
-    auto planes = source.irisSlide->abstraction().tileTable.planes;
-    for (auto& layer_planes : planes) if (layer_planes <= 1) layer_planes = 0;
-    return planes;
+    const bool is_reported = _failure_claimed.test_and_set();
+    if (is_reported) return;                         // the first failure is the one reported
+    const std::size_t kept = std::min(why.size(), _error.size() - 1);
+    std::memcpy(_error.data(), why.data(), kept);
+    _error[kept] = '\0';
+    for (Phase from : {Phase::ACTIVE, Phase::SEALING}) {
+        const bool is_failed = _phase.compare_exchange_strong(from, Phase::FAILED);
+        if (is_failed) return;
+    }
 }
-/// Removes the encoder's scratch file at scope exit: an encode that fails
-/// leaves nothing behind, and one that succeeds has already moved it away.
-struct ScratchFile {
-    std::filesystem::path path;
-    ~ScratchFile() {
-        // Nothing to report: a missing file is the success path.
-        std::error_code ignored;
-        std::filesystem::remove(path, ignored);
-    }
-};
 
-// ~~~~~~~~~~~~~~~~~~~~~~~~~ TILE DERIVATION ~~~~~~~~~~~~~~~~~~~~~~~~ //
-Iris::Extent GENERATE_DERIVED_EXTENT (const EncoderDerivation &_derivation,
-                                      const EncoderSource &source);
-void ENCODE_DERIVED_TILE (const DerivationInfo& info,
-                          AtomicEncoderStatus* _status,
-                          uint32_t l, uint32_t y, uint32_t x);
-
-// ~~~~~~~~~~~~~~~~~~~~~~~ END TILE DERIVATION ~~~~~~~~~~~~~~~~~~~~~~ //
-
-Result Encoder_t::dispatch_encoder()
+void Encoder_t::charge (std::int64_t bytes) noexcept
 {
-    ENCODING_START:
-    auto STATUS = ENCODER_INACTIVE;
-    if (_status.compare_exchange_strong(STATUS, ENCODER_ACTIVE) == false)
-    switch (STATUS) {
-    case ENCODER_INACTIVE: goto ENCODING_START;
-    case ENCODER_ACTIVE: throw std::runtime_error
-            ("[ERROR] The encoder is currently active. An encoder instance must complete before reuse. Exiting");
-    case ENCODER_ERROR: throw std::runtime_error
-            ("[ERROR] The encoder encountered an error in previous encoding. Please reset.");
-    case ENCODER_SHUTDOWN: throw std::runtime_error
-            ("[ERROR] Encoder is being shutdown. Cannot start encoding.");
+    const std::int64_t now = _resident.fetch_add(bytes) + bytes;
+    for (std::int64_t peak = _peak.load(); now > peak;) {   // a failed exchange reloads peak
+        const bool is_raised = _peak.compare_exchange_weak(peak, now);
+        if (is_raised) return;
     }
+}
 
-    // The caller's attributes are refused before anything is opened (RTM Identity_07).
-    CHECK_CALLER_ATTRIBUTES (_attributes);
+EncoderProgress Encoder_t::snapshot () const
+{
+    const Phase phase = _phase.load();
+    return {.state               = public_state(phase),
+            .fraction            = float(_tiles_written.load()) / float(_tiles_total),
+            .file                = _file,
+            .error               = phase == Phase::FAILED ? std::string(_error.data()) : std::string(),
+            .resident_bytes      = std::uint64_t(std::max<std::int64_t>(0, _resident.load())),
+            .peak_resident_bytes = std::uint64_t(std::max<std::int64_t>(0, _peak.load())),
+            .memory_budget       = _budget};
+}
 
-    // Attempt to open the source slide file
-    auto source = OPEN_SOURCE (_srcPath);
+void Encoder_t::interrupt ()
+{
+    auto active = Phase::ACTIVE;
+    const bool is_interrupted = _phase.compare_exchange_strong(active, Phase::INTERRUPTED);
+    if (!is_interrupted)
+        throw std::runtime_error(std::string("only an active encode is interrupted; this one is ") + phase_name(active) +
+                                 (active == Phase::SEALING ? ", writing its file's structure, and completes" : ""));
+    _pool->terminate();
+}
 
-    // Validate encoding
-    switch (_encoding) {
-        case TILE_ENCODING_JPEG: break;
-        // RTM Decode_09, Decode_10: no AV1, UASTC or XUASTC tile encoder yet (ARCHITECTURE Q11, Q14).
-        case TILE_ENCODING_AV1:
-        case TILE_ENCODING_UASTC:
-        case TILE_ENCODING_XUASTC: throw std::runtime_error
-            ("[ERROR] " + unbuilt_tiles_refused("The encoder refused", unbuilt_tile_encoding(_encoding)));
-        case TILE_ENCODING_IRIS: throw std::runtime_error
-            ("[ERROR] Encoding using the Iris Slide is not available for community use.");
-        default: throw std::runtime_error
-            ("[ERROR] Encoder does not have a valid Iris::Encoding format set");
+// MARK: - The boundary
+
+namespace {
+/// Runs a boundary's @p body, translating any exception into a Result naming @p call, so no
+/// exception crosses the boundary and every boundary reports alike.
+Result at_boundary (const char* call, std::invocable auto&& body) noexcept
+{
+    try {
+        body();
+        return Result::success();
+    } catch (const std::exception& error) {
+        return codec_failure(SlideError::ENCODER_FAILED, error.what());
+    } catch (...) {
+        return codec_failure(SlideError::ENCODER_FAILED, std::string(call) + " failed with an unknown exception");
     }
-    // An AV1, UASTC or XUASTC source's streams would otherwise pass through, or reach a decoder
-    // of another format, under the requested encoding's label (RTM Decode_09, Decode_10).
-    const char* unbuilt_source = unbuilt_tile_encoding(source.encoding);
-    if (unbuilt_source) throw std::runtime_error
-        ("[ERROR] " + unbuilt_tiles_refused("The encoder refused source " + _srcPath +
-                                            ": its tile table declares", unbuilt_source));
-    if (source.format == FORMAT_UNDEFINED)
-        source.format = FORMAT_R8G8B8A8;
+}
 
-    // Get the source file's name
-    std::filesystem::path source_file_path = _srcPath;
-    auto source_name = source_file_path.stem();
-    auto source_dir  = source_file_path.parent_path();
+/// Every check the descriptor alone decides, made before a source is opened so a wrong option is
+/// refused by name without reading the slide; throws naming the value refused.
+void check_desc (const EncoderDesc& desc)
+{
+    check_attributes(desc.attributes);   // D10
+    if (reductions_per_step(desc.layer_step) == 0)
+        throw std::runtime_error("layer step " + std::to_string(desc.layer_step) + " is not a power of two from 2");
+    if (!is_written_encoding(desc.encoding))
+        throw std::runtime_error(std::string("the encoder does not write ") + encoding_name(desc.encoding));
+    if (desc.quality < QUALITY_MIN || desc.quality > QUALITY_MAX)
+        throw std::runtime_error("quality " + std::to_string(desc.quality) + " is outside 1-100");
+    if (desc.concurrency == 0) throw std::runtime_error("concurrency 0 is refused: an encode needs at least 1 worker thread");
+    if (!std::filesystem::is_directory(desc.destination))
+        throw std::runtime_error("the destination " + desc.destination.string() + " is not a folder");
+}
 
-    // Format the output file path
-    if (_dstPath.length() == 0)
-        _dstPath = source_dir.make_preferred().string();
-    else _dstPath = std::filesystem::path(_dstPath).make_preferred().string();
-    if (std::filesystem::is_directory(_dstPath) == false) throw std::runtime_error
-        ("[ERROR] Invalid encoder destination directory path "+_dstPath);
-    if (_dstPath.back() != std::filesystem::path::preferred_separator)
-        _dstPath += std::filesystem::path::preferred_separator;
-    std::filesystem::path dst_file_path = _dstPath + source_name.string() + ".iris";
+/// The encoder for @p source, after the descriptor's checks and the source's; throws naming the value refused.
+Encoder make_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source)
+{
+    if (!source) throw std::runtime_error("create_encoder was given no source");
+    check_desc(desc);
+    const std::uint32_t per_step = reductions_per_step(desc.layer_step);
+    if (source->size().width == 0 || source->size().height == 0)
+        throw std::runtime_error("the source is " + std::to_string(source->size().width) + " x " +
+                                 std::to_string(source->size().height) + " pixels; an empty slide is not encoded");
+    // The smallest working set: 5 rows of every layer and every worker's scratch.
+    std::uint64_t working_set = std::uint64_t{desc.concurrency} *
+                                std::max(source->read_scratch_bytes(), REDUCE_SCRATCH_BYTES);
+    LayerSize size = source->size();
+    for (std::uint32_t depth = 0;; ++depth, size = reduced(size)) {
+        working_set += ROWS_HELD * tiles_across(size) * TILE_BYTES;
+        if (is_last_layer(size, depth, per_step)) break;
+    }
+    const std::uint64_t budget = desc.memory_budget ? desc.memory_budget : physical_memory() / BUDGET_DIVISOR;
+    if (budget < working_set)
+        throw std::runtime_error("a memory budget of " + std::to_string(budget) + " bytes is below the " +
+                                 std::to_string(working_set) + " bytes this slide needs at once");
+    return std::make_shared<Encoder_t>(desc, std::move(source), budget);
+}
 
-    // If the output file already exists, inform that it will be overwritten
-    if (std::filesystem::exists(dst_file_path))
-        std::cout       << "[WARNING] Destination file " << dst_file_path
-                        << " already exists. Overwriting...\n";
+/// The encoder a boundary was handed, or a throw naming @p call when it was given none.
+Encoder_t& encoder_of (const Encoder& encoder, const char* call)
+{
+    if (!encoder) throw std::runtime_error(std::string(call) + " was given no encoder");
+    return *encoder;
+}
+} // namespace
 
-    // The pyramid of the output slide: derived lower-resolution layers, or the
-    // source's own.
-    const Iris::File::BuilderTileTableInfo table {
-        .encoding   = _encoding,
-        .format     = source.format,
-        .extent     = _derive ? GENERATE_DERIVED_EXTENT (_derivation, source) : source.extent,
-        .planes     = SOURCE_PLANES (source, _derive),
-    };
+Result encoder_output_name (const std::filesystem::path& source, Encoding encoding, std::string& name) noexcept
+{
+    return at_boundary("encoder_output_name", [&name, &source, encoding] { name = file_name(source, encoding); });
+}
 
-    // We do not write directly to the output file path. The slide is written
-    // to a scratch file in the temp directory and moved into place once
-    // encoding succeeds, so a failed encode leaves no artifact behind. Naming
-    // and moving files is the encoder's job; the Builder writes where it is told.
-    std::random_device entropy;
-    const auto scratch_path = std::filesystem::temp_directory_path() /
-        ("IrisSlideCache_" + std::to_string(uint64_t{entropy()} << 32 | entropy()));
-    RESET_TRACKER (_tracker, scratch_path.string(), table.extent);
-    auto builder = Builder::create({
-        // A tile stream never outgrows its raw RGBA pixels, and the default
-        // reservation covers everything else. Sparse: only written pages cost
-        // disk, and the file is truncated to its size when sealed.
-        .capacity       = Iris::File::BuilderCreateInfo{}.capacity +
-                          Size{_tracker.total} * TILE_PIX_BYTES_RGBA,
-        .filepath       = scratch_path,
-        // Every layer is single-plane, where tile frames are optional; this
-        // encoder has never written them.
-        .tile_frames    = false,
+Result create_encoder (const EncoderDesc& desc, Encoder& encoder) noexcept
+{
+    return at_boundary("create_encoder", [&desc, &encoder] {
+        check_desc(desc);   // refused before the source is opened
+        encoder = make_encoder(desc, open_source(desc.source));
     });
-    builder.set_tile_table(table);
-
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    // BEGIN OUR ASYNCHRONOUS STEPS; This thread will return immediately
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    // Begin to dispatch threads
-    // First create an asynchronous callback pool for derived layer
-    // encoding methods. These execute stochastically when tiles are ready.
-    //
-    // Then we begin dispatching our core encoding threads:
-    // Encoder_t::dispatch_encoder() is an ASYNCHRONOUS method
-    // there will be a separate main thread that waits upon the encoding
-    // threads. This is threads[0]. We will move the remainder of the
-    // method to this separate thread...
-    switch (source.sourceType) {
-        // LibDICOM is not thread safe. Only read from 1 thread...
-        case EncoderSource::ENCODER_SRC_DICOM:
-            _threads    = Threads(2);
-            break;
-        default:
-            _threads    = Threads(_concurrency+1);
-            break;
-    }
-    _threads[0] = std::thread {[this, builder, source, table, scratch_path, dst_file_path]() mutable {
-
-        // ~~~ We are now on the separate asynchronous main thread ~~~
-
-        // Declared in this order so the Builder's mapping is released before
-        // the scratch file is removed: Windows refuses to delete a mapped file.
-        const ScratchFile scratch {scratch_path};
-        const Builder     writer = std::move(builder);
-
-        // Create the downsample information struct
-        // WARNING: THIS MUST PERSIST UNTIL ALL ASYNC THREADS ARE COMPLETE
-        const auto queue = _derive?Iris::Async::create_thread_pool(_concurrency):NULL;
-        const DerivationInfo downsample_info {
-            .context    = _context,
-            .queue      = queue,
-            .strategy   = _derivation,
-            .builder    = writer,
-            .table      = table,
-            .tracker    = _tracker,
-        };
-
-        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        // DISPATCH THE TILE ENCODING THREADS AND WAIT UPON THEIR COMPLETION
-        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        for (auto thread_idx = 1; thread_idx < _threads.size(); ++thread_idx)
-            if (!_derive) /* Just copy source */ _threads[thread_idx] =
-                std::thread {&ENCODE_SOURCE_PYRAMID,
-                    _context, source, writer,       // Compressor, source and dst
-                    _encoding, &_tracker,           // Tile encoding and tracker
-                    &_status                        // Encoder status
-                };
-            else /* Spool up async tile derivation */ _threads[thread_idx] =
-                std::thread {&ENCODE_DERIVE_PYRAMID,
-                    _context, source,               // Compressor and source
-                    &_tracker, &_status,            // Tile and Encoder statuses
-
-                    // This lambda function starts the propagation of encoding
-                    // the slide pyramid by enqueueing downsampling / writing
-                    [this,downsample_info](uint32_t l, uint32_t y, uint32_t x){
-                        auto& queue = downsample_info.queue;
-                        // If the queue has more than 2GB pending...
-                        // Slow the reads down to let the sampler keep up.
-                        while (queue->pending_tasks() > MAX_MEMORY_PRESSURE/TILE_PIX_BYTES_RGBA)
-                            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                        // Refused only by a terminated pool, which this
-                        // encoder never does while tiles are outstanding.
-                        if (!downsample_info.queue->issue_task
-                            (std::bind(ENCODE_DERIVED_TILE ,downsample_info,
-                                       &_status, l, y, x)))
-                            throw std::runtime_error
-                            ("Tile derivation pool refused a task: it was terminated");
-                    }
-                };
-        for (auto thread_idx = 1; thread_idx < _threads.size(); ++thread_idx)
-            if (_threads[thread_idx].joinable()) _threads[thread_idx].join();
-        // Await asynchronous thread pool if encoding tasks were delegated
-        if (queue) queue->wait_until_complete();
-        // It is NOW safe to destroy the downsample_info struct
-        // ~~~~~~~~~~~~~~~~~~~~~ END TILE ENCODING ~~~~~~~~~~~~~~~~~~~~~~~~~
-
-        // If any thread has inactivated the encoder, exit; the scratch file
-        // goes with this scope.
-        if (_status != ENCODER_ACTIVE) { _status.notify_all(); return; }
-
-        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        // SLIDE STRUCTURE, SEAL, AND MOVE INTO PLACE
-        // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        try {
-            Metadata metadata = READ_METADATA (source, table.extent, _anonymize);
-            // RTM Identity_07: the caller's pairs replace the source's. IFE's METADATA holds one
-            // ATTRIBUTES_OFFSET, and a merge would put the source's free text or DICOM elements
-            // under the caller's METADATA_I2S claim that no pair identifies anyone (D2).
-            if (!_attributes.empty()) metadata.attributes = _attributes;
-            writer.finalize(WRITE_SLIDE_STRUCTURE (_context, table, writer, source, metadata));
-            // A rename cannot cross volumes (the temp directory is often on
-            // another one); copy instead. The scratch file goes at scope exit.
-            std::error_code across_volumes;
-            std::filesystem::rename(scratch_path, dst_file_path, across_volumes);
-            if (across_volumes) std::filesystem::copy_file
-                (scratch_path, dst_file_path, std::filesystem::copy_options::overwrite_existing);
-        } catch (const std::exception& e) {   // the Builder refuses with logic_error kinds too
-            _status.store(ENCODER_ERROR);
-            MutexLock __ (_tracker.error_msg_mutex);
-            _tracker.error_msg += std::string("Slide encoding failed: ") +
-                                  e.what() + "\n";
-            _status.notify_all();
-            return;
-        }
-
-        // Encoding is complete. Notify any waiting threads
-        auto STATUS = ENCODER_ACTIVE;
-        if (_status.compare_exchange_strong(STATUS, ENCODER_INACTIVE) == false) {
-            std::cerr   << "Codec Error -- Encoder exited with status "
-                        << TO_STRING(_status) << "\n";
-        } _status.notify_all();
-    }};
-
-    // We have successfully dispatched the encoding method and may return.
-    // All other steps will continue on the _threads[0] thread.
-    return Iris::Result::success();
 }
-Result Encoder_t::interrupt_encoder()
+
+Result create_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source, Encoder& encoder) noexcept
 {
-    switch (_status) {
-        case ENCODER_ACTIVE: {
-            _status.store(ENCODER_ERROR);
-            MutexLock __ (_tracker.error_msg_mutex);
-            _tracker.error_msg += "Encoder manually interrupted\n";
-            _status.notify_all();
-        } return Iris::Result::success();
-            
-        case ENCODER_ERROR:
-            _status.notify_all();
-            return codec_failure(SlideError::ENCODER_ALREADY_FAILED, "Encoder already possesses the ENCODER_ERROR status.");
-            
-        case ENCODER_INACTIVE:
-        case ENCODER_SHUTDOWN:
-            return Iris::Result::success();
-    }   return codec_failure(SlideError::ENCODER_STATUS_UNKNOWN, "encoder status " + std::to_string(static_cast<int>(_status.load())));
+    return at_boundary("create_encoder", [&desc, &source, &encoder] { encoder = make_encoder(desc, std::move(source)); });
+}
+
+Result dispatch_encoder (const Encoder& encoder) noexcept
+{
+    return at_boundary("dispatch_encoder", [&encoder] { encoder_of(encoder, "dispatch_encoder").dispatch(); });
+}
+
+Result encoder_progress (const Encoder& encoder, EncoderProgress& progress) noexcept
+{
+    return at_boundary("encoder_progress", [&encoder, &progress] { progress = encoder_of(encoder, "encoder_progress").snapshot(); });
+}
+
+Result interrupt_encoder (const Encoder& encoder) noexcept
+{
+    return at_boundary("interrupt_encoder", [&encoder] { encoder_of(encoder, "interrupt_encoder").interrupt(); });
 }
 } // END IRIS SLIDE NAMESPACE

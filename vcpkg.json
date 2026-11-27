@@ -31,15 +31,13 @@
       ]
     },
     "encoder": {
-      "description": "IrisSlideEncoder and the Python encoder module (IRIS_BUILD_ENCODER=ON): libdicom",
+      "description": "IrisSlideEncoder and the Python encoder module (IRIS_BUILD_ENCODER=ON): libdicom, and OpenJPEG for JPEG 2000 and HTJ2K source frames",
       "dependencies": [
-        "libdicom"
-      ]
-    },
-    "openslide": {
-      "description": "Encoding from vendor slide files (IRIS_USE_OPENSLIDE=ON): OpenSlide's prebuilt shared library (ports/openslide-bin)",
-      "dependencies": [
-        "openslide-bin"
+        "libdicom",
+        {
+          "name": "openjpeg",
+          "default-features": false
+        }
       ]
     },
     "python": {
@@ -81,6 +79,10 @@
     {
       "name": "libpng",
       "version": "1.6.50"
+    },
+    {
+      "name": "openjpeg",
+      "version": "2.5.4"
     },
     {
       "name": "vulkan-headers",

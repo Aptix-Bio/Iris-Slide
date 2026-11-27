@@ -1,17 +1,16 @@
 # VcpkgCaching_2 (FirstPartyPorts_2.7; RTM Build_01): Iris-Headers at a commit, verified by the
-# archive's SHA-512, in place of FetchContent at the tip of a branch. The commit is the tip of
-# the paired branch feature/TileEncodingAv1_1 (on main, which holds the merged rename, X4): tile
-# encoding 3 is TILE_ENCODING_AV1 in place of TILE_ENCODING_AVIF (decided 2026-11-25, X7), and
-# EncodeSlideInfo::attributes carries the caller's attribute pairs (decided 2026-11-25, X3), and
-# tile encodings 4 and 5 are TILE_ENCODING_UASTC and TILE_ENCODING_XUASTC (decided 2026-11-25,
-# X8), until that branch merges (PortsPinMain_17.6).
+# archive's SHA-512, in place of FetchContent at the tip of a branch. The commit is the tip of the
+# paired branch feature/EncoderRewrite_24, merged before Iris-Slide's: the rebuilt encoder's public
+# API (create_encoder(const EncoderDesc&, Encoder&), dispatch_encoder, encoder_progress,
+# interrupt_encoder, encoder_output_name, LAYER_STEP_DEFAULT) in place of the old one (decided 2026-11-27, D14); then
+# its commit on main (PortsPinMain_17.6).
 set(VCPKG_BUILD_TYPE release)   # headers and sources only: nothing is compiled here
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO Aptix-Bio/Iris-Headers
-    REF 635afbb5638bee2d29d8024ca4c9418d4ea7c77d
-    SHA512 9b735baf2b6144c0987610f5775ef5c1875d9c850e5b82baa97bc042128a4966c3f04370da4cb88b81beeeb3fa4adb23a5640d38a3ee4d8c5ad2d161086c2f4a
-    HEAD_REF main
+    REF 2cfb551c5d5a4a931c98a26ae1a377268dbe969a
+    SHA512 b146223e674710f653df0ea39e7f3527b34eae624addf48c997fc7bacfeddea3cf8aeef708bf247d9cbd03cf079aa0240c255f3a7b6de1206cbb2356949f7fd9
+    HEAD_REF feature/EncoderRewrite_24   # main once Aptix-Bio/Iris-Headers#13 merges
 )
 vcpkg_cmake_configure(SOURCE_PATH "${SOURCE_PATH}" OPTIONS -DIRIS_HEADERS_CHECK_STANDALONE=OFF)
 vcpkg_cmake_install()

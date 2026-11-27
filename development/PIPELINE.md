@@ -27,7 +27,7 @@ flowchart LR
    no FetchContent, no ExternalProject, no download in a CMake file
    (`tools/workflow_lint.py` refuses `ExternalProject_Add`). The library, the
    encoder, the Python modules and the JavaScript module share it; a CMake
-   option selects a manifest feature (`library`, `encoder`, `openslide`,
+   option selects a manifest feature (`library`, `encoder`,
    `python`, `tests`).
 2. **vcpkg is pinned by its baseline.** `builtin-baseline` is the one vcpkg
    commit. The toolchain fetches vcpkg at it into `dependencies/vcpkg`
@@ -52,11 +52,9 @@ flowchart LR
    uncommitted changes are written into the port, so a package built from
    other source is never restored for it. Iris-Headers' downstream cell builds
    Iris-Slide this way.
-5. **Prebuilt over built.** OpenSlide is openslide-bin, OpenSlide's own
-   release, as a port (`ports/openslide-bin`): vcpkg's openslide port builds
-   glib and cairo, one of whose tools needs autoconf, automake and libtool
-   installed on the system. OpenSlide (LGPL-2.1) stays a shared library; every
-   other package is static and release-only (`triplets/`).
+5. **Prebuilt over built.** Every package is static and release-only (`triplets/`). The encoder
+   read vendor slide files through OpenSlide until its rebuild (decided 2026-11-27, ARCHITECTURE
+   D14); OpenSlide left the build with it, and a vendor source returns as a Source module.
 6. **The store.** CI keeps vcpkg's packages and the compiler's objects (sccache)
    in the cache bucket (repository variable `IRIS_SLIDE_CACHE_BUCKET`), under
    `iris-slide/` only: `iris-slide/vcpkg/` and `iris-slide/sccache/` are
@@ -170,13 +168,13 @@ and from each upstream's release.
 | libpng | 1.6.50 (override) | v1.6.50 | vcpkg `versions/l-/libpng.json` (baseline 1.6.59) |
 | zlib | 1.3.2#2 (baseline; libpng's dependency) | zlib-ng 2.3.3 | **differs**: vcpkg's libpng depends on the `zlib` port; zlib-ng's port builds its zlib-compatible library only when a triplet sets `ZLIB_COMPAT`, and the `zlib` port would still be installed for libpng. Ends with libpng (PngRemoved_4) |
 | libdicom | 1.3.0#1 (overlay: vcpkg's port plus a CMake config) | v1.3.0 | vcpkg baseline |
-| OpenSlide | openslide-bin 4.0.1.2 (OpenSlide 4.0.1), each archive by SHA-512 | 4.0.1.2 | https://github.com/openslide/openslide-bin/releases/tag/v4.0.1.2; GitHub's SHA-256 of each asset matched |
+| OpenJPEG | 2.5.4 (override, feature `encoder`, no default features) | — | vcpkg baseline; BSD-2-Clause; decodes JPEG 2000 and, since 2.5.0, HTJ2K (OpenJPEG NEWS, https://github.com/uclouvain/openjpeg/blob/v2.5.4/NEWS.md, read 2026-11-27); released September 2025 (ARCHITECTURE D17) |
 | Vulkan-Headers | 1.4.363.0 (override) | vulkan-sdk-1.4.363.0 | vcpkg baseline |
 | VulkanMemoryAllocator | 3.4.0 (override) | v3.4.0 | vcpkg baseline |
 | GLM | 1.0.3 (override) | 1.0.3 | vcpkg baseline |
 | pybind11 | 3.1.0 (overlay: vcpkg's port without its python3 dependency) | v3.1.0 | vcpkg baseline; the archive's SHA-512 is vcpkg's |
 | Catch2 | 3.15.1 (override, feature `tests`) | 3.15.1 | vcpkg `versions/c-/catch2.json` (baseline 3.16.0) |
-| Iris-Headers | `635afbb5638bee2d29d8024ca4c9418d4ea7c77d` (feature/TileEncodingAv1_1, on main) | — | the paired branch: tile encoding 3 is `TILE_ENCODING_AV1` (decided 2026-11-25, ARCHITECTURE X7) `EncodeSlideInfo::attributes` (decided 2026-11-25, ARCHITECTURE D10), and tile encodings 4 and 5 `TILE_ENCODING_UASTC` and `TILE_ENCODING_XUASTC` (decided 2026-11-25, ARCHITECTURE X8), https://github.com/Aptix-Bio/Iris-Headers/commit/635afbb5638bee2d29d8024ca4c9418d4ea7c77d, the archive's SHA-512 computed 2026-11-25, until it merges (PortsPinMain_17.6); the rename (Aptix-Bio/Iris-Headers#5, X4) is merged into main |
+| Iris-Headers | `2cfb551c5d5a4a931c98a26ae1a377268dbe969a` (feature/EncoderRewrite_24, moved 2026-11-27 from `635afbb` on feature/TileEncodingAv1_1, now on main) | — | the paired branch of Aptix-Bio/Iris-Headers#13: the rebuilt encoder's public API (`EncoderDesc`, `EncoderState`, `EncoderProgress`, `create_encoder`, `dispatch_encoder`, `encoder_progress`, `interrupt_encoder`, `encoder_output_name`, `LAYER_STEP_DEFAULT`; ARCHITECTURE D14), https://github.com/Aptix-Bio/Iris-Headers/commit/2cfb551c5d5a4a931c98a26ae1a377268dbe969a, the archive's SHA-512 computed 2026-11-27, until it merges (PortsPinMain_17.6) |
 | Iris-File-Extension | `06ec6f28cd59ddf997e3dafc588054affc8f9da8` (feature/BoundaryResults_R-8, on main) | — | the paired branch: IFE's read calls return a `Result` and write their value through a reference (IFE R-8, decided 2026-11-25), https://github.com/Aptix-Bio/Iris-File-Extension/commit/06ec6f28cd59ddf997e3dafc588054affc8f9da8, the archive's SHA-512 computed 2026-11-26, until Aptix-Bio/Iris-File-Extension#11 merges; repinned then to its commit on main |
 | Emscripten SDK | 6.0.13, `35659964bc2762fffec0d257997fb61475f765b7` | — | https://github.com/emscripten-core/emsdk/releases/tag/6.0.13 |
 | sccache | v0.19.0 | — | through mozilla-actions/sccache-action v0.0.11 |

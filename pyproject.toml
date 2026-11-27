@@ -36,7 +36,7 @@ classifiers = [
   "Programming Language :: Python :: 3 :: Only",
 ]
 
-dependencies = ["openslide-bin"]
+dependencies = []
 
 [project.urls]
 "Homepage" = "https://github.com/Aptix-Bio/Iris-Slide"
@@ -78,6 +78,4 @@ manylinux-x86_64-image = "quay.io/pypa/manylinux_2_34_x86_64"
 manylinux-aarch64-image = "quay.io/pypa/manylinux_2_34_aarch64"
 # vcpkg's own requirements on a manylinux image (learn.microsoft.com/vcpkg/get_started/get-started).
 before-all = "dnf install -y zip unzip tar pkgconf-pkg-config"
-# The encoder's OpenSlide is the openslide-bin package this project depends on at run time.
-repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel} --exclude libopenslide.so.1"
 

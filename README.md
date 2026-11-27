@@ -28,15 +28,14 @@ The following example WSI files are publically available from AWS S3:
 
 # Encoding Slide Files
 
-The Iris Slide encoder converts WSI files from various vendor formats into optimized Iris format, supporting DICOM (via libdicom) and OpenSlide formats with flexible compression and metadata options.
+The Iris Slide encoder reads a DICOM whole-slide image and writes it as an Iris slide, every layer derived from the highest-resolution one.
 
 **Key Features:**
-- **Native DICOM Support**: Byte-stream preservation for lossless quality
-- **Multi-format Support**: SVS, NDPI, VSI, MRXS, and other OpenSlide formats
-- **Tile Compression**: JPEG. The Iris format's AV1 tile encoding (`TILE_ENCODING_AV1`, a bare AV1 sequence) and its GPU block-compressed tile encodings (`TILE_ENCODING_UASTC`, UASTC LDR 4x4 blocks under one Zstandard frame, and `TILE_ENCODING_XUASTC`, one XUASTC LDR bitstream), all decided 2026-11-25, are not yet encoded or decoded by Iris Slide; a slide whose tiles declare one is refused with an error naming the encoding
-- **Automatic Pyramid Derivation**: Generate 2x or 4x, or use source pyramid format.
-- **Privacy Controls**: Metadata stripping and anonymization options
-- **High Performance**: Multi-threaded with real-time progress tracking
+- **Sources**: a DICOM whole-slide series' highest-resolution instance (TILED_FULL), its frames JPEG, JPEG 2000 or HTJ2K, read from a read-only memory map so every worker reads its own frames at once
+- **Tiles**: 256-pixel tiles re-cut from frames of any size; JPEG tiles, quality and chroma subsampling set by the caller (90, 4:2:2 by default). The Iris format's AV1, UASTC and XUASTC tile encodings are not yet encoded or decoded; a slide whose tiles declare one is refused with an error naming the encoding
+- **Layers**: each lower layer derived by a 2x Mitchell-Netravali reduction in fixed-point arithmetic, the same bytes on every CPU, down to the first that fits one tile; a layer step of 2, 4 or 8 between written layers
+- **Deterministic and bounded**: the same source and options give a byte-identical file; memory held at once stays within a budget (a quarter of physical memory by default)
+- **Identity**: from DICOM only the pixel spacing, magnification and ICC profile are carried; the caller's I2S attributes are the slide's only attributes
 
 ## How the codec sits on the Iris File Extension
 
@@ -45,7 +44,7 @@ The [Iris File Extension](https://github.com/Aptix-Bio/Iris-File-Extension) owns
 ```mermaid
 flowchart LR
     subgraph codec["Iris Slide"]
-        src["sources: OpenSlide, DICOM, .iris"] --> enc["Encoder: threads, JPEG tiles"]
+        src["source: DICOM (JPEG, JPEG 2000, HTJ2K)"] --> enc["Encoder: a task per tile, bicubic layers, JPEG tiles"]
         slide["Slide: decode tiles and images"]
     end
     subgraph ife["Iris File Extension"]
@@ -64,7 +63,7 @@ The Builder writes each block where the head is when it is asked, so the encoder
 **Requirements:**
 - C++ 20 Standard Library
 - [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo), and [libavif](https://github.com/AOMediaCodec/libavif) for AVIF associated images
-- [OpenSlide](https://github.com/openslide/openslide) and [libdicom](https://github.com/ImagingDataCommons/libdicom) (for encoder only)
+- [libdicom](https://github.com/ImagingDataCommons/libdicom) and [OpenJPEG](https://github.com/uclouvain/openjpeg) (for the encoder only)
 
 ## Building From Source
 
@@ -94,7 +93,6 @@ The build system provides several configurable options to customize your build:
 | `IRIS_BUILD_ENCODER` | `ON` | Build the encoder executable for converting WSI files |
 | `IRIS_BUILD_PYTHON` | `OFF` | Build Python bindings |
 | `IRIS_SYSTEM_DEPENDENCIES` | `OFF` | Find the dependencies installed on the system instead of through vcpkg |
-| `IRIS_USE_OPENSLIDE` | `ON` | Enable OpenSlide support (required for most WSI formats) |
 
 ## Python
 [![Conda Version](https://img.shields.io/conda/vn/conda-forge/iris-slide.svg?style=for-the-badge&logo=anaconda)](https://anaconda.org/conda-forge/iris-slide) 
@@ -107,7 +105,7 @@ The build system provides several configurable options to customize your build:
 conda install -c conda-forge iris-slide
 
 # PyPI
-pip install iris-slide openslide-bin
+pip install iris-slide
 ```
 
 ## JavaScript
@@ -139,48 +137,46 @@ const irisSlide = await createModule();
 
 **Command Line:**
 ```shell
-# Basic encoding
-./IrisSlideEncoder -s input.svs -o ./output/ -d use_source
+# A DICOM slide's highest-resolution instance to ./output/<name>.jpeg.iris
+./IrisSlideEncoder -s slide.dcm -o ./output/
 
-# Advanced options
-./IrisSlideEncoder -s input.dcm -o ./output/ -e JPEG -d 2x -c 8
-
-# Research Example (strip metadata)
-./IrisSlideEncoder -s patient.dcm -o ./research/ -sm -d 4x -c 4
+# Quality 95, full chroma, a layer every 4x, 8 threads, at most 4 GiB held
+./IrisSlideEncoder -s slide.dcm -o ./output/ -q 95 --subsampling 444 --layer-step 4 -c 8 --memory-budget 4
 ```
 
 **Available Arguments:**
-- `-h, --help`: Print help text
-- `-s, --source`: File path to the source WSI file (must be compatible with OpenSlide)
-- `-o, --outdir`: Output directory path (encoder names file as XXX.iris based on source filename)
-- `-d, --derive`: Generate lower resolution layers - Options: `2x`, `4x`, or `use-source` (default)
-- `-sm, --strip_metadata`: Strip patient identifiers from encoded metadata
-- `-e, --encoding`: Tile compression format - `JPEG` (the default and, today, the only one)
-- `-c, --concurrency`: Number of threads to use (defaults to all CPU cores)
+- `-s, --source`: the slide, a DICOM whole-slide instance (JPEG, JPEG 2000 or HTJ2K frames)
+- `-o, --outdir`: the folder `<source stem>.jpeg.iris` is written to (default: the source's)
+- `-q, --quality`: JPEG quality, 1-100 (default 90)
+- `--subsampling`: JPEG chroma subsampling, `444`, `422` or `420` (default `422`)
+- `--layer-step`: the scale between written layers, 2, 4 or 8 (default 2)
+- `--memory-budget`: GiB held at once (default: a quarter of physical memory)
+- `-c, --concurrency`: worker threads (default: every core)
 
 **Python:**
 ```python
 from Iris import Encoder
-result = Encoder.encode_slide_file('input.svs', './output/')
+written = Encoder.encode_slide_file('slide.dcm', './output/')   # raises RuntimeError on failure
 ```
 
 **C++:**
 ```cpp
 #include "IrisSlideCore.hpp"
-auto encoder = IrisSlide::create_encoder({.srcFilePath = "input.svs"});
-IrisSlide::dispatch_encoder(encoder);
+IrisSlide::Encoder encoder;
+IrisSlide::Result result = IrisSlide::create_encoder({.source = "slide.dcm", .destination = "./output"}, encoder);
+if (result.succeeded()) result = IrisSlide::dispatch_encoder(encoder);
+IrisSlide::EncoderProgress progress;   // poll encoder_progress until progress.state leaves ACTIVE
 ```
 
-A caller with I2S attributes passes their pairs and version in `EncodeSlideInfo::attributes`;
-they become the slide's `METADATA_I2S` attributes in place of the source's:
+A caller with I2S attributes passes their pairs and version in `EncoderDesc::attributes`; they become
+the slide's `METADATA_I2S` attributes:
 
 ```cpp
-IrisSlide::EncodeSlideInfo info {.srcFilePath = "input.svs"};
-info.attributes.type    = IrisSlide::METADATA_I2S;
-info.attributes.version = i2s_version;   // the I2S version, major << 8 | minor: I2S 0.1 is 1
+IrisSlide::EncoderDesc desc {.source = "slide.dcm", .destination = "./output"};
+desc.attributes.type    = IrisSlide::METADATA_I2S;
+desc.attributes.version = i2s_version;   // the I2S version, major << 8 | minor: I2S 0.1 is 1
 for (const auto& [key, value] : i2s_pairs)
-    info.attributes[key] = std::u8string(value.begin(), value.end());
-auto encoder = IrisSlide::create_encoder(info);
+    desc.attributes[key] = std::u8string(value.begin(), value.end());
 ```
 
 ## Reading Slides
@@ -443,70 +439,21 @@ if ('thumbnail' in info.metadata.associated_images):
 ```
 
 ### Python Encoder API
-The Python module also includes encoding capabilities for converting existing WSI files to the Iris format.
+The Python module encodes a DICOM whole-slide image as an Iris slide; every failure raises `RuntimeError` naming what failed.
 
-**Basic Encoding:**
 ```python
 from Iris import Encoder
 
-# Simple encoding with default settings
-result = Encoder.encode_slide_file(
-    source='path/to/input.svs',
-    outdir='./output/'
-)
-
-if result.failed():
-    raise Exception(f'Encoding failed: {result.message}')
-print('Encoding completed successfully!')
+written = Encoder.encode_slide_file(
+    source='slide.dcm',     # a DICOM whole-slide instance: JPEG, JPEG 2000 or HTJ2K frames
+    outdir='./output/',     # writes ./output/slide.jpeg.iris
+    quality=90,             # JPEG quality, 1-100
+    subsampling='422',      # '444', '422' or '420'
+    layer_step=2,           # 2, 4 or 8 between written layers
+)                           # an option left out takes the encoder's default (every core for concurrency)
 ```
 
-**Advanced Encoding Options:**
-```python
-from Iris import Encoder, Slide, iris_core
-
-# Encode with custom parameters
-result = Encoder.encode_slide_file(
-    source='path/to/input.svs',
-    outdir='./output/',
-    desired_encoding=Slide.Encoding.TILE_ENCODING_JPEG,  # JPEG tiles
-    desired_byte_format=iris_core.Format.FORMAT_R8G8B8A8,  # RGBA format
-    strip_metadata=True,  # Remove patient identifiers
-    derivation=Encoder.EncoderDerivation.layer_4x,  # 4x pyramid layers
-    concurrency=8  # Use 8 threads
-)
-```
-
-**DICOM Encoding with Progress Monitoring:**
-```python
-from Iris import Encoder
-import time
-
-# The encode_slide_file function includes built-in progress monitoring
-# It will automatically display a progress bar during encoding
-result = Encoder.encode_slide_file(
-    source='sample.dcm',  # DICOM input with byte-stream preservation
-    outdir='./encoded/',
-    desired_encoding=Encoder.Slide.Encoding.TILE_ENCODING_JPEG
-)
-
-# The function handles progress display automatically:
-# [████████████████████████████████████████] 100.0% ETA: 00:00
-# Iris Encoder completed successfully
-# Slide written to ./encoded/sample.iris
-```
-
-**Available Encoding Parameters:**
-- `source`: Path to input WSI file (required)
-- `outdir`: Output directory (defaults to source directory)
-- `desired_encoding`: Tile compression format (JPEG, the default; `TILE_ENCODING_AV1`, `TILE_ENCODING_UASTC` and `TILE_ENCODING_XUASTC` are refused until Iris Slide encodes them)
-- `desired_byte_format`: Pixel format (default: R8G8B8)
-- `strip_metadata`: Remove patient identifiers (default: False)
-- `anonymize`: Anonymize metadata (default: False)
-- `derivation`: Layer derivation strategy (default: layer_2x)
-- `concurrency`: Number of threads (default: CPU count)
-- `codec_context`: Optional codec context for advanced usage
-- `i2s_attributes`: the slide's Iris Interoperability Specification (I2S) attributes as key and value text, written as its `METADATA_I2S` attributes in place of the source's; a key that is not ASCII or a value that is not UTF-8 is refused naming it
-- `i2s_version`: the I2S version those attributes conform to, as the attribute block's 16-bit VERSION holds it: `major << 8 | minor`, so I2S 0.1 is 1 and I2S 1.0 is 256; required with `i2s_attributes` (0, an unversioned claim, is refused)
+**Parameters:** `source`, `outdir` (default: the source's folder), `quality`, `subsampling`, `layer_step`, `memory_budget` (bytes; 0 is a quarter of physical memory), `concurrency` (at least 1; left out, every core), `i2s_attributes` (the slide's Iris Interoperability Specification attributes as key and value text, written as its `METADATA_I2S` attributes; a key that is not ASCII or a value that is not UTF-8 is refused naming it), `i2s_version` (the I2S version, `major << 8 | minor`, so I2S 0.1 is 1; required with `i2s_attributes`), `show_progress`. The lower-level calls are `create_encoder`, `dispatch_encoder`, `encoder_progress` and `interrupt_encoder`.
 
 ## JavaScript Detailed Examples
 

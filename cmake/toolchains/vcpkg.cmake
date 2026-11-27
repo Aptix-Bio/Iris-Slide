@@ -35,8 +35,7 @@ if(NOT iris_slide_in_try_compile)
 endif()
 
 # The build machine's triplet, which the native builds also target; Iris-Slide's own
-# triplets (triplets/, named in vcpkg-configuration.json) build release libraries only and
-# OpenSlide shared.
+# triplets (triplets/, named in vcpkg-configuration.json) build release libraries only.
 set(iris_slide_triplet_Darwin_arm64 arm64-osx)
 set(iris_slide_triplet_Linux_x86_64 x64-linux)
 set(iris_slide_triplet_Linux_aarch64 arm64-linux)

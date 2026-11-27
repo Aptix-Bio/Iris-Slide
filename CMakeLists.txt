@@ -12,7 +12,6 @@ option(IRIS_BUILD_SHARED "Build IrisSlide Shared Library" ON)
 option(IRIS_BUILD_STATIC "Build IrisSlide Static Library" ON)
 option(IRIS_BUILD_ENCODER "Build the IrisSlide Encoder executable" ON)
 option(IRIS_BUILD_PYTHON "Build IrisSlide Python modules" OFF)
-option(IRIS_USE_OPENSLIDE "Use openslide in the encoder (currently not supported on Windows Arm64)" ON)
 option(IRIS_SYSTEM_DEPENDENCIES "Find the third-party libraries installed on the system instead of through vcpkg" OFF)
 option(IRIS_SLIDE_BUILD_TESTS "Build the Catch2 tests in tests/ (vcpkg.json's tests feature)" OFF)
 
@@ -27,9 +26,6 @@ endif()
 set(VCPKG_MANIFEST_FEATURES library)
 if (IRIS_BUILD_ENCODER)
     list(APPEND VCPKG_MANIFEST_FEATURES encoder)
-    if (IRIS_USE_OPENSLIDE)
-        list(APPEND VCPKG_MANIFEST_FEATURES openslide)
-    endif()
 endif()
 if (IRIS_BUILD_PYTHON)
     list(APPEND VCPKG_MANIFEST_FEATURES python)
@@ -122,12 +118,9 @@ set (IrisSlideEncoderDependencies ${IrisSlideDependencies} Threads::Threads)
 if (IRIS_BUILD_ENCODER)
     find_package(unofficial-libdicom CONFIG REQUIRED)
     list(APPEND IrisSlideEncoderDependencies unofficial::libdicom::dicom)
-    if (IRIS_USE_OPENSLIDE)
-        message(STATUS "BUILDING IRIS SLIDE ENCODER: Encoding from vendor files requires Openslide")
-        find_package(openslide-bin CONFIG REQUIRED)
-        message(STATUS "Found OpenSlide (openslide-bin ${openslide-bin_VERSION})")
-        list(APPEND IrisSlideEncoderDependencies OpenSlide::OpenSlide)
-    endif()
+    # RTM Dicom_05: OpenJPEG decodes JPEG 2000 and HTJ2K source frames (ARCHITECTURE D17).
+    find_package(OpenJPEG CONFIG REQUIRED)
+    list(APPEND IrisSlideEncoderDependencies openjp2)
 endif()
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -140,13 +133,30 @@ set (
     ${SLIDE_SOURCE_DIR}/IrisSlideContext.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideCache.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlide.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideJpegFrames.cpp
 )
+# The Highway kernels and the reduction are optimised in every build type: at -O0 each vector
+# intrinsic is an out-of-line call, which makes a debug encode tens of times slower without making
+# it easier to debug, since the scalar reference beside each kernel is what a test compares against.
+# Source properties are scoped to a directory, so each directory that compiles them calls this.
+function(iris_slide_optimise_kernels)
+    set_source_files_properties(
+        ${PROJECT_SOURCE_DIR}/src/IrisSlideReduce.cpp
+        ${PROJECT_SOURCE_DIR}/src/IrisSlideRetile.cpp
+        PROPERTIES COMPILE_OPTIONS "$<$<AND:$<CONFIG:Debug>,$<NOT:$<CXX_COMPILER_ID:MSVC>>>:-O2>")   # MSVC refuses /O2 with its debug /RTC1
+endfunction()
+iris_slide_optimise_kernels()
 set (
     IrisSlideEncoderSources
     ${irisheaders_SOURCE_DIR}/src/IrisAsync.cpp
-    ${SLIDE_SOURCE_DIR}/IrisSlideDeriveLayers.cpp
-    ${SLIDE_SOURCE_DIR}/IrisSlideDcmBridge.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideEncoder.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideOpenJpeg.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideDicomSeries.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideRetile.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideDicomSource.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideDicomFrames.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideSource.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideReduce.cpp
 )
 set (
     IrisSlideInclude
@@ -155,13 +165,15 @@ set (
 )
 # The compile settings every target that compiles Iris-Slide's sources takes, on the
 # target (B7): the include paths; IFE_EXPORT blank, since IFE's static library is linked into
-# these binaries and none imports IFE from a DLL; whether the encoder reads OpenSlide.
+# these binaries and none imports IFE from a DLL.
 function(iris_slide_compile_settings target)
     target_include_directories(${target} PRIVATE ${IrisSlideInclude})
     target_compile_definitions(${target} PRIVATE
         IRIS_EXPORT_API=true
-        IFE_EXPORT=
-        IRIS_INCLUDE_OPENSLIDE=$<BOOL:${IRIS_USE_OPENSLIDE}>)
+        IFE_EXPORT=)
+    # MSVC reads a source file in the system code page unless told otherwise; the sources are UTF-8
+    # (a u8"" literal written in the system code page arrives with different bytes).
+    target_compile_options(${target} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 endfunction()
 add_library(
     IrisSlideLib OBJECT
@@ -310,6 +322,21 @@ if(IRIS_BUILD_PYTHON)
             TARGETS IrisSlideEncoderPython
             DESTINATION ${IRIS_INSTALL_PYTHON_LIBDIR}/Iris/Encoder
         )
+        # EncoderStubs_25.2 (toward RTM Bindings_02, which also needs mypy --strict over the stubs):
+        # python/Iris/Encoder/encoder.pyi is generated from the installed module, so it states what
+        # the binding declares; this target overwrites any edit to it (cmake --install, then
+        # cmake --build <dir> --target python_stubs;
+        # needs pybind11-stubgen in the interpreter's environment).
+        add_custom_target(python_stubs
+            COMMAND ${Python_EXECUTABLE} -m pybind11_stubgen Iris.Encoder.encoder -o ${PROJECT_SOURCE_DIR}/python
+            COMMENT "Generating python/Iris/Encoder/encoder.pyi from the installed module"
+            VERBATIM)
+        # RTM Bindings_01
+        # EncoderBindings_25.1: the binding's tests, against the installed
+        # module (cmake --install first), with the interpreter the module was built for.
+        enable_testing()
+        add_test(NAME python_encoder
+                 COMMAND ${Python_EXECUTABLE} -I -m unittest discover -s ${PROJECT_SOURCE_DIR}/python/tests -v)
     endif()
 endif()
 
