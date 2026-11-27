@@ -104,11 +104,12 @@ Rebuilt::EncoderProgress wait_for(const Rebuilt::Encoder& encoder)
 
 /// Encodes a PatternSource of @p size into @p folder and waits for it to end.
 Rebuilt::EncoderProgress encode(IrisSlide::LayerSize size, const std::filesystem::path& folder,
-                                std::uint64_t budget = 0, std::uint32_t concurrency = std::thread::hardware_concurrency())
+                                std::uint64_t budget = 0, std::uint32_t concurrency = std::thread::hardware_concurrency(),
+                                std::uint32_t layer_step = 2)
 {
     Rebuilt::Encoder encoder;
     const Rebuilt::EncoderDesc desc {.source = folder / "pattern.dcm", .destination = folder,
-                                     .memory_budget = budget, .concurrency = concurrency};
+                                     .memory_budget = budget, .concurrency = concurrency, .layer_step = layer_step};
     const auto created = Rebuilt::create_encoder(desc, std::make_unique<PatternSource>(size), encoder);
     INFO(created.message);
     REQUIRE(created.succeeded());
@@ -356,4 +357,46 @@ TEST_CASE("A derived tile is the reference reduction of the source, within JPEG'
     const double psnr = 10.0 * std::log10(255.0 * 255.0 / (squared / (expected.size() * 3 / 4)));
     INFO("PSNR " << psnr << " dB");
     CHECK(psnr >= JPEG_PSNR_FLOOR_DB);
+}
+
+TEST_CASE("A layer step of 4 writes every second 2x layer, down to one tile", "[Encode_10]")
+{
+    const ScratchFolder folder;
+    const auto done = encode({.width = 2300, .height = 2100}, folder.path, 0, std::thread::hardware_concurrency(), 4);
+    const auto slide = IrisSlide::open_slide({.filePath = done.file.string()});
+    REQUIRE(slide);
+    IrisSlide::SlideInfo info;
+    REQUIRE(IrisSlide::get_slide_info(slide, info).succeeded());
+    REQUIRE(info.extent.layers.size() == 3);
+    const std::vector<std::uint32_t> across {1, 3, 9};
+    const std::vector<float> scales {1.f, 4.f, 16.f};
+    for (std::size_t l = 0; l < 3; ++l) {
+        CHECK(info.extent.layers[l].xTiles == across[l]);
+        CHECK(info.extent.layers[l].scale == scales[l]);
+    }
+    CHECK(info.metadata.micronsPerPixel == 4.0f);   // 0.25 um/px at the base, 16x smaller at the lowest
+}
+
+TEST_CASE("With a step of 4 a slide whose 2x chain ends on a skipped layer reduces once more", "[Encode_10]")
+{
+    // 257 pixels: 2 x 2 tiles, one tile after one 2x reduction, which a step of 4 skips.
+    const ScratchFolder folder;
+    const auto done = encode({.width = 257, .height = 257}, folder.path, 0, std::thread::hardware_concurrency(), 4);
+    const auto slide = IrisSlide::open_slide({.filePath = done.file.string()});
+    REQUIRE(slide);
+    IrisSlide::SlideInfo info;
+    REQUIRE(IrisSlide::get_slide_info(slide, info).succeeded());
+    REQUIRE(info.extent.layers.size() == 2);
+    CHECK(info.extent.layers.front().xTiles == 1);
+    CHECK(info.extent.layers.front().scale == 1.f);
+    CHECK(info.extent.layers.back().scale == 4.f);
+}
+
+TEST_CASE("A layer step that is not a power of two from 2 is refused naming it", "[Encode_09]")
+{
+    const ScratchFolder folder;
+    Rebuilt::Encoder encoder;
+    const Rebuilt::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path, .layer_step = 3};
+    CHECK_THAT(Rebuilt::create_encoder(desc, std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 600, .height = 600}), encoder).message,
+               ContainsSubstring("layer step 3"));
 }

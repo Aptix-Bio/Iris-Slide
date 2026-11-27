@@ -18,6 +18,8 @@
 #include "IrisSlideEncoder_.hpp"
 
 #include <algorithm>
+#include <bit>
+#include <cmath>
 #include <atomic>
 #include <cstring>
 #include <stdexcept>
@@ -153,6 +155,7 @@ struct Row {
 };
 struct Layer {
     LayerSize         size;
+    bool              written = true;   // false for a 2x layer a larger layer step skips
     std::uint32_t     across = 0, down = 0;
     std::vector<Row>  rows;
 };
@@ -160,6 +163,18 @@ struct Job {
     std::uint32_t depth;   // 0 is the source's own layer, the highest resolution
     std::uint32_t row;
 };
+/// How many 2x reductions one layer step is: log2(step), or 0 when the step is not a power of two from 2.
+std::uint32_t reductions_per_step (std::uint32_t step) noexcept
+{
+    return step >= 2 && (step & (step - 1)) == 0 ? static_cast<std::uint32_t>(std::countr_zero(step)) : 0;
+}
+/// Whether the layer at @p depth 2x reductions below the source ends the pyramid: it is written
+/// and fits one tile.
+bool is_last_layer (LayerSize size, std::uint32_t depth, std::uint32_t per_step) noexcept
+{
+    return depth % per_step == 0 && tiles_across(size) == 1 && tiles_down(size) == 1;
+}
+
 /// The rows of layer depth - 1 that row @p row of layer depth reads: its region spans source
 /// rows 512·row - 3 to 512·row + 514, tile rows 2·row - 1 to 2·row + 2, clamped to the layer.
 std::pair<std::uint32_t, std::uint32_t> rows_read (std::uint32_t row, std::uint32_t down_below) noexcept
@@ -235,10 +250,14 @@ _context    (create_context(ContextCreateInfo {})),
 _budget     (budget),
 _pool       (std::make_unique<Iris::Async::Pool>(std::max<std::uint32_t>(1, desc.concurrency)))
 {
-    // The layers, the source's first, each the 2x reduction of the one before, until one tile.
+    // The layers, the source's first, each the 2x reduction of the one before, every
+    // log2(step)-th written, until a written one fits one tile.
+    const std::uint32_t per_step = reductions_per_step(desc.layer_step);
     for (LayerSize size = _source->size();; size = reduced(size)) {
+        const auto depth = static_cast<std::uint32_t>(_layers.size());
         Layer& layer = _layers.emplace_back();
-        layer.size   = size;
+        layer.size    = size;
+        layer.written = depth % per_step == 0;
         layer.across = tiles_across(size);
         layer.down   = tiles_down(size);
         layer.rows   = std::vector<Row>(layer.down);
@@ -246,8 +265,8 @@ _pool       (std::make_unique<Iris::Async::Pool>(std::max<std::uint32_t>(1, desc
             row.pixels.resize(layer.across);
             row.streams.resize(layer.across);
         }
-        _tiles_total += std::uint64_t{layer.across} * layer.down;
-        if (layer.across == 1 && layer.down == 1) break;
+        if (layer.written) _tiles_total += std::uint64_t{layer.across} * layer.down;
+        if (is_last_layer(size, depth, per_step)) break;
     }
     // A base row is read only with room left for one row of every derived layer and the scratch
     // of every worker, so the rows that free memory can always start.
@@ -316,13 +335,17 @@ void Encoder_t::dispatch ()
 
 Iris::Extent Encoder_t::ife_extent () const
 {
-    Iris::Extent extent {.width  = static_cast<std::uint32_t>(_layers.back().size.width),
-                         .height = static_cast<std::uint32_t>(_layers.back().size.height)};
-    for (std::size_t l = 0; l < _layers.size(); ++l) {
-        const Layer& layer = _layers[_layers.size() - 1 - l];
-        extent.layers.push_back({.xTiles = layer.across, .yTiles = layer.down,
-                                 .scale = float(1u << l), .downsample = float(1u << (_layers.size() - 1 - l))});
-    }
+    // The written layers, lowest resolution first; the lowest has scale 1 and each above it is
+    // layer_step times larger.
+    std::vector<const Layer*> written;
+    for (auto layer = _layers.rbegin(); layer != _layers.rend(); ++layer)
+        if (layer->written) written.push_back(&*layer);
+    Iris::Extent extent {.width  = static_cast<std::uint32_t>(written.front()->size.width),
+                         .height = static_cast<std::uint32_t>(written.front()->size.height)};
+    float scale = 1.f;
+    for (std::size_t l = 0; l < written.size(); ++l, scale *= float(_desc.layer_step))
+        extent.layers.push_back({.xTiles = written[l]->across, .yTiles = written[l]->down, .scale = scale,
+                                 .downsample = float(std::pow(double(_desc.layer_step), double(written.size() - 1 - l)))});
     return extent;
 }
 
@@ -417,6 +440,7 @@ void Encoder_t::work_tile (std::uint32_t depth, std::uint32_t r, std::uint32_t x
             reduce_2x(region, row.pixels[x]);
             whiten_beyond(_layers[depth].size, x, r, row.pixels[x]);
         }
+        if (!_layers[depth].written) { tile_done(depth, r); return; }   // only reduced from, never stored
         row.streams[x] = compress_tile(_context, _desc.encoding, row.pixels[x], _desc.quality, _desc.subsampling);
         if (!row.streams[x]) throw std::runtime_error("tile (" + std::to_string(x) + ", " + std::to_string(r) +
                                                       ") of layer " + std::to_string(depth) + " did not compress");
@@ -440,15 +464,19 @@ void Encoder_t::write (const Job& job)
 {
     Layer& layer = _layers[job.depth];
     Row& row = layer.rows[job.row];
-    const auto ife_layer = static_cast<std::uint32_t>(_layers.size() - 1 - job.depth);
-    for (std::uint32_t x = 0; x < layer.across; ++x) {
-        Buffer& stream = row.streams[x];
-        _builder.append_tile(ife_layer, job.row * layer.across + x,
-                             static_cast<const BYTE*>(stream->data()), stream->size(), 0);
-        charge(-std::int64_t(stream->size()));
-        stream = nullptr;
+    if (layer.written) {
+        // IFE numbers written layers from the lowest resolution.
+        const std::uint32_t per_step = reductions_per_step(_desc.layer_step);
+        const auto ife_layer = static_cast<std::uint32_t>((_layers.size() - 1) / per_step - job.depth / per_step);
+        for (std::uint32_t x = 0; x < layer.across; ++x) {
+            Buffer& stream = row.streams[x];
+            _builder.append_tile(ife_layer, job.row * layer.across + x,
+                                 static_cast<const BYTE*>(stream->data()), stream->size(), 0);
+            charge(-std::int64_t(stream->size()));
+            stream = nullptr;
+        }
+        _tiles_written.fetch_add(layer.across);
     }
-    _tiles_written.fetch_add(layer.across);
     row.stage.store(Row::Stage::WRITTEN);
     if (row.readers == 0) release_pixels(row);
     --_rows_in_flight;
@@ -579,6 +607,9 @@ Result create_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source, 
 {
     try {
         if (!source) throw std::runtime_error("create_encoder was given no source");
+        const std::uint32_t per_step = reductions_per_step(desc.layer_step);
+        if (per_step == 0)
+            throw std::runtime_error("layer step " + std::to_string(desc.layer_step) + " is not a power of two from 2");
         if (!written_encoding(desc.encoding))
             throw std::runtime_error(std::string("the rebuilt encoder does not write ") + encoding_name(desc.encoding));
         if (desc.quality < QUALITY_MIN || desc.quality > QUALITY_MAX)
@@ -591,9 +622,10 @@ Result create_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source, 
         // The smallest working set: 5 rows of every layer and every worker's scratch.
         std::uint64_t working_set = std::uint64_t{std::max<std::uint32_t>(1, desc.concurrency)} *
                                     std::max(source->read_scratch_bytes(), REDUCE_SCRATCH_BYTES);
-        for (LayerSize size = source->size();; size = reduced(size)) {
+        LayerSize size = source->size();
+        for (std::uint32_t depth = 0;; ++depth, size = reduced(size)) {
             working_set += ROWS_HELD * tiles_across(size) * TILE_BYTES;
-            if (tiles_across(size) == 1 && tiles_down(size) == 1) break;
+            if (is_last_layer(size, depth, per_step)) break;
         }
         const std::uint64_t budget = desc.memory_budget ? desc.memory_budget : physical_memory() / BUDGET_DIVISOR;
         if (budget < working_set)

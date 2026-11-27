@@ -36,14 +36,16 @@ IrisSlide::Subsampling subsampling_of (const std::string& text)
     throw std::invalid_argument("subsampling \"" + text + "\" is not 444, 422 or 420");
 }
 RebuiltEncoder create_rebuilt (const std::string& source, const std::string& destination, unsigned quality,
-                               const std::string& subsampling, std::uint64_t memory_budget, unsigned concurrency)
+                               const std::string& subsampling, std::uint64_t memory_budget, unsigned concurrency,
+                               std::uint32_t layer_step)
 {
     RebuiltEncoder handle;
     raise_if_failed(Rebuilt::create_encoder({.source = source, .destination = destination,
                                              .quality = static_cast<IrisSlide::Quality>(quality),
                                              .subsampling = subsampling_of(subsampling),
                                              .memory_budget = memory_budget,
-                                             .concurrency = concurrency ? concurrency : std::thread::hardware_concurrency()},
+                                             .concurrency = concurrency ? concurrency : std::thread::hardware_concurrency(),
+                                             .layer_step = layer_step},
                                             handle.encoder));
     return handle;
 }
@@ -156,7 +158,8 @@ PYBIND11_MODULE(encoder, m)
         rebuilt.def("create_encoder", &create_rebuilt,
                     "An encoder for one slide; raises RuntimeError naming what it refuses",
                     py::arg("source"), py::arg("destination"), py::arg("quality") = 90,
-                    py::arg("subsampling") = "422", py::arg("memory_budget") = 0, py::arg("concurrency") = 0);
+                    py::arg("subsampling") = "422", py::arg("memory_budget") = 0, py::arg("concurrency") = 0,
+                    py::arg("layer_step") = 2);
         rebuilt.def("dispatch", [](const RebuiltEncoder& e) { raise_if_failed(Rebuilt::dispatch(e.encoder)); },
                     "Starts the encode and returns; raises when the encoder was already dispatched", py::arg("encoder"));
         rebuilt.def("progress", [](const RebuiltEncoder& e) {

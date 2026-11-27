@@ -33,6 +33,9 @@ struct EncoderDesc {
     Subsampling   subsampling   = SUBSAMPLE_DEFAULT;    ///< JPEG chroma subsampling (Q19: 4:2:2)
     std::uint64_t memory_budget = 0;                    ///< bytes resident at once; 0: a quarter of physical memory (Q20)
     std::uint32_t concurrency   = std::thread::hardware_concurrency();   ///< worker threads, at least 1
+    /// The scale between written layers: 2, 4, 8 … (IFE gives each layer its own scale). Layers are
+    /// derived 2x at a time and every log2(step)-th is written, down to one that fits one tile.
+    std::uint32_t layer_step    = 2;
 };
 
 /// An encoder is used once: dispatched from READY, it ends DONE, FAILED or INTERRUPTED.
