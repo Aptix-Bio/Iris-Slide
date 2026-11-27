@@ -412,7 +412,7 @@ TEST_CASE("The caller's I2S pairs are written as METADATA_I2S with their version
     desc.attributes.version = 1;   // I2S 0.1, packed major << 8 | minor (Q12)
     desc.attributes["Stain"] = u8"H&E";
     desc.attributes["ScanDate"] = u8"2026-11-27";
-    desc.attributes["ScannerSite"] = u8"Nußloch";   // non-ASCII UTF-8: carried byte for byte
+    desc.attributes["ScannerSite"] = u8"Nu\u00DFloch";   // "Nußloch": non-ASCII UTF-8, carried byte for byte
     REQUIRE(IrisSlide::create_encoder(desc, std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 600, .height = 600}), encoder).succeeded());
     REQUIRE(IrisSlide::dispatch_encoder(encoder).succeeded());
     const auto done = wait_for(encoder);

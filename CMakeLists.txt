@@ -171,6 +171,9 @@ function(iris_slide_compile_settings target)
     target_compile_definitions(${target} PRIVATE
         IRIS_EXPORT_API=true
         IFE_EXPORT=)
+    # MSVC reads a source file in the system code page unless told otherwise; the sources are UTF-8
+    # (a u8"" literal written in the system code page arrives with different bytes).
+    target_compile_options(${target} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 endfunction()
 add_library(
     IrisSlideLib OBJECT

@@ -90,7 +90,7 @@ TEST_CASE("A synthetic JPEG whole-slide instance is read as 256-pixel tiles from
           "[Encode_10][Dicom_05]")
 {
     const auto path = dicom_builder::write_instance(dicom_builder::whole_slide(slide()), "source_tiles");
-    const auto source = IrisSlide::open_dicom_source(path);
+    auto source = IrisSlide::open_dicom_source(path);
     CHECK(source->size().width == WIDTH);
     CHECK(source->size().height == HEIGHT);
     CHECK(source->measurements().microns_per_pixel == 0.00025 * MICRONS_PER_MILLIMETRE);
@@ -104,6 +104,7 @@ TEST_CASE("A synthetic JPEG whole-slide instance is read as 256-pixel tiles from
             CHECK(psnr >= PSNR_FLOOR_DB);
         }
     CHECK(not_white == 0);
+    source.reset();   // the source maps the file, and Windows deletes no mapped file
     std::filesystem::remove_all(path.parent_path());
 }
 
@@ -121,9 +122,10 @@ TEST_CASE("Frames whose colour disagrees with the instance's PhotometricInterpre
     auto built = slide();
     built.photometric = "RGB";   // the frames store YCbCr
     const auto path = dicom_builder::write_instance(dicom_builder::whole_slide(built), "source_colour");
-    const auto source = IrisSlide::open_dicom_source(path);
+    auto source = IrisSlide::open_dicom_source(path);
     std::vector<std::uint8_t> tile(std::size_t{IrisSlide::RECUT_TILE} * IrisSlide::RECUT_TILE * RGBA);
     CHECK_THROWS_WITH(source->read_tile(0, 0, tile), ContainsSubstring("YCbCr") && ContainsSubstring("RGB"));
+    source.reset();   // the source maps the file, and Windows deletes no mapped file
     built.photometric = "MONOCHROME2";
     const auto mono = dicom_builder::write_instance(dicom_builder::whole_slide(built), "source_mono");
     CHECK_THROWS_WITH(IrisSlide::open_dicom_source(mono), ContainsSubstring("MONOCHROME2"));
@@ -164,8 +166,9 @@ TEST_CASE("An instance the encoder does not read may lack Pixel Spacing; the one
     label.frames.push_back(jpeg_frame(0, 0));
     const auto series = dicom_builder::write_series({dicom_builder::whole_slide(slide()), dicom_builder::whole_slide(label)},
                                                     "source_label");
-    const auto source = IrisSlide::open_dicom_source(series[1]);   // named by its label: the VOLUME is chosen
+    auto source = IrisSlide::open_dicom_source(series[1]);   // named by its label: the VOLUME is chosen
     CHECK(source->size().width == WIDTH);
+    source.reset();   // the source maps the file, and Windows deletes no mapped file
     auto unmeasured = slide();
     unmeasured.pixel_spacing.clear();
     const auto path = dicom_builder::write_instance(dicom_builder::whole_slide(unmeasured), "source_unmeasured");
