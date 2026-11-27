@@ -19,7 +19,7 @@
 #     fork's pull request gets a job that states why it is skipped;
 #   - GOVERNANCE_READ_TOKEN reaches only the step that checks out Aptix-Bio/governance at the
 #     pinned commit and, as `planning-token`, the bot's action, which checks out the private plans
-#     and conventions read-only;, and every other action is pinned by a full commit SHA;
+#     and conventions read-only, and every other action is pinned by a full commit SHA;
 #   - pull request text reaches a `run:` script only through `env:`, and every job is bounded;
 #   - the jobs, the settings check, the review step and its variables are those of the review
 #     workflow Iris-Headers and Iris-File-Extension run, which differs from this one only in

@@ -118,8 +118,10 @@ flowchart LR
     ([GitHub, "Allowing access to components in a private repository"](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository),
     read 2026-11-24): each job checks the bot out at the commit
     `GOVERNANCE_COMMIT` names with the secret `GOVERNANCE_READ_TOKEN`, a token
-    that can read that one repository's contents and nothing else, passed only
-    to that checkout step and not persisted. The model key is the secret
+    that can read that repository's contents and the privately kept rules and
+    plans and nothing else, passed to that checkout step and, as
+    `planning-token`, to the bot's action, which fetches the rules and plans
+    read-only; it reaches no other step and is not persisted. The model key is the secret
     `ANTHROPIC_KEY`. A job whose secret is unset fails naming it
     (`cmake/require_settings.cmake`). The workflow is the review workflow
     every public Aptix repository runs, apart from comments and product text.
