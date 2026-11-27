@@ -1,4 +1,4 @@
-// RTM Testing_01, Dicom_05
+// RTM Testing_01, Dicom_05, Dicom_03
 // LocalSlideInputs_22.6 and OpenJpegFrames_22.3. Decided 2026-11-27: while the encoder is
 // developed, the tests that need a real slide read the maintainer's own slides from the folder the
 // CMake cache variable IRIS_SLIDE_TEST_SLIDES names; no slide file enters the repository. An
@@ -19,6 +19,7 @@ extern "C" {
 #include <dicom/dicom.h>
 }
 
+#include "IrisSlideDicomSeries.hpp"
 #include "IrisSlideOpenJpeg.hpp"
 #include "IrisSlideSourceCodec.hpp"
 
@@ -181,4 +182,26 @@ TEST_CASE("An HTJ2K copy of a lossless JPEG 2000 slide decodes to the same pixel
             CHECK(copy.decode(number) == original->second->decode(number));
     }
     REQUIRE(pairs > 0);   // the folder holds at least one HTJ2K copy and its JPEG 2000 original
+}
+
+TEST_CASE("Each local slide's series yields its highest VOLUME instance, TILED_FULL, with its spacing",
+          "[Testing_01][Dicom_03]")
+{
+    const auto instances = jpeg2000_instances(slide_folder());
+    REQUIRE_FALSE(instances.empty());
+    for (const auto& local : instances) {
+        INFO(local.path.filename());
+        const auto series = IrisSlide::read_dicom_series(local.path);
+        const auto& source = IrisSlide::highest_volume(series);
+        CHECK(source.dimension_organization == "TILED_FULL");
+        // TILED_FULL with one focal plane and one optical path: one frame per tile, row-major.
+        const auto across = (source.total_columns + source.columns - 1) / source.columns;
+        const auto down   = (source.total_rows + source.rows - 1) / source.rows;
+        CHECK(std::uint64_t{source.frames} == across * down);
+        CHECK(source.spacing.row_mm > 0.0);
+        CHECK(source.spacing.column_mm > 0.0);
+        WARN(source.path.filename() << ": " << source.total_columns << " x " << source.total_rows << ", "
+             << source.columns << " px frames, spacing " << source.spacing.row_mm << " x "
+             << source.spacing.column_mm << " mm");
+    }
 }
