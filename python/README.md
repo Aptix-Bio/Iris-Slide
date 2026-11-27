@@ -21,7 +21,7 @@ Iris Slide for Python is available via the Anaconda and PyPi package managers. W
 [![Conda Downloads](https://img.shields.io/conda/dn/conda-forge/iris-slide.svg?style=for-the-badge)](https://anaconda.org/conda-forge/iris-slide) 
 [![Conda Platforms](https://img.shields.io/conda/pn/conda-forge/iris-slide.svg?color=blue&style=for-the-badge)](https://anaconda.org/conda-forge/iris-slide)
 
-We prefer the Anaconda environment as it includes optimized dynamic libraries and better dependency management for scientific computing environments, particularly for OpenSlide integration on Linux and macOS.
+We prefer the Anaconda environment as it includes optimized dynamic libraries and better dependency management for scientific computing environments.
 
 **Quick Installation:**
 ```shell
@@ -55,19 +55,12 @@ conda install iris-slide
 pip install iris-slide
 ```
 
-**With Encoder Support:**
-```shell
-# Encodes DICOM and .iris sources; vendor formats need a build with IRIS_USE_OPENSLIDE=ON
-pip install iris-slide
-```
-
-> [!NOTE]
-> **Windows Limitation**: The Conda-Forge encoder does not support OpenSlide on Windows as OpenSlide lacks official Windows support in Conda-Forge. We're developing native vendor format support to eliminate this dependency.
+The encoder is included: it encodes DICOM whole-slide images (JPEG, JPEG 2000 or HTJ2K frames).
 
 ## Key Features
 
 - **High-Performance Slide Reading**: Optimized C++ backend with Python bindings
-- **Multiple Format Support**: Read Iris files and encode from 40+ vendor formats
+- **Encoding**: Read Iris files and encode DICOM whole-slide images (JPEG, JPEG 2000 or HTJ2K frames)
 - **Memory Efficient**: Tiles loaded on-demand with automatic memory management
 - **Research-Friendly**: NumPy array output, PIL/Pillow integration
 - **Metadata Rich**: Full access to slide properties, annotations, and associated images
@@ -104,20 +97,10 @@ print(f"Encoding: {info.encoding}")
 ### Slide Encoding
 
 ```python
-from Iris import Encoder, Slide
+from Iris import Encoder
 
-# Convert vendor format to Iris
-result = Encoder.encode_slide_file(
-    source='input.dcm',
-    outdir='./output/',
-    desired_encoding=Slide.Encoding.TILE_ENCODING_JPEG,
-    derivation=Encoder.EncoderDerivation.layer_2x,
-    concurrency=8
-)
-
-if result.failed():
-    raise Exception(f'Encoding failed: {result.message}')
-print('Encoding completed successfully!')
+written = Encoder.encode_slide_file(source='input.dcm', outdir='./output/', layer_step=2, concurrency=8)
+print(f'Wrote {written}')   # raises RuntimeError on failure
 ```
 
 ## API Reference
@@ -292,83 +275,44 @@ Efficient patterns for large-scale analysis:
 
 ## Encoding API
 
-The Python module includes comprehensive encoding capabilities for converting vendor WSI formats to optimized Iris files.
+The Python module encodes a DICOM whole-slide image (its highest-resolution instance; JPEG, JPEG 2000 or HTJ2K frames) as an Iris slide, `<source stem>.jpeg.iris`. Every lower layer is derived by a 2x bicubic reduction, down to the first that fits one tile. Every failure raises `RuntimeError` naming what failed.
 
-### Basic Encoding
+### Encoding
 
 ```python
-from Iris import Encoder, Slide
+from Iris import Encoder
 
-# Simple encoding with default settings
-result = Encoder.encode_slide_file(
-    source='path/to/input.dcm',  # SVS, NDPI, VSI, MRXS, DCM, etc.
-    outdir='./output/'           # Output directory
+written = Encoder.encode_slide_file(
+    source='input.dcm',
+    outdir='./encoded/',
+    quality=90,           # JPEG quality, 1-100
+    subsampling='422',    # '444', '422' or '420'
+    layer_step=4,         # a written layer every 4x
+    memory_budget=0,      # bytes held at once; 0 is a quarter of physical memory
+    concurrency=8,
 )
-
-if result.failed():
-    raise Exception(f'Encoding failed: {result.message}')
-print('Encoding completed successfully!')
 ```
 
-### Advanced Encoding Options
+A progress line is printed while it runs (`show_progress=False` turns it off); Ctrl-C interrupts the encode and leaves no file.
+
+### Driving the encoder yourself
 
 ```python
-from Iris import Encoder, Slide, iris_core
+import time
+from Iris.Encoder import create_encoder, dispatch_encoder, encoder_progress, EncoderState
 
-# Comprehensive encoding configuration
-result = Encoder.encode_slide_file(
-    source='input.dcm',                                    # DICOM with byte-stream preservation
-    outdir='./encoded/',                                   # Output directory
-    desired_encoding=Slide.Encoding.TILE_ENCODING_JPEG,   # JPEG tiles
-    desired_byte_format=iris_core.Format.FORMAT_R8G8B8,   # RGB format
-    derivation=Encoder.EncoderDerivation.layer_4x,        # 4x downsampling pyramid
-    strip_metadata=True,                                   # Remove patient identifiers
-    anonymize=True,                                        # Additional anonymization
-    concurrency=8                                          # Use 8 threads
-)
-
-if result.failed():
-    raise Exception(f'Advanced encoding failed: {result.message}')
+encoder = create_encoder('input.dcm', './encoded/')
+dispatch_encoder(encoder)
+while (progress := encoder_progress(encoder)).state == EncoderState.ACTIVE:
+    time.sleep(0.5)
+print(progress.state, progress.file, progress.error)
 ```
 
 ### Encoding Options Reference
 
-**Compression Formats:**
-- `TILE_ENCODING_JPEG` (default): High compatibility, excellent compression
-- `TILE_ENCODING_AV1`: the Iris format's AV1 tile encoding (a bare AV1 sequence, decided 2026-11-25), not yet encoded or decoded by Iris Slide: requesting it, or reading a slide whose tiles declare it, fails with an error naming the encoding
-- `TILE_ENCODING_UASTC`, `TILE_ENCODING_XUASTC`: the Iris format's GPU block-compressed tile encodings (UASTC LDR 4x4 blocks under one Zstandard frame, and one XUASTC LDR bitstream, decided 2026-11-25), which a viewer transcodes to its GPU's block format; not yet encoded or transcoded by Iris Slide, and refused the same way
+**Tile encodings:** JPEG. The Iris format's AV1, UASTC and XUASTC tile encodings are not yet encoded or decoded by Iris Slide; reading a slide whose tiles declare one fails with an error naming the encoding.
 
-**Pyramid Derivation:**
-- `layer_2x`: Generate 2x downsampled layers (recommended for most use cases)
-- `layer_4x`: Generate 4x downsampled layers (good for very large slides)
-- `use_source`: Use existing pyramid structure from source file
-
-**Byte Formats:**
-- `FORMAT_R8G8B8`: Standard RGB (3 bytes per pixel)
-- `FORMAT_R8G8B8A8`: RGBA with alpha channel (4 bytes per pixel)
-- `FORMAT_B8G8R8`: BGR format for specific applications
-- `FORMAT_B8G8R8A8`: BGRA format
-
-**Privacy Options:**
-- `strip_metadata=True`: Remove patient identifiers and PHI
-
-### Progress Monitoring
-
-The encoder automatically displays progress during encoding operations:
-
-```python
-# The encode_slide_file function includes built-in progress display
-result = Encoder.encode_slide_file(
-    source='large_slide.dcm',
-    outdir='./output/',
-    concurrency=8
-)
-
-# Output shows real-time progress:
-# [████████████████████████████████████████] 100.0% ETA: 00:00
-# Iris Encoder completed successfully
-# Slide written to ./output/large_slide.iris
-```
+**Identity:** from the DICOM source only the pixel spacing, magnification and ICC profile are carried. The caller's `i2s_attributes` (with `i2s_version`, `major << 8 | minor`) are the slide's only attributes.
 
 ## Integration Examples
 

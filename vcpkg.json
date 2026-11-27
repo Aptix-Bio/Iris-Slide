@@ -40,12 +40,6 @@
         }
       ]
     },
-    "openslide": {
-      "description": "Encoding from vendor slide files (IRIS_USE_OPENSLIDE=ON): OpenSlide's prebuilt shared library (ports/openslide-bin)",
-      "dependencies": [
-        "openslide-bin"
-      ]
-    },
     "python": {
       "description": "The Python modules (IRIS_BUILD_PYTHON=ON): pybind11, its headers and CMake files only (ports/pybind11)",
       "dependencies": [

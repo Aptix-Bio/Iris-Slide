@@ -50,7 +50,7 @@ file, and each of its findings names the rule it applies.
   `create_slide(const SlideDesc&, Slide&)`, which returns a `Result` and never a null; the `_t`
   types live in the `IrisSlide` and `Iris` namespaces. A C++ data member is `_name` (`_parser`).
 - **Every library handle has an RAII owner:** TurboJPEG, libavif, libpng (until PngRemoved_4
-  removes it), OpenSlide and libdicom. A tile decode, the hot path, passes references and spans.
+  removes it), libdicom and OpenJPEG. A tile decode, the hot path, passes references and spans.
 - **The shared vocabulary is reused.** Iris-Headers' `Result`, `Buffer`, `Iris::FIFO::Queue` and
   `Iris::Async`, and IFE's `Parser` and `Builder`. A block's layout is written only through
   `Builder` and read through `Parser`, or, for a remote slide's phantom, through IFE's installed

@@ -37,17 +37,9 @@
     {
       "name": "ci",
       "inherits": "vcpkg",
-      "displayName": "CI: the library and the encoder without OpenSlide (the default), Release",
+      "displayName": "CI: the library and the encoder, Release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
-      }
-    },
-    {
-      "name": "ci-openslide",
-      "inherits": "ci",
-      "displayName": "CI: the library and the encoder with OpenSlide (IRIS_USE_OPENSLIDE=ON), Release",
-      "cacheVariables": {
-        "IRIS_USE_OPENSLIDE": "ON"
       }
     }
   ],
@@ -63,12 +55,6 @@
     {
       "name": "ci",
       "configurePreset": "ci",
-      "jobs": 4,
-      "description": "Four jobs: the 4-vCPU Blacksmith runners, a job count that fits the runner's memory"
-    },
-    {
-      "name": "ci-openslide",
-      "configurePreset": "ci-openslide",
       "jobs": 4,
       "description": "Four jobs: the 4-vCPU Blacksmith runners, a job count that fits the runner's memory"
     }

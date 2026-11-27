@@ -1,4 +1,4 @@
-// RTM Encode_09, Encode_10, Encode_11, Encode_12, Concurrency_04
+// RTM Encode_09, Encode_10, Encode_11, Encode_12, Concurrency_04, Identity_07
 // EncoderRewrite_24 (ARCHITECTURE D14): the rebuilt encoder reads a Source, derives every lower
 // layer by the 2x reduction until the slide fits one tile, compresses each tile, and writes them
 // through IFE's Builder in a fixed order, so the same source and options give the same bytes; every
@@ -19,11 +19,10 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "IrisSlidePriv.hpp"
-#include "IrisSlideEncoder_.hpp"
+#include "IrisSlideEncoder.hpp"
 #include "IrisSlideReduce.hpp"
 
 using Catch::Matchers::ContainsSubstring;
-namespace Rebuilt = IrisSlide::Rebuilt;
 
 namespace {
 constexpr std::uint32_t RGBA = 4;
@@ -92,37 +91,37 @@ std::size_t files_in(const std::filesystem::path& folder)
 }
 
 /// Waits for @p encoder to leave ACTIVE and returns its last progress.
-Rebuilt::EncoderProgress wait_for(const Rebuilt::Encoder& encoder)
+IrisSlide::EncoderProgress wait_for(const IrisSlide::Encoder& encoder)
 {
-    Rebuilt::EncoderProgress progress;
+    IrisSlide::EncoderProgress progress;
     do {
         std::this_thread::sleep_for(POLL);
-        REQUIRE(Rebuilt::progress(encoder, progress).succeeded());
-    } while (progress.state == Rebuilt::EncoderState::ACTIVE);
+        REQUIRE(IrisSlide::encoder_progress(encoder, progress).succeeded());
+    } while (progress.state == IrisSlide::EncoderState::ACTIVE);
     return progress;
 }
 
 /// Encodes a PatternSource of @p size into @p folder and waits for it to end.
-Rebuilt::EncoderProgress encode(IrisSlide::LayerSize size, const std::filesystem::path& folder,
+IrisSlide::EncoderProgress encode(IrisSlide::LayerSize size, const std::filesystem::path& folder,
                                 std::uint64_t budget = 0, std::uint32_t concurrency = std::thread::hardware_concurrency(),
                                 std::uint32_t layer_step = 2)
 {
-    Rebuilt::Encoder encoder;
-    const Rebuilt::EncoderDesc desc {.source = folder / "pattern.dcm", .destination = folder,
+    IrisSlide::Encoder encoder;
+    const IrisSlide::EncoderDesc desc {.source = folder / "pattern.dcm", .destination = folder,
                                      .memory_budget = budget, .concurrency = concurrency, .layer_step = layer_step};
-    const auto created = Rebuilt::create_encoder(desc, std::make_unique<PatternSource>(size), encoder);
+    const auto created = IrisSlide::create_encoder(desc, std::make_unique<PatternSource>(size), encoder);
     INFO(created.message);
     REQUIRE(created.succeeded());
-    const auto started = Rebuilt::dispatch(encoder);
+    const auto started = IrisSlide::dispatch_encoder(encoder);
     INFO(started.message);
     REQUIRE(started.succeeded());
-    Rebuilt::EncoderProgress progress;
+    IrisSlide::EncoderProgress progress;
     do {
         std::this_thread::sleep_for(POLL);
-        REQUIRE(Rebuilt::progress(encoder, progress).succeeded());
-    } while (progress.state == Rebuilt::EncoderState::ACTIVE);
+        REQUIRE(IrisSlide::encoder_progress(encoder, progress).succeeded());
+    } while (progress.state == IrisSlide::EncoderState::ACTIVE);
     INFO(progress.error);
-    REQUIRE(progress.state == Rebuilt::EncoderState::DONE);
+    REQUIRE(progress.state == IrisSlide::EncoderState::DONE);
     return progress;
 }
 
@@ -136,50 +135,50 @@ std::vector<char> bytes_of(const std::filesystem::path& path)
 TEST_CASE("The output is named for its source and tile encoding", "[Encode_09]")
 {
     std::string name;
-    REQUIRE(Rebuilt::output_name("slides/9a98aa37.dcm", IrisSlide::TILE_ENCODING_JPEG, name).succeeded());
+    REQUIRE(IrisSlide::encoder_output_name("slides/9a98aa37.dcm", IrisSlide::TILE_ENCODING_JPEG, name).succeeded());
     CHECK(name == "9a98aa37.jpeg.iris");
-    CHECK_THAT(Rebuilt::output_name("slides/9a98aa37.dcm", IrisSlide::TILE_ENCODING_AV1, name).message,
+    CHECK_THAT(IrisSlide::encoder_output_name("slides/9a98aa37.dcm", IrisSlide::TILE_ENCODING_AV1, name).message,
                ContainsSubstring("TILE_ENCODING_AV1"));
 }
 
 TEST_CASE("create_encoder refuses what it cannot encode, naming the value", "[Encode_09]")
 {
     const ScratchFolder folder;
-    Rebuilt::Encoder encoder;
+    IrisSlide::Encoder encoder;
     const auto source = [] { return std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 600, .height = 600}); };
-    Rebuilt::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path};
+    IrisSlide::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path};
     desc.encoding = IrisSlide::TILE_ENCODING_AV1;
-    CHECK_THAT(Rebuilt::create_encoder(desc, source(), encoder).message, ContainsSubstring("TILE_ENCODING_AV1"));
+    CHECK_THAT(IrisSlide::create_encoder(desc, source(), encoder).message, ContainsSubstring("TILE_ENCODING_AV1"));
     desc.encoding = IrisSlide::TILE_ENCODING_JPEG;
     desc.quality = 0;
-    CHECK_THAT(Rebuilt::create_encoder(desc, source(), encoder).message, ContainsSubstring("quality 0"));
+    CHECK_THAT(IrisSlide::create_encoder(desc, source(), encoder).message, ContainsSubstring("quality 0"));
     desc.quality = IrisSlide::QUALITY_DEFAULT;
     desc.destination = folder.path / "missing";
-    CHECK_THAT(Rebuilt::create_encoder(desc, source(), encoder).message, ContainsSubstring("missing"));
+    CHECK_THAT(IrisSlide::create_encoder(desc, source(), encoder).message, ContainsSubstring("missing"));
     desc.destination = folder.path;
     desc.memory_budget = 1024;
-    CHECK_THAT(Rebuilt::create_encoder(desc, source(), encoder).message, ContainsSubstring("1024"));
+    CHECK_THAT(IrisSlide::create_encoder(desc, source(), encoder).message, ContainsSubstring("1024"));
     desc.source = folder.path / "absent.dcm";
     desc.memory_budget = 0;
-    CHECK_THAT(Rebuilt::create_encoder(desc, encoder).message, ContainsSubstring("absent.dcm"));
+    CHECK_THAT(IrisSlide::create_encoder(desc, encoder).message, ContainsSubstring("absent.dcm"));
 }
 
 TEST_CASE("An encoder dispatched twice refuses the second dispatch by name", "[Encode_09]")
 {
     const ScratchFolder folder;
-    Rebuilt::Encoder encoder;
-    const Rebuilt::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path};
-    REQUIRE(Rebuilt::create_encoder(desc, std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 600, .height = 600}), encoder).succeeded());
-    REQUIRE(Rebuilt::dispatch(encoder).succeeded());
-    const auto again = Rebuilt::dispatch(encoder);
+    IrisSlide::Encoder encoder;
+    const IrisSlide::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path};
+    REQUIRE(IrisSlide::create_encoder(desc, std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 600, .height = 600}), encoder).succeeded());
+    REQUIRE(IrisSlide::dispatch_encoder(encoder).succeeded());
+    const auto again = IrisSlide::dispatch_encoder(encoder);
     CHECK(again.failed());
     CHECK_THAT(again.message, ContainsSubstring("dispatched"));
-    Rebuilt::EncoderProgress progress;
+    IrisSlide::EncoderProgress progress;
     do {
         std::this_thread::sleep_for(POLL);
-        REQUIRE(Rebuilt::progress(encoder, progress).succeeded());
-    } while (progress.state == Rebuilt::EncoderState::ACTIVE);
-    CHECK(progress.state == Rebuilt::EncoderState::DONE);
+        REQUIRE(IrisSlide::encoder_progress(encoder, progress).succeeded());
+    } while (progress.state == IrisSlide::EncoderState::ACTIVE);
+    CHECK(progress.state == IrisSlide::EncoderState::DONE);
 }
 
 TEST_CASE("A 9-tile-wide slide gets 4 derived layers, the last one tile, its base close to the source",
@@ -240,12 +239,12 @@ TEST_CASE("A slide whose decoded size is over 4x the budget encodes within the b
 TEST_CASE("An interrupted encode ends INTERRUPTED and leaves no file once dropped", "[Encode_09]")
 {
     const ScratchFolder folder;
-    Rebuilt::Encoder encoder;
-    const Rebuilt::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path, .concurrency = 1};
-    REQUIRE(Rebuilt::create_encoder(desc, std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 2300, .height = 20400}), encoder).succeeded());
-    REQUIRE(Rebuilt::dispatch(encoder).succeeded());
-    REQUIRE(Rebuilt::interrupt(encoder).succeeded());
-    CHECK(wait_for(encoder).state == Rebuilt::EncoderState::INTERRUPTED);
+    IrisSlide::Encoder encoder;
+    const IrisSlide::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path, .concurrency = 1};
+    REQUIRE(IrisSlide::create_encoder(desc, std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 2300, .height = 20400}), encoder).succeeded());
+    REQUIRE(IrisSlide::dispatch_encoder(encoder).succeeded());
+    REQUIRE(IrisSlide::interrupt_encoder(encoder).succeeded());
+    CHECK(wait_for(encoder).state == IrisSlide::EncoderState::INTERRUPTED);
     encoder.reset();
     CHECK(files_in(folder.path) == 0);
 }
@@ -253,10 +252,10 @@ TEST_CASE("An interrupted encode ends INTERRUPTED and leaves no file once droppe
 TEST_CASE("Dropping an active encoder stops it and leaves no file", "[Encode_09]")
 {
     const ScratchFolder folder;
-    Rebuilt::Encoder encoder;
-    const Rebuilt::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path, .concurrency = 1};
-    REQUIRE(Rebuilt::create_encoder(desc, std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 2300, .height = 20400}), encoder).succeeded());
-    REQUIRE(Rebuilt::dispatch(encoder).succeeded());
+    IrisSlide::Encoder encoder;
+    const IrisSlide::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path, .concurrency = 1};
+    REQUIRE(IrisSlide::create_encoder(desc, std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 2300, .height = 20400}), encoder).succeeded());
+    REQUIRE(IrisSlide::dispatch_encoder(encoder).succeeded());
     encoder.reset();
     CHECK(files_in(folder.path) == 0);
 }
@@ -264,12 +263,12 @@ TEST_CASE("Dropping an active encoder stops it and leaves no file", "[Encode_09]
 TEST_CASE("A tile that cannot be read fails the encode naming it, leaving no file", "[Encode_09]")
 {
     const ScratchFolder folder;
-    Rebuilt::Encoder encoder;
-    const Rebuilt::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path};
-    REQUIRE(Rebuilt::create_encoder(desc, std::make_unique<FailingSource>(IrisSlide::LayerSize{.width = 2300, .height = 2100}), encoder).succeeded());
-    REQUIRE(Rebuilt::dispatch(encoder).succeeded());
+    IrisSlide::Encoder encoder;
+    const IrisSlide::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path};
+    REQUIRE(IrisSlide::create_encoder(desc, std::make_unique<FailingSource>(IrisSlide::LayerSize{.width = 2300, .height = 2100}), encoder).succeeded());
+    REQUIRE(IrisSlide::dispatch_encoder(encoder).succeeded());
     const auto ended = wait_for(encoder);
-    CHECK(ended.state == Rebuilt::EncoderState::FAILED);
+    CHECK(ended.state == IrisSlide::EncoderState::FAILED);
     CHECK_THAT(ended.error, ContainsSubstring("tile (2, 3)"));
     encoder.reset();
     CHECK(files_in(folder.path) == 0);
@@ -280,15 +279,15 @@ TEST_CASE("A dispatch that cannot make its file fails, and the encoder can still
     const ScratchFolder folder;
     const auto gone = folder.path / "gone";
     std::filesystem::create_directories(gone);
-    Rebuilt::Encoder encoder;
-    const Rebuilt::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = gone};
-    REQUIRE(Rebuilt::create_encoder(desc, std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 600, .height = 600}), encoder).succeeded());
+    IrisSlide::Encoder encoder;
+    const IrisSlide::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = gone};
+    REQUIRE(IrisSlide::create_encoder(desc, std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 600, .height = 600}), encoder).succeeded());
     std::filesystem::remove(gone);
-    CHECK(Rebuilt::dispatch(encoder).failed());
-    Rebuilt::EncoderProgress progress;
-    REQUIRE(Rebuilt::progress(encoder, progress).succeeded());
-    CHECK(progress.state == Rebuilt::EncoderState::FAILED);
-    CHECK(Rebuilt::interrupt(encoder).failed());   // refused by name: there is no active encode
+    CHECK(IrisSlide::dispatch_encoder(encoder).failed());
+    IrisSlide::EncoderProgress progress;
+    REQUIRE(IrisSlide::encoder_progress(encoder, progress).succeeded());
+    CHECK(progress.state == IrisSlide::EncoderState::FAILED);
+    CHECK(IrisSlide::interrupt_encoder(encoder).failed());   // refused by name: there is no active encode
     encoder.reset();
 }
 
@@ -395,8 +394,58 @@ TEST_CASE("With a step of 4 a slide whose 2x chain ends on a skipped layer reduc
 TEST_CASE("A layer step that is not a power of two from 2 is refused naming it", "[Encode_09]")
 {
     const ScratchFolder folder;
-    Rebuilt::Encoder encoder;
-    const Rebuilt::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path, .layer_step = 3};
-    CHECK_THAT(Rebuilt::create_encoder(desc, std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 600, .height = 600}), encoder).message,
+    IrisSlide::Encoder encoder;
+    const IrisSlide::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path, .layer_step = 3};
+    CHECK_THAT(IrisSlide::create_encoder(desc, std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 600, .height = 600}), encoder).message,
                ContainsSubstring("layer step 3"));
+}
+
+TEST_CASE("The caller's I2S pairs are written as METADATA_I2S with their version", "[Identity_07]")
+{
+    // D10 (decided 2026-11-25): the caller's pairs are the slide's one attributes block.
+    const ScratchFolder folder;
+    IrisSlide::Encoder encoder;
+    IrisSlide::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path};
+    desc.attributes.type = IrisSlide::METADATA_I2S;
+    desc.attributes.version = 1;   // I2S 0.1, packed major << 8 | minor (Q12)
+    desc.attributes["Stain"] = u8"H&E";
+    desc.attributes["ScanDate"] = u8"2026-11-27";
+    REQUIRE(IrisSlide::create_encoder(desc, std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 600, .height = 600}), encoder).succeeded());
+    REQUIRE(IrisSlide::dispatch_encoder(encoder).succeeded());
+    const auto done = wait_for(encoder);
+    REQUIRE(done.state == IrisSlide::EncoderState::DONE);
+    const auto slide = IrisSlide::open_slide({.filePath = done.file.string()});
+    REQUIRE(slide);
+    IrisSlide::SlideInfo info;
+    REQUIRE(IrisSlide::get_slide_info(slide, info).succeeded());
+    CHECK(info.metadata.attributes.type == IrisSlide::METADATA_I2S);
+    CHECK(info.metadata.attributes.version == 1);
+    CHECK(info.metadata.attributes.size() == 2);
+    CHECK(info.metadata.attributes.at("Stain") == u8"H&E");
+}
+
+TEST_CASE("Attributes IFE cannot hold, or an I2S claim with no version, are refused naming the pair", "[Identity_07]")
+{
+    const ScratchFolder folder;
+    const auto refusal = [&folder](IrisSlide::Attributes attributes) {
+        IrisSlide::Encoder encoder;
+        IrisSlide::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path, .attributes = std::move(attributes)};
+        return IrisSlide::create_encoder(desc, std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 600, .height = 600}), encoder).message;
+    };
+    IrisSlide::Attributes free_text;
+    free_text.type = IrisSlide::METADATA_FREE_TEXT;
+    free_text["Note"] = u8"x";
+    CHECK_THAT(refusal(free_text), ContainsSubstring("METADATA_FREE_TEXT"));
+    IrisSlide::Attributes unversioned;
+    unversioned.type = IrisSlide::METADATA_I2S;
+    unversioned["Stain"] = u8"H&E";
+    CHECK_THAT(refusal(unversioned), ContainsSubstring("version 0"));
+    IrisSlide::Attributes wide_key = unversioned;
+    wide_key.version = 1;
+    wide_key["St\xC3\xA4in"] = u8"x";
+    CHECK_THAT(refusal(wide_key), ContainsSubstring("is not ASCII"));
+    IrisSlide::Attributes bad_value = unversioned;
+    bad_value.version = 1;
+    bad_value["Stain"] = std::u8string(1, char8_t(0xC0));
+    CHECK_THAT(refusal(bad_value), ContainsSubstring("UTF-8"));
 }

@@ -2,46 +2,23 @@
 //  IrisSlideEncoder.hpp
 //  Iris
 //
-//  Created by Ryan Landvater on 1/14/24.
+//  The encoder (ARCHITECTURE D14). Its public surface (EncoderDesc, create_encoder,
+//  dispatch_encoder, encoder_progress, interrupt_encoder, encoder_output_name) is declared in
+//  Iris-Headers' IrisSlideCore.hpp. One way in, one way out: the encoder reads a Source (open_source
+//  is the only code that knows file formats) and writes compressed tiles through IFE's Builder
+//  (compress_tile is the only code that knows tile encodings).
 //
-
 #ifndef IrisSlideEncoder_hpp
 #define IrisSlideEncoder_hpp
+#include <memory>
+
+#include "IrisSlideCore.hpp"
+#include "IrisSlideSource.hpp"
+
 namespace IrisSlide {
-struct EncoderTracker;
-using AtomicEncoderStatus           = std::atomic<EncoderStatus>;
-class Encoder_t {
-    unsigned                        _concurrency    = std::thread::hardware_concurrency();
-    bool                            _derive;
-    const Context                   _context;
-    std::string                     _srcPath;
-    std::string                     _dstPath;
-    bool                            _anonymize;
-    Encoding                        _encoding;
-    EncoderDerivation               _derivation;
-    Attributes                      _attributes;
-    Threads                         _threads;
-    EncoderTracker                  _tracker;
-    AtomicEncoderStatus             _status;
-public:
-    explicit Encoder_t    (const IrisSlide::EncodeSlideInfo& info);
-    Encoder_t             (const Encoder_t&) = delete;
-    Encoder_t& operator = (const Encoder_t&) = delete;
-   ~Encoder_t             ();
-    
-    EncoderStatus get_status        () const;
-    Context     get_context         () const;
-    std::string get_src_path        () const;
-    std::string get_dst_path        () const;
-    Encoding    get_encoding        () const;
-    Result  get_encoder_progress    (EncoderProgress&) const;
-    
-    void    set_src_path            (const std::string& source);
-    void    set_dst_path            (const std::string& destination);
-    void    set_encoding            (Encoding desired_encoding);
-    Result  reset_encoder           ();
-    Result  dispatch_encoder        ();
-    Result  interrupt_encoder       ();
-};
+// RTM Encode_09
+/// create_encoder with the source already open: the core's one way in, which the public
+/// create_encoder funnels to after open_source; tests and future sources call it directly.
+[[nodiscard]] Result create_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source, Encoder& encoder) noexcept;
 } // END IRIS SLIDE NAMESPACE
 #endif /* IrisSlideEncoder_hpp */

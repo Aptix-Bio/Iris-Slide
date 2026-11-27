@@ -12,9 +12,6 @@ option(IRIS_BUILD_SHARED "Build IrisSlide Shared Library" ON)
 option(IRIS_BUILD_STATIC "Build IrisSlide Static Library" ON)
 option(IRIS_BUILD_ENCODER "Build the IrisSlide Encoder executable" ON)
 option(IRIS_BUILD_PYTHON "Build IrisSlide Python modules" OFF)
-# RTM Build_07: OpenSlide is opt-in (decided 2026-11-27), so the encoder needs no OpenSlide library
-# to encode a DICOM or Iris source; ON adds vendor slide files (not supported on Windows Arm64).
-option(IRIS_USE_OPENSLIDE "Read vendor slide files in the encoder through OpenSlide (opt-in)" OFF)
 option(IRIS_SYSTEM_DEPENDENCIES "Find the third-party libraries installed on the system instead of through vcpkg" OFF)
 option(IRIS_SLIDE_BUILD_TESTS "Build the Catch2 tests in tests/ (vcpkg.json's tests feature)" OFF)
 
@@ -29,9 +26,6 @@ endif()
 set(VCPKG_MANIFEST_FEATURES library)
 if (IRIS_BUILD_ENCODER)
     list(APPEND VCPKG_MANIFEST_FEATURES encoder)
-    if (IRIS_USE_OPENSLIDE)
-        list(APPEND VCPKG_MANIFEST_FEATURES openslide)
-    endif()
 endif()
 if (IRIS_BUILD_PYTHON)
     list(APPEND VCPKG_MANIFEST_FEATURES python)
@@ -127,12 +121,6 @@ if (IRIS_BUILD_ENCODER)
     # RTM Dicom_05: OpenJPEG decodes JPEG 2000 and HTJ2K source frames (ARCHITECTURE D17).
     find_package(OpenJPEG CONFIG REQUIRED)
     list(APPEND IrisSlideEncoderDependencies openjp2)
-    if (IRIS_USE_OPENSLIDE)
-        message(STATUS "BUILDING IRIS SLIDE ENCODER: Encoding from vendor files requires Openslide")
-        find_package(openslide-bin CONFIG REQUIRED)
-        message(STATUS "Found OpenSlide (openslide-bin ${openslide-bin_VERSION})")
-        list(APPEND IrisSlideEncoderDependencies OpenSlide::OpenSlide)
-    endif()
 endif()
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -149,8 +137,6 @@ set (
 set (
     IrisSlideEncoderSources
     ${irisheaders_SOURCE_DIR}/src/IrisAsync.cpp
-    ${SLIDE_SOURCE_DIR}/IrisSlideDeriveLayers.cpp
-    ${SLIDE_SOURCE_DIR}/IrisSlideDcmBridge.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideEncoder.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideOpenJpeg.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideDicomSeries.cpp
@@ -159,7 +145,7 @@ set (
     ${SLIDE_SOURCE_DIR}/IrisSlideDicomFrames.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideSource.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideReduce.cpp
-    ${SLIDE_SOURCE_DIR}/IrisSlideEncoder_.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideJpegFrames.cpp
 )
 set (
     IrisSlideInclude
@@ -168,13 +154,12 @@ set (
 )
 # The compile settings every target that compiles Iris-Slide's sources takes, on the
 # target (B7): the include paths; IFE_EXPORT blank, since IFE's static library is linked into
-# these binaries and none imports IFE from a DLL; whether the encoder reads OpenSlide.
+# these binaries and none imports IFE from a DLL.
 function(iris_slide_compile_settings target)
     target_include_directories(${target} PRIVATE ${IrisSlideInclude})
     target_compile_definitions(${target} PRIVATE
         IRIS_EXPORT_API=true
-        IFE_EXPORT=
-        IRIS_INCLUDE_OPENSLIDE=$<BOOL:${IRIS_USE_OPENSLIDE}>)
+        IFE_EXPORT=)
 endfunction()
 add_library(
     IrisSlideLib OBJECT

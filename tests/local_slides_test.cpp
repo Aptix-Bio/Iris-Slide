@@ -30,19 +30,13 @@ extern "C" {
 #include "IrisSlideDicomSeries.hpp"
 #include "IrisSlideDicomFrames.hpp"
 #include "IrisSlideDicomSource.hpp"
-#include "IrisSlideEncoder_.hpp"
+#include "IrisSlideEncoder.hpp"
 #include "IrisSlideRetile.hpp"
 #include "IrisSlideOpenJpeg.hpp"
 #include "IrisSlideSourceCodec.hpp"
 
-namespace IrisSlide {
-// The current encoder's DICOM bridge (src/IrisSlideDcmBridge.cpp), declared where it is called.
-DcmFile open_dicom_file (const std::filesystem::path&);
-} // END IRIS SLIDE NAMESPACE
-
 namespace {
 constexpr std::uint32_t RGB_CHANNELS = 3;
-constexpr std::uint32_t IRIS_TILE_SIDE = 256;   // the current encoder reads only 256-pixel frames
 constexpr std::uint32_t SAMPLED_FRAMES = 16;   // spread over the instance, first and last included
 constexpr std::uint32_t TAG_SOP_INSTANCE_UID = 0x00080018;
 constexpr std::uint32_t TAG_NUMBER_OF_FRAMES = 0x00280008;
@@ -224,21 +218,6 @@ TEST_CASE("Each local slide's series yields its highest VOLUME instance, TILED_F
     }
 }
 
-TEST_CASE("The current encoder refuses a JPEG 2000 or HTJ2K series, naming its transfer syntax",
-          "[Testing_01][Dicom_04]")
-{
-    // Until the rebuilt encoder decodes them, only baseline JPEG frames pass through as IFE JPEG
-    // tiles; the bridge checks the frame size first, so only 256-pixel instances reach this refusal.
-    std::size_t refused = 0;
-    for (const auto& local : jpeg2000_instances(slide_folder())) {
-        if (local.shape.columns != IRIS_TILE_SIDE || local.shape.rows != IRIS_TILE_SIDE) continue;
-        INFO(local.path.filename());
-        CHECK_THROWS_WITH(IrisSlide::open_dicom_file(local.path), ContainsSubstring(local.syntax));
-        ++refused;
-    }
-    REQUIRE(refused > 0);   // the folder holds a 256-pixel JPEG 2000 or HTJ2K instance
-}
-
 namespace {
 constexpr std::uint32_t RGBA_CHANNELS = 4;
 constexpr std::uint8_t ALPHA_OPAQUE = 0xFF;
@@ -338,7 +317,7 @@ TEST_CASE("open_source opens a local DICOM slide as its highest instance, with i
     }
 }
 
-TEST_CASE("The rebuilt encoder reads an HTJ2K slide directly and writes every layer, its base close to the re-cut",
+TEST_CASE("The encoder reads an HTJ2K slide directly and writes every layer, its base close to the re-cut",
           "[Testing_01][Encode_10]")
 {
     std::filesystem::path htj2k;
@@ -351,18 +330,18 @@ TEST_CASE("The rebuilt encoder reads an HTJ2K slide directly and writes every la
         std::filesystem::path path;
         ~RemoveFolder() { std::error_code ignored; std::filesystem::remove_all(path, ignored); }   // nothing to report if absent
     } const removal {out};
-    IrisSlide::Rebuilt::Encoder encoder;
-    const auto created = IrisSlide::Rebuilt::create_encoder({.source = htj2k, .destination = out}, encoder);
+    IrisSlide::Encoder encoder;
+    const auto created = IrisSlide::create_encoder({.source = htj2k, .destination = out}, encoder);
     INFO(created.message);
     REQUIRE(created.succeeded());
-    REQUIRE(IrisSlide::Rebuilt::dispatch(encoder).succeeded());
-    IrisSlide::Rebuilt::EncoderProgress progress;
+    REQUIRE(IrisSlide::dispatch_encoder(encoder).succeeded());
+    IrisSlide::EncoderProgress progress;
     do {
         std::this_thread::sleep_for(ENCODER_POLL);
-        REQUIRE(IrisSlide::Rebuilt::progress(encoder, progress).succeeded());
-    } while (progress.state == IrisSlide::Rebuilt::EncoderState::ACTIVE);
+        REQUIRE(IrisSlide::encoder_progress(encoder, progress).succeeded());
+    } while (progress.state == IrisSlide::EncoderState::ACTIVE);
     INFO(progress.error);
-    REQUIRE(progress.state == IrisSlide::Rebuilt::EncoderState::DONE);
+    REQUIRE(progress.state == IrisSlide::EncoderState::DONE);
     CHECK(progress.file.filename() == htj2k.stem().string() + ".jpeg.iris");
 
     const auto slide = IrisSlide::open_slide({.filePath = progress.file.string()});

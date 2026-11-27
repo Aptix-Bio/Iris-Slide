@@ -12,6 +12,7 @@
 
 #include "IrisSlideDicomSource.hpp"
 #include "IrisSlideFrameCodec.hpp"
+#include "IrisSlideJpegFrames.hpp"
 
 namespace IrisSlide {
 namespace {
@@ -43,9 +44,9 @@ std::unique_ptr<Source> open_source (const std::filesystem::path& path)
 bool is_decodable (SourceCodec codec) noexcept
 {
     switch (codec) {
+        case SourceCodec::JPEG:
         case SourceCodec::JPEG_2000:
         case SourceCodec::HTJ2K:    return true;
-        case SourceCodec::JPEG:     return false;   // the current encoder passes JPEG frames through
     }
     return false;
 }
@@ -59,7 +60,8 @@ void decode_frame (SourceCodec codec, std::span<const std::uint8_t> bytes, Frame
             decode_jpeg2000_frame(bytes, shape, rgb);
             return;
         case SourceCodec::JPEG:
-            throw std::runtime_error("the rebuilt encoder does not decode JPEG source frames yet");
+            decode_jpeg_frame(bytes, shape, rgb);
+            return;
     }
     throw std::runtime_error("decode_frame was given an unknown source codec " + std::to_string(int(codec)));
 }

@@ -1,107 +1,49 @@
-from __future__ import absolute_import
-import os, platform, sys, time, multiprocessing
+"""Iris.Encoder: encode a whole-slide image as an Iris slide (.iris).
 
-# Import core types from parent Iris module FIRST to register types
-from .. import iris_core
-from ..iris_core import Result, Format
+The encoder reads a DICOM whole-slide instance (JPEG, JPEG 2000 or HTJ2K frames), derives every
+lower layer by a 2x bicubic reduction and writes <source stem>.jpeg.iris. Every failure raises
+RuntimeError naming what failed.
+"""
+from __future__ import annotations
 
-# Import the Slide submodule 
-from .. import Slide
-from ..Slide import Context
+import os
+import sys
+import time
 
-# Import all encoder functionality from the renamed C++ extension
-# This must come AFTER the core types are imported to avoid type registration issues
-from .encoder import *
+from .. import iris_core  # registers the shared types first
+from .encoder import (EncoderState, EncoderProgress, Encoder, create_encoder, dispatch_encoder,
+                      encoder_progress, interrupt_encoder, encoder_output_name)
 
-__all__ = ['encode_slide_file']
+__all__ = ["encode_slide_file", "EncoderState", "EncoderProgress", "Encoder", "create_encoder",
+           "dispatch_encoder", "encoder_progress", "interrupt_encoder", "encoder_output_name"]
 
-def encode_slide_file(source: str, 
-                      outdir: str = '', 
-                      desired_encoding: Slide.Encoding = Slide.Encoding.TILE_ENCODING_JPEG, 
-                      desired_byte_format: Format = Format.FORMAT_R8G8B8, 
-                      strip_metadata: bool = False, 
-                      anonymize: bool = False, 
-                      derivation: EncoderDerivation = EncoderDerivation.layer_2x, 
-                      concurrency: int = None, 
-                      codec_context: Context = None,
-                      i2s_attributes: dict[str, str] | None = None,
-                      i2s_version: int = 0) -> Result:
-    """Encode a slide file as an Iris slide.
+_POLL_SECONDS = 0.5
 
-    i2s_attributes are the slide's Iris Interoperability Specification (I2S)
-    attributes as key and value text, written as its METADATA_I2S attributes in
-    place of the source's. i2s_version is the I2S version they conform to, as
-    IFE's 16-bit ATTRIBUTES.VERSION holds it: major << 8 | minor, so I2S 0.1 is
-    1 and I2S 1.0 is 256. It is required with i2s_attributes; 0, an unversioned
-    claim, is refused.
+
+def encode_slide_file(source: str, outdir: str = "", quality: int = 90, subsampling: str = "422",
+                      layer_step: int = 2, memory_budget: int = 0, concurrency: int = 0,
+                      i2s_attributes: dict[str, str] | None = None, i2s_version: int = 0,
+                      show_progress: bool = True) -> str:
+    """Encode source as an Iris slide in outdir (default: the source's folder); returns the file written.
+
+    i2s_attributes are the slide's Iris Interoperability Specification (I2S) attributes as key and
+    value text, written as its METADATA_I2S attributes. i2s_version is the I2S version they conform
+    to, as IFE's 16-bit ATTRIBUTES.VERSION holds it: major << 8 | minor, so I2S 0.1 is 1. It is
+    required with i2s_attributes; 0, an unversioned claim, is refused.
     """
-    encoder = None
-    
-    # Default concurrency to CPU count if not specified
-    if concurrency is None:
-        concurrency = multiprocessing.cpu_count()
-    
-    try: 
-        # Check the source file to see if it is a valid OS file path
-        if (os.path.isfile(source) == False):
-            raise Exception(f"Invalid slide source path provided: {source}")
-        
-        # Check the destination directory path and generate the output file
-        if (os.path.isdir(outdir) == False):
-            outdir = os.path.dirname(source)
-            print(f"No destination or invalid directory provided. Selecting source directory instead: {outdir}")
-        
-        # Create the Iris Slide Encoder
-        encoder = create_encoder(source, outdir, desired_encoding, desired_byte_format, anonymize, derivation, concurrency, codec_context,
-                                 i2s_attributes or {}, i2s_version)
-        if (encoder == None): 
-            raise Exception("Failed to create an Iris Encoder")
-        
-        # Dispatch the encoder
-        result = dispatch_encoder(encoder)
-        if result.failed(): 
-            raise Exception(f"Failed to dispatch encoder: {result.message}")
-
-        result, progress = get_encoder_progress(encoder)
-
-        # Try and make the loading progress bar 50% of width. Revert to 40
-        try:    bar_width = int(os.get_terminal_size().columns / 2)
-        except: bar_width = 40
-
-        # Monitor the progress of the encoding
-        start_time = time.time()
-        prog       = 0.001
-        while (progress.status == EncoderStatus.ENCODER_ACTIVE):
-            result, progress = get_encoder_progress(encoder)
-            if result.failed():
-                raise Exception(f'Error during encoding progress check: {result.message}')
-            
-            # Get the current encoding progress, avoiding div/0 faults
-            # Then calculate the remaining time (ETA) and write the progress bar to stdout
-            prog        = progress.progress if progress.progress > prog else prog 
-            duration    = time.time()-start_time
-            mins, sec   = divmod(duration/prog - duration, 60)
-            time_str    = f"{int(mins):02}:{sec:02.0f}"
-            print(f"\r[{u'█'*int(prog*bar_width)}{'.'*int((1-prog)*bar_width)}] {prog*100:.1f}% ETA: {time_str}", end='', file=sys.stdout, flush=True)
-            time.sleep(1)
-        print ("\n", file=sys.stdout, flush=True)
-
-        result, progress = get_encoder_progress(encoder)
-        if result.failed():
-            raise Exception (f'Error during final progress check {result.message}')
-        elif (progress.status == EncoderStatus.ENCODER_ERROR):
-            raise Exception (f'Error during final progress check {progress.errorMsg}')
-        else: print(f'Iris Encoder completed successfully\nSlide written to {outdir+"/"+os.path.splitext(os.path.basename(source))[0]+".iris"}')
-    except Exception as e:
-        if (encoder): interrupt_encoder(encoder)
-        print(f"Encoder raised exception: {e}")
-
-
-
-    
-    
-    
-
-
-
-    
+    encoder = create_encoder(source, outdir or os.path.dirname(os.path.abspath(source)), quality, subsampling,
+                             memory_budget, concurrency, layer_step, i2s_attributes or {}, i2s_version)
+    dispatch_encoder(encoder)
+    try:
+        while (progress := encoder_progress(encoder)).state == EncoderState.ACTIVE:
+            if show_progress:
+                print(f"\r{progress.fraction * 100:5.1f}%", end="", file=sys.stdout, flush=True)
+            time.sleep(_POLL_SECONDS)
+    except KeyboardInterrupt:
+        interrupt_encoder(encoder)
+        raise
+    if show_progress:
+        print(file=sys.stdout)
+    if progress.state != EncoderState.DONE:
+        raise RuntimeError(f"the encode did not complete ({progress.state.name}): {progress.error}")
+    return progress.file
