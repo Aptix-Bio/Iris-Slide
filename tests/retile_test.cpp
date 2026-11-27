@@ -18,7 +18,7 @@
 namespace {
 constexpr std::uint32_t SEED = 20261127;
 constexpr std::uint8_t WHITE = 0xFF;
-constexpr std::uint8_t OPAQUE = 0xFF;
+constexpr std::uint8_t ALPHA_OPAQUE = 0xFF;   // named so: <wingdi.h> defines OPAQUE as a macro
 constexpr std::uint32_t RGB = 3;
 constexpr std::uint32_t RGBA = 4;
 constexpr std::uint32_t FRAME = 240;   // the source frame side the 256-pixel tiles are re-cut from
@@ -61,7 +61,7 @@ std::size_t wrong_values(const std::vector<std::uint8_t>& tile, const IrisSlide:
         const bool inside = gx < grid.width && gy < grid.height;
         const auto* px = &tile[pixel * RGBA];
         for (std::uint32_t c = 0; c < RGB; ++c) wrong += px[c] != (inside ? pattern(gx, gy, c) : WHITE);
-        wrong += px[RGB] != OPAQUE;
+        wrong += px[RGB] != ALPHA_OPAQUE;
     }
     return wrong;
 }
@@ -98,7 +98,7 @@ TEST_CASE("The scalar reference makes every pixel opaque and keeps its channels"
     const std::vector<std::uint8_t> rgb {1, 2, 3, 4, 5, 6};
     std::vector<std::uint8_t> rgba(8, 0);
     IrisSlide::rgb8_to_rgba8_reference(rgb, rgba);
-    CHECK(rgba == std::vector<std::uint8_t>{1, 2, 3, OPAQUE, 4, 5, 6, OPAQUE});
+    CHECK(rgba == std::vector<std::uint8_t>{1, 2, 3, ALPHA_OPAQUE, 4, 5, 6, ALPHA_OPAQUE});
 }
 
 TEST_CASE("240-pixel frames re-cut into 256-pixel tiles keep every pixel, white beyond the slide",

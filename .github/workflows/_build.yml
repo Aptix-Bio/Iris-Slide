@@ -113,9 +113,10 @@ jobs:
         run: cmake --build --preset ${{ inputs.preset }}
       # CiRunsTests_1.5 (RTM Testing_01): the suite on every native cell, a few seconds; the tests
       # on real slides are opt-in (label local) and run on a maintainer's machine. The JavaScript
-      # module has no ctest suite.
+      # module has no ctest suite, and only the `ci` configure preset has a test preset of its name
+      # among the presets callers pass, so the step runs for it alone.
       - name: Test
-        if: inputs.source == '.'
+        if: inputs.source == '.' && inputs.preset == 'ci'
         run: ctest --preset ${{ inputs.preset }}
       # From the repository's root, with relative paths: a Windows workspace path loses its
       # backslashes in bash (PR #2's second run).

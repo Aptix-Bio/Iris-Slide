@@ -24,7 +24,7 @@ constexpr int SIDE = 240;
 constexpr int OTHER_SIDE = 256;          // a size the instance may declare that the stream is not
 constexpr int QUALITY = 95;
 constexpr std::size_t RGB = 3, RGBA = 4;
-constexpr std::uint8_t OPAQUE = 0xFF;
+constexpr std::uint8_t ALPHA_OPAQUE = 0xFF;   // named so: <wingdi.h> defines OPAQUE as a macro
 constexpr double PSNR_FLOOR_DB = 38.0;   // quality 95, 4:4:4 on a smooth pattern
 
 std::vector<std::uint8_t> pattern()
@@ -121,7 +121,7 @@ TEST_CASE("A JPEG stream decodes into each 8-bit layout the reader offers, RGBA 
     std::size_t wrong = 0;
     for (std::size_t pixel = 0; pixel < std::size_t{SIDE} * SIDE; ++pixel) {
         for (std::size_t c = 0; c < RGB; ++c) wrong += as_rgba[pixel * RGBA + c] != as_rgb[pixel * RGB + c];
-        wrong += as_rgba[pixel * RGBA + RGB] != OPAQUE;
+        wrong += as_rgba[pixel * RGBA + RGB] != ALPHA_OPAQUE;
     }
     CHECK(wrong == 0);
     CHECK_THROWS_WITH(IrisSlide::decode_jpeg(jpeg, {.columns = SIDE, .rows = SIDE}, Iris::FORMAT_UNDEFINED, as_rgb),
