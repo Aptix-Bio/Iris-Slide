@@ -1,7 +1,7 @@
 // RTM Pyramid_01, Pyramid_02, Pyramid_03, Pyramid_04
 // ReductionWeights_23.1, ScalarReduction_23.2, HighwayReduction_23.3 (ARCHITECTURE D15, D16):
-// a 256-pixel tile of layer n+1 is reduced from the 519 x 519 region of layer n it reads (its
-// 2 x 2 source tiles, 3 pixels before and 4 after) by a Mitchell-Netravali cubic widened by 2, in
+// a 256-pixel tile of layer n+1 is reduced from the 518 x 518 region of layer n it reads (its
+// 2 x 2 source tiles, 3 pixels before and 3 after) by a Mitchell-Netravali cubic widened by 2, in
 // fixed-point arithmetic, so the scalar reference and every Highway target give the same bytes.
 #include <cstdint>
 #include <random>
