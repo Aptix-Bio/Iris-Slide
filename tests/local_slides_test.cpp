@@ -1,9 +1,13 @@
-// RTM Testing_01, Dicom_05, Dicom_03, Dicom_04
+// RTM Testing_01, Dicom_05, Dicom_03, Dicom_04, Encode_10
 // LocalSlideInputs_22.6 and OpenJpegFrames_22.3. Decided 2026-11-27: while the encoder is
 // developed, the tests that need a real slide read the maintainer's own slides from the folder the
 // CMake cache variable IRIS_SLIDE_TEST_SLIDES names; no slide file enters the repository. An
 // unset variable, or a folder with no JPEG 2000 or HTJ2K instance, fails by name.
+#include <chrono>
+#include <cmath>
 #include <cstddef>
+#include <random>
+#include <thread>
 #include <cstdint>
 #include <filesystem>
 #include <map>
@@ -24,6 +28,8 @@ extern "C" {
 
 #include "IrisSlidePriv.hpp"
 #include "IrisSlideDicomSeries.hpp"
+#include "IrisSlideJpeg2000Source.hpp"
+#include "IrisSlideRetile.hpp"
 #include "IrisSlideOpenJpeg.hpp"
 #include "IrisSlideSourceCodec.hpp"
 
@@ -229,4 +235,89 @@ TEST_CASE("The current encoder refuses a JPEG 2000 or HTJ2K series, naming its t
         ++refused;
     }
     REQUIRE(refused > 0);   // the folder holds a 256-pixel JPEG 2000 or HTJ2K instance
+}
+
+namespace {
+constexpr std::uint32_t RGBA_CHANNELS = 4;
+constexpr std::uint8_t ALPHA_OPAQUE = 0xFF;
+constexpr double JPEG_PSNR_FLOOR_DB = 35.0;   // quality 90, 4:2:2 on stained tissue
+constexpr auto ENCODER_POLL = std::chrono::milliseconds(50);
+
+std::vector<std::uint8_t> tile_buffer()
+{
+    return std::vector<std::uint8_t>(std::size_t{IrisSlide::RECUT_TILE} * IrisSlide::RECUT_TILE * RGBA_CHANNELS);
+}
+
+double psnr_rgb(const std::vector<std::uint8_t>& a, const std::uint8_t* b)
+{
+    double squared = 0;
+    std::size_t samples = 0;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (i % RGBA_CHANNELS == 3) continue;
+        const double difference = double(a[i]) - double(b[i]);
+        squared += difference * difference;
+        ++samples;
+    }
+    const double mse = squared / double(samples);
+    return mse == 0 ? INFINITY : 10.0 * std::log10(255.0 * 255.0 / mse);
+}
+} // namespace
+
+TEST_CASE("An HTJ2K slide re-cut into 256-pixel tiles equals its lossless JPEG 2000 original's re-cut",
+          "[Testing_01][Encode_10]")
+{
+    const auto instances = jpeg2000_instances(slide_folder());
+    std::map<std::string, const Instance*> lossless_by_uid;
+    for (const auto& instance : instances)
+        if (instance.syntax == JPEG_2000_LOSSLESS) lossless_by_uid[instance.sop_uid] = &instance;
+    std::size_t pairs = 0;
+    for (const auto& copy : instances) {
+        if (IrisSlide::source_codec(copy.syntax) != IrisSlide::SourceCodec::HTJ2K) continue;
+        const auto original = lossless_by_uid.find(copy.sop_uid);
+        if (original == lossless_by_uid.end()) continue;
+        ++pairs;
+        INFO(copy.path.filename());
+        IrisSlide::Jpeg2000Source htj2k(IrisSlide::read_dicom_instance(copy.path));
+        IrisSlide::Jpeg2000Source j2k(IrisSlide::read_dicom_instance(original->second->path));
+        const auto grid = htj2k.grid();
+        REQUIRE(IrisSlide::tiles_across(grid) == IrisSlide::tiles_across(j2k.grid()));
+        // A band of tiles in row-major order, the order the encoder reads, then the far corner.
+        auto a = tile_buffer(), b = tile_buffer();
+        const std::uint32_t band = IrisSlide::tiles_down(grid) / 2;
+        for (std::uint32_t x = 0; x < IrisSlide::tiles_across(grid); ++x) {
+            htj2k.read_tile(x, band, a);
+            j2k.read_tile(x, band, b);
+            CHECK(a == b);
+        }
+        htj2k.read_tile(IrisSlide::tiles_across(grid) - 1, IrisSlide::tiles_down(grid) - 1, a);
+        j2k.read_tile(IrisSlide::tiles_across(grid) - 1, IrisSlide::tiles_down(grid) - 1, b);
+        CHECK(a == b);
+    }
+    REQUIRE(pairs > 0);
+}
+
+TEST_CASE("A re-cut tile's pixels are the source frames' pixels at the same slide position",
+          "[Testing_01][Encode_10]")
+{
+    for (const auto& local : jpeg2000_instances(slide_folder())) {
+        INFO(local.path.filename());
+        IrisSlide::Jpeg2000Source source(IrisSlide::read_dicom_instance(local.path));
+        const auto grid = source.grid();
+        std::mt19937 random(20261127);
+        auto tile = tile_buffer();
+        const std::uint32_t tx = IrisSlide::tiles_across(grid) / 3, ty = IrisSlide::tiles_down(grid) / 3;
+        source.read_tile(tx, ty, tile);
+        for (int probe = 0; probe < 32; ++probe) {
+            const std::uint32_t x = random() % IrisSlide::RECUT_TILE, y = random() % IrisSlide::RECUT_TILE;
+            const std::uint64_t gx = std::uint64_t{tx} * IrisSlide::RECUT_TILE + x;
+            const std::uint64_t gy = std::uint64_t{ty} * IrisSlide::RECUT_TILE + y;
+            const auto frame_number = static_cast<std::uint32_t>(
+                (gy / local.shape.rows) * ((grid.width + local.shape.columns - 1) / local.shape.columns) +
+                gx / local.shape.columns + 1);
+            const auto frame = local.decode(frame_number);
+            const std::size_t at = ((gy % local.shape.rows) * local.shape.columns + gx % local.shape.columns) * RGB_CHANNELS;
+            const auto* px = &tile[(std::size_t{y} * IrisSlide::RECUT_TILE + x) * RGBA_CHANNELS];
+            CHECK((px[0] == frame[at] && px[1] == frame[at + 1] && px[2] == frame[at + 2] && px[3] == ALPHA_OPAQUE));
+        }
+    }
 }

@@ -154,6 +154,8 @@ set (
     ${SLIDE_SOURCE_DIR}/IrisSlideEncoder.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideOpenJpeg.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideDicomSeries.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideRetile.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideJpeg2000Source.cpp
 )
 set (
     IrisSlideInclude
