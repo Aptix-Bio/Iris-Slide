@@ -89,7 +89,9 @@ flowchart LR
    with no hit or above one compile in twenty.
 9. **One reusable build, CMake does the work.** `_build.yml` configures, builds
    and packages one cell and is called once per platform; Linux runs first,
-   Windows and macOS only after it passes. Each `run:` step is one command, at
+   Windows and macOS only after it passes. Windows is two cells, one per compiler
+   (`cl` and `clang-cl`, D21); `scripts/clang_cl_path.cmake` puts Visual Studio's
+   clang-cl on the ClangCL cell's PATH. Each `run:` step is one command, at
    most `MAX_RUN_LINES` (2) lines (`tools/workflow_lint.py`): a preset, or
    `cmake -P scripts/<name>.cmake`, which is the same on every operating
    system's shell and is tested in `tools/tests`.
