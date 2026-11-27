@@ -16,13 +16,11 @@
 #include <string>
 #include <vector>
 
+#include "IrisSlideGeometry.hpp"
 #include "IrisSlideOpenJpeg.hpp"
 
 namespace IrisSlide {
 // RTM Encode_10
-/// The side of the tiles a re-cut makes, in pixels: Iris-Slide's tile length.
-constexpr std::uint32_t RECUT_TILE = 256;
-
 /// A slide stored as frames in row-major order (a TILED_FULL DICOM instance): its total pixel
 /// size and the size of every frame. Frames at the right and bottom edges are full-size; only the
 /// pixels within width and height are the slide's.
@@ -38,16 +36,6 @@ template <typename FrameOf>
 concept FrameLookup = requires(FrameOf frame_of, std::uint32_t column, std::uint32_t row) {
     { frame_of(column, row) } -> std::convertible_to<std::span<const std::uint8_t>>;
 };
-
-/// Tiles across and down a re-cut of @p grid makes.
-constexpr std::uint32_t tiles_across (const SlideGrid& grid) noexcept
-{
-    return static_cast<std::uint32_t>((grid.width + RECUT_TILE - 1) / RECUT_TILE);
-}
-constexpr std::uint32_t tiles_down (const SlideGrid& grid) noexcept
-{
-    return static_cast<std::uint32_t>((grid.height + RECUT_TILE - 1) / RECUT_TILE);
-}
 
 /// Tile (tile_x, tile_y) of the 256-pixel re-cut of @p grid, written into @p rgba as RGBA8
 /// (RECUT_TILE² × 4 bytes, alpha opaque): each row is the spans of the frames it crosses, and
@@ -75,17 +63,16 @@ template <FrameLookup FrameOf>
 void recut_tile (const SlideGrid& grid, std::uint32_t tile_x, std::uint32_t tile_y,
                  FrameOf&& frame_of, std::span<std::uint8_t> rgba)
 {
-    constexpr std::size_t RGB = 3, RGBA = 4;
     constexpr std::uint8_t WHITE = 0xFF;   // white and opaque, in every channel
-    const std::size_t tile_bytes  = std::size_t{RECUT_TILE} * RECUT_TILE * RGBA;
-    const std::size_t frame_bytes = std::size_t{grid.frame.columns} * grid.frame.rows * RGB;
+    const std::size_t tile_bytes  = std::size_t{RECUT_TILE} * RECUT_TILE * RGBA_BYTES;
+    const std::size_t frame_bytes = std::size_t{grid.frame.columns} * grid.frame.rows * RGB_BYTES;
     if (rgba.size() != tile_bytes)
         throw std::runtime_error("a re-cut tile needs " + std::to_string(tile_bytes) + " bytes, given " +
                                  std::to_string(rgba.size()));
     const std::uint64_t left = std::uint64_t{tile_x} * RECUT_TILE;
     const std::uint64_t top  = std::uint64_t{tile_y} * RECUT_TILE;
     for (std::uint32_t row = 0; row < RECUT_TILE; ++row) {
-        std::uint8_t* out = rgba.data() + std::size_t{row} * RECUT_TILE * RGBA;
+        std::uint8_t* out = rgba.data() + std::size_t{row} * RECUT_TILE * RGBA_BYTES;
         const std::uint64_t y = top + row;
         std::uint32_t filled = 0;
         while (y < grid.height && filled < RECUT_TILE && left + filled < grid.width) {
@@ -99,11 +86,11 @@ void recut_tile (const SlideGrid& grid, std::uint32_t tile_x, std::uint32_t tile
                 throw std::runtime_error("a frame for the re-cut holds " + std::to_string(frame.size()) +
                                          " bytes where " + std::to_string(frame_bytes) + " are needed");
             const std::size_t line = y % grid.frame.rows;
-            rgb8_to_rgba8(frame.subspan((line * grid.frame.columns + column) * RGB, std::size_t{count} * RGB),
-                          std::span(out + std::size_t{filled} * RGBA, std::size_t{count} * RGBA));
+            rgb8_to_rgba8(frame.subspan((line * grid.frame.columns + column) * RGB_BYTES, std::size_t{count} * RGB_BYTES),
+                          std::span(out + std::size_t{filled} * RGBA_BYTES, std::size_t{count} * RGBA_BYTES));
             filled += count;
         }
-        std::memset(out + std::size_t{filled} * RGBA, WHITE, std::size_t{RECUT_TILE - filled} * RGBA);
+        std::memset(out + std::size_t{filled} * RGBA_BYTES, WHITE, std::size_t{RECUT_TILE - filled} * RGBA_BYTES);
     }
 }
 } // END IRIS SLIDE NAMESPACE

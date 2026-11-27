@@ -40,7 +40,7 @@ std::unique_ptr<Source> open_source (const std::filesystem::path& path)
 }
 
 // RTM Dicom_05
-bool decodes (SourceCodec codec) noexcept
+bool is_decodable (SourceCodec codec) noexcept
 {
     switch (codec) {
         case SourceCodec::JPEG_2000:

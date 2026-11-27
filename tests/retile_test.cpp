@@ -91,8 +91,8 @@ TEST_CASE("240-pixel frames re-cut into 256-pixel tiles keep every pixel, white 
     const auto frame_of = [&frames, across](std::uint32_t fx, std::uint32_t fy) {
         return std::span<const std::uint8_t>(frames[fy * across + fx]);
     };
-    CHECK(IrisSlide::tiles_across(grid) == 3);
-    CHECK(IrisSlide::tiles_down(grid) == 2);
+    CHECK(IrisSlide::tiles_across({.width = grid.width, .height = grid.height}) == 3);
+    CHECK(IrisSlide::tiles_down({.width = grid.width, .height = grid.height}) == 2);
     std::vector<std::uint8_t> tile(std::size_t{IrisSlide::RECUT_TILE} * IrisSlide::RECUT_TILE * RGBA);
     std::size_t wrong = 0;
     for (std::uint32_t ty = 0; ty < 2; ++ty)

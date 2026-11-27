@@ -25,7 +25,7 @@ namespace HWY_NAMESPACE {
 namespace hn = hwy::HWY_NAMESPACE;
 
 // RTM Pyramid_04
-/// Whole vectors: three planes loaded from interleaved RGB, stored interleaved with an opaque
+/// Whole vectors: three planes loaded from interleaved RGB_BYTES, stored interleaved with an opaque
 /// fourth plane. The pixels left over after the last whole vector go one at a time.
 void Rgb8ToRgba8 (const std::uint8_t* HWY_RESTRICT rgb, std::uint8_t* HWY_RESTRICT rgba, std::size_t pixels)
 {
@@ -60,13 +60,12 @@ HWY_EXPORT(Rgb8ToRgba8);
 HWY_EXPORT(ChosenTargetName);
 
 namespace {
-constexpr std::size_t RGB = 3, RGBA = 4;
 std::size_t pixels_of (std::span<const std::uint8_t> rgb, std::span<std::uint8_t> rgba)
 {
-    if (rgb.size() % RGB != 0 || rgba.size() != rgb.size() / RGB * RGBA)
+    if (rgb.size() % RGB_BYTES != 0 || rgba.size() != rgb.size() / RGB_BYTES * RGBA_BYTES)
         throw std::runtime_error("RGB8 to RGBA8 needs 4 bytes for every 3: given " + std::to_string(rgb.size()) +
                                  " and " + std::to_string(rgba.size()));
-    return rgb.size() / RGB;
+    return rgb.size() / RGB_BYTES;
 }
 } // namespace
 
@@ -80,10 +79,10 @@ void rgb8_to_rgba8_reference (std::span<const std::uint8_t> rgb, std::span<std::
 {
     const std::size_t pixels = pixels_of(rgb, rgba);
     for (std::size_t i = 0; i < pixels; ++i) {
-        rgba[RGBA * i + 0] = rgb[RGB * i + 0];
-        rgba[RGBA * i + 1] = rgb[RGB * i + 1];
-        rgba[RGBA * i + 2] = rgb[RGB * i + 2];
-        rgba[RGBA * i + 3] = 0xFF;
+        rgba[RGBA_BYTES * i + 0] = rgb[RGB_BYTES * i + 0];
+        rgba[RGBA_BYTES * i + 1] = rgb[RGB_BYTES * i + 1];
+        rgba[RGBA_BYTES * i + 2] = rgb[RGB_BYTES * i + 2];
+        rgba[RGBA_BYTES * i + 3] = 0xFF;
     }
 }
 

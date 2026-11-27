@@ -63,7 +63,8 @@ using Encoder = std::shared_ptr<Encoder_t>;
 [[nodiscard]] Result progress (const Encoder& encoder, EncoderProgress& progress) noexcept;
 /// Stops an ACTIVE encode; it ends INTERRUPTED and leaves no file.
 [[nodiscard]] Result interrupt (const Encoder& encoder) noexcept;
-/// The output file name for @p source and @p encoding: <source stem>.<encoding>.iris.
-[[nodiscard]] std::string output_name (const std::filesystem::path& source, Encoding encoding);
+/// The output file name for @p source and @p encoding, <source stem>.<encoding>.iris, into
+/// @p name. Refuses an encoding this encoder does not write, naming it.
+[[nodiscard]] Result output_name (const std::filesystem::path& source, Encoding encoding, std::string& name) noexcept;
 } // END IRIS SLIDE REBUILT NAMESPACE
 #endif /* IrisSlideEncoder__hpp */

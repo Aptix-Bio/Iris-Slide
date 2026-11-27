@@ -15,7 +15,7 @@
 #include <span>
 #include <string>
 
-#include "IrisSlideReduce.hpp"
+#include "IrisSlideGeometry.hpp"
 
 namespace IrisSlide {
 // RTM Encode_10

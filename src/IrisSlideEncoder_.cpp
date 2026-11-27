@@ -37,8 +37,7 @@
 
 namespace IrisSlide::Rebuilt {
 namespace {
-constexpr std::size_t RGBA = 4;
-constexpr std::uint64_t TILE_BYTES = std::uint64_t{RECUT_TILE} * RECUT_TILE * RGBA;
+constexpr std::uint64_t TILE_BYTES = std::uint64_t{RECUT_TILE} * RECUT_TILE * RGBA_BYTES;
 /// The default budget is this fraction of physical memory (Q20, decided 2026-11-27).
 constexpr std::uint64_t BUDGET_DIVISOR = 4;
 /// A derived row reads up to 4 rows of the layer below; with the row being made, 5 rows of each
@@ -75,28 +74,29 @@ const char* written_encoding (Encoding encoding) noexcept
     }
     return nullptr;
 }
-const char* encoding_name (Encoding encoding) noexcept
+/// The encoding's name as IFE's specification spells it (IFE's generated member_name).
+std::string encoding_name (Encoding encoding)
 {
-    switch (encoding) {
-        case TILE_ENCODING_UNDEFINED: return "TILE_ENCODING_UNDEFINED";
-        case TILE_ENCODING_IRIS:      return "TILE_ENCODING_IRIS";
-        case TILE_ENCODING_JPEG:      return "TILE_ENCODING_JPEG";
-        case TILE_ENCODING_AV1:       return "TILE_ENCODING_AV1";
-        case TILE_ENCODING_UASTC:     return "TILE_ENCODING_UASTC";
-        case TILE_ENCODING_XUASTC:    return "TILE_ENCODING_XUASTC";
-    }
-    return "an unknown tile encoding";
+    return std::string(Iris::File::constants::member_name(static_cast<Iris::File::constants::TileEncodings>(encoding)));
+}
+/// <source stem>.<encoding word>.iris; throws naming an encoding this encoder does not write.
+std::string file_name (const std::filesystem::path& source, Encoding encoding)
+{
+    const char* word = written_encoding(encoding);
+    if (!word) throw std::runtime_error(std::string("the rebuilt encoder does not write ") + encoding_name(encoding));
+    return source.stem().string() + "." + word + ".iris";
 }
 
 /// The encoder's one way out for pixels: a 256-pixel RGBA8 tile compressed in the IFE tile
 /// encoding the file declares. An encoding is one case here (JPEG: libjpeg-turbo through the
 /// codec context).
-Buffer compress_tile (const Context& context, Encoding encoding, std::vector<std::uint8_t>& rgba,
+Buffer compress_tile (const Context& context, Encoding encoding, const std::vector<std::uint8_t>& rgba,
                       Quality quality, Subsampling subsampling)
 {
     switch (encoding) {
         case TILE_ENCODING_JPEG:
-            return context->compress_tile({.pixelArray  = Iris::Wrap_weak_buffer_fom_data(rgba.data(), rgba.size()),
+            return context->compress_tile({// The codec only reads the pixels; the buffer wrapper takes a mutable pointer.
+                                           .pixelArray  = Iris::Wrap_weak_buffer_fom_data(const_cast<std::uint8_t*>(rgba.data()), rgba.size()),
                                            .format      = Iris::FORMAT_R8G8B8A8,
                                            .encoding    = encoding,
                                            .quality     = quality,
@@ -110,6 +110,36 @@ Buffer compress_tile (const Context& context, Encoding encoding, std::vector<std
     }
     throw std::runtime_error(std::string("the rebuilt encoder does not write ") + encoding_name(encoding));
 }
+
+/// The encoder's phase. SEALING is the end of an encode: the file's structure is written and
+/// it is renamed into place, which an interrupt cannot stop halfway. Callers see it as ACTIVE.
+enum class Phase : std::uint8_t { READY, ACTIVE, SEALING, DONE, FAILED, INTERRUPTED };
+EncoderState public_state (Phase phase) noexcept
+{
+    switch (phase) {
+        case Phase::READY:       return EncoderState::READY;
+        case Phase::ACTIVE:
+        case Phase::SEALING:     return EncoderState::ACTIVE;
+        case Phase::DONE:        return EncoderState::DONE;
+        case Phase::FAILED:      return EncoderState::FAILED;
+        case Phase::INTERRUPTED: return EncoderState::INTERRUPTED;
+    }
+    return EncoderState::FAILED;
+}
+const char* phase_name (Phase phase) noexcept
+{
+    switch (phase) {
+        case Phase::READY:       return "READY";
+        case Phase::ACTIVE:      return "ACTIVE";
+        case Phase::SEALING:     return "SEALING";
+        case Phase::DONE:        return "DONE";
+        case Phase::FAILED:      return "FAILED";
+        case Phase::INTERRUPTED: return "INTERRUPTED";
+    }
+    return "an unknown phase";
+}
+/// The longest failure message kept; a longer one is cut. Fixed, so recording a failure never allocates.
+constexpr std::size_t ERROR_CAPACITY = 1024;
 
 /// One row of one layer: its tiles' pixels (kept while a row above still reads them) and their
 /// compressed streams (kept until written).
@@ -131,7 +161,7 @@ struct Job {
     std::uint32_t row;
 };
 /// The rows of layer depth - 1 that row @p row of layer depth reads: its region spans source
-/// rows 512·row - 3 to 512·row + 515, tile rows 2·row - 1 to 2·row + 2, clamped to the layer.
+/// rows 512·row - 3 to 512·row + 514, tile rows 2·row - 1 to 2·row + 2, clamped to the layer.
 std::pair<std::uint32_t, std::uint32_t> rows_read (std::uint32_t row, std::uint32_t down_below) noexcept
 {
     const std::uint32_t first = row == 0 ? 0 : 2 * row - 1;
@@ -154,14 +184,16 @@ public:
 private:
     void advance () noexcept;
     void step ();
-    bool can_read_base () const noexcept;
-    bool can_start (const Job& job) const noexcept;
+    bool is_base_row_admitted () const noexcept;
+    bool is_startable (const Job& job) const noexcept;
     void start_tiles (std::uint32_t depth, std::uint32_t row);
     void work_tile (std::uint32_t depth, std::uint32_t row, std::uint32_t x) noexcept;
     void tile_done (std::uint32_t depth, std::uint32_t row) noexcept;
     void write (const Job& job);
     void release_pixels (Row& row) noexcept;
     void finish ();
+    /// The layers as IFE numbers them: from the lowest resolution, whose scale is 1.
+    Iris::Extent ife_extent () const;
     void fail (const std::string& why) noexcept;
     void charge (std::int64_t bytes) noexcept;
     void issue (auto&& body);
@@ -185,9 +217,9 @@ private:
     std::atomic<std::int64_t>    _peak {0};
     std::atomic<bool>            _advancing {false};
     std::atomic<std::uint32_t>   _advance_requests {0};
-    std::atomic<EncoderState>    _state {EncoderState::READY};
+    std::atomic<Phase>           _phase {Phase::READY};
     std::atomic_flag             _failure_claimed = ATOMIC_FLAG_INIT;
-    std::string                  _error;
+    std::array<char, ERROR_CAPACITY> _error {};
     Iris::File::Builder          _builder;
     // Declared last, destroyed first: the pool's destructor runs its pending tasks, so nothing
     // above is destroyed while a task can still reach it.
@@ -196,11 +228,12 @@ private:
 
 Encoder_t::Encoder_t (const EncoderDesc& desc, std::unique_ptr<Source> source, std::uint64_t budget) :
 _desc       (desc),
-_file       (desc.destination / output_name(desc.source, desc.encoding)),
-_scratch    (desc.destination / ("." + output_name(desc.source, desc.encoding) + ".partial")),
+_file       (desc.destination / file_name(desc.source, desc.encoding)),
+_scratch    (desc.destination / ("." + file_name(desc.source, desc.encoding) + ".partial")),
 _source     (std::move(source)),
-_context    (std::make_shared<Context_t>(ContextCreateInfo {})),
-_budget     (budget)
+_context    (create_context(ContextCreateInfo {})),
+_budget     (budget),
+_pool       (std::make_unique<Iris::Async::Pool>(std::max<std::uint32_t>(1, desc.concurrency)))
 {
     // The layers, the source's first, each the 2x reduction of the one before, until one tile.
     for (LayerSize size = _source->size();; size = reduced(size)) {
@@ -240,9 +273,13 @@ _budget     (budget)
 
 Encoder_t::~Encoder_t ()
 {
-    _pool.reset();                                   // runs or discards every pending task first
+    // An active encode is interrupted first, so dropping the encoder stops it instead of waiting
+    // for it to end; a SEALING one completes, since the pool runs its last task.
+    auto active = Phase::ACTIVE;
+    if (_phase.compare_exchange_strong(active, Phase::INTERRUPTED)) _pool->terminate();
+    _pool.reset();
     _builder = Iris::File::Builder();                // releases the scratch file's mapping
-    if (_state.load() != EncoderState::DONE) {
+    if (_phase.load() != Phase::DONE) {
         std::error_code ignored;                     // nothing to report: the file may never have been made
         std::filesystem::remove(_scratch, ignored);
     }
@@ -256,27 +293,37 @@ void Encoder_t::issue (auto&& body)
 
 void Encoder_t::dispatch ()
 {
-    auto expected = EncoderState::READY;
-    if (!_state.compare_exchange_strong(expected, EncoderState::ACTIVE))
-        throw std::runtime_error("the encoder was already dispatched; an encoder encodes once");
-    std::filesystem::remove(_scratch);
-    _builder = Iris::File::Builder::create({
-        // A compressed tile never outgrows its raw pixels; only written pages cost disk.
-        .capacity    = Iris::File::BuilderCreateInfo{}.capacity + _tiles_total * TILE_BYTES,
-        .filepath    = _scratch,
-        .tile_frames = false,
-    });
+    auto ready = Phase::READY;
+    if (!_phase.compare_exchange_strong(ready, Phase::ACTIVE))
+        throw std::runtime_error(std::string("the encoder was already dispatched (") + phase_name(ready) +
+                                 "); an encoder encodes once");
+    try {
+        std::filesystem::remove(_scratch);
+        _builder = Iris::File::Builder::create({
+            // A compressed tile never outgrows its raw pixels; only written pages cost disk.
+            .capacity    = Iris::File::BuilderCreateInfo{}.capacity + _tiles_total * TILE_BYTES,
+            .filepath    = _scratch,
+            .tile_frames = false,
+        });
+        _builder.set_tile_table({.encoding = _desc.encoding, .format = Iris::FORMAT_R8G8B8A8, .extent = ife_extent()});
+    } catch (const std::exception& error) {
+        fail(error.what());
+        throw;
+    }
+    // The first step runs on the pool, so the caller's thread never does the encode's work.
+    issue([this] { advance(); });
+}
+
+Iris::Extent Encoder_t::ife_extent () const
+{
     Iris::Extent extent {.width  = static_cast<std::uint32_t>(_layers.back().size.width),
                          .height = static_cast<std::uint32_t>(_layers.back().size.height)};
-    // IFE numbers layers from the lowest resolution, whose scale is 1.
     for (std::size_t l = 0; l < _layers.size(); ++l) {
         const Layer& layer = _layers[_layers.size() - 1 - l];
         extent.layers.push_back({.xTiles = layer.across, .yTiles = layer.down,
                                  .scale = float(1u << l), .downsample = float(1u << (_layers.size() - 1 - l))});
     }
-    _builder.set_tile_table({.encoding = _desc.encoding, .format = Iris::FORMAT_R8G8B8A8, .extent = extent});
-    _pool = std::make_unique<Iris::Async::Pool>(std::max<std::uint32_t>(1, _desc.concurrency));
-    advance();
+    return extent;
 }
 
 void Encoder_t::advance () noexcept
@@ -286,7 +333,7 @@ void Encoder_t::advance () noexcept
     for (;;) {
         _advance_requests.store(0);
         try {
-            if (_state.load() == EncoderState::ACTIVE) step();
+            if (_phase.load() == Phase::ACTIVE) step();
         } catch (const std::exception& error) {
             fail(error.what());
         }
@@ -295,7 +342,7 @@ void Encoder_t::advance () noexcept
     }
 }
 
-bool Encoder_t::can_read_base () const noexcept
+bool Encoder_t::is_base_row_admitted () const noexcept
 {
     if (_next_base >= _layers[0].down) return false;
     // With no row in flight, no memory will be freed without this one: it is read whatever the
@@ -305,7 +352,7 @@ bool Encoder_t::can_read_base () const noexcept
     return _rows_in_flight == 0 || resident + std::uint64_t{_layers[0].across} * TILE_BYTES + _reserve <= _budget;
 }
 
-bool Encoder_t::can_start (const Job& job) const noexcept
+bool Encoder_t::is_startable (const Job& job) const noexcept
 {
     const auto [first, last] = rows_read(job.row, _layers[job.depth - 1].down);
     for (std::uint32_t k = first; k <= last; ++k)
@@ -315,12 +362,12 @@ bool Encoder_t::can_start (const Job& job) const noexcept
 
 void Encoder_t::step ()
 {
-    while (can_read_base()) start_tiles(0, _next_base++);
+    while (is_base_row_admitted()) start_tiles(0, _next_base++);
     // Derived rows start in schedule order as their inputs are made; base rows have their own cursor.
     for (; _next_job < _schedule.size(); ++_next_job) {
         const Job& job = _schedule[_next_job];
         if (job.depth == 0) continue;
-        if (!can_start(job)) break;
+        if (!is_startable(job)) break;
         start_tiles(job.depth, job.row);
     }
     while (_next_write < _schedule.size() &&
@@ -347,7 +394,7 @@ void Encoder_t::start_tiles (std::uint32_t depth, std::uint32_t r)
 void Encoder_t::work_tile (std::uint32_t depth, std::uint32_t r, std::uint32_t x) noexcept
 {
     try {
-        if (_state.load() != EncoderState::ACTIVE) return;
+        if (_phase.load() != Phase::ACTIVE) return;
         Row& row = _layers[depth].rows[r];
         // The scratch this tile holds while it is made, charged for as long as it is held.
         const std::int64_t scratch = std::int64_t(depth == 0 ? _source->read_scratch_bytes() : REDUCE_SCRATCH_BYTES);
@@ -360,7 +407,7 @@ void Encoder_t::work_tile (std::uint32_t depth, std::uint32_t r, std::uint32_t x
             // Gather this tile's region from the layer below, reduce it, and make what lies
             // beyond this layer's extent white.
             const Layer& below = _layers[depth - 1];
-            std::vector<std::uint8_t> region(std::size_t{REDUCE_REGION} * REDUCE_REGION * RGBA);
+            std::vector<std::uint8_t> region(std::size_t{REDUCE_REGION} * REDUCE_REGION * RGBA_BYTES);
             gather_region(below.size, x, r,
                           [&below](std::uint32_t tx, std::uint32_t ty) {
                               return std::span<const std::uint8_t>(below.rows[ty].pixels[tx]);
@@ -425,16 +472,16 @@ void Encoder_t::release_pixels (Row& row) noexcept
 
 void Encoder_t::finish ()
 {
+    auto active = Phase::ACTIVE;
+    if (!_phase.compare_exchange_strong(active, Phase::SEALING)) return;   // interrupted or failed meanwhile
     using namespace Iris::File::Serialization;
     // The structure after the tiles, as IFE lays it out; only the source's measurements are
     // carried (D2): no attributes, no associated images.
     const auto& measured = _source->measurements();
     const float to_lowest = float(1u << (_layers.size() - 1));   // the lowest layer's downsample
     std::vector<LayerExtentEntry> extents;
-    for (std::size_t l = 0; l < _layers.size(); ++l) {
-        const Layer& layer = _layers[_layers.size() - 1 - l];
-        extents.push_back({.X_TILES = layer.across, .Y_TILES = layer.down, .SCALE = float(1u << l), .Z_PLANES = 0});
-    }
+    for (const auto& layer : ife_extent().layers)
+        extents.push_back({.X_TILES = layer.xTiles, .Y_TILES = layer.yTiles, .SCALE = layer.scale, .Z_PLANES = 0});
     const Offset offsets_at = _builder->append(TileOffsetsCreateInfo{.entries = _builder.tile_offsets()});
     const Offset extents_at = _builder->append(LayerExtentsCreateInfo{.entries = extents});
     const Offset table_at   = _builder->append(TileTableCreateInfo{
@@ -462,15 +509,17 @@ void Encoder_t::finish ()
     _builder.finalize({.tileTable = table_at, .metadata = metadata_at});
     _builder = Iris::File::Builder();   // the mapping is released before the rename
     std::filesystem::rename(_scratch, _file);
-    _state.store(EncoderState::DONE);
+    _phase.store(Phase::DONE);
 }
 
 void Encoder_t::fail (const std::string& why) noexcept
 {
     if (_failure_claimed.test_and_set()) return;     // the first failure is the one reported
-    try { _error = why; } catch (...) {}             // a failed copy leaves the state to say it failed
-    auto active = EncoderState::ACTIVE;
-    _state.compare_exchange_strong(active, EncoderState::FAILED);
+    const std::size_t kept = std::min(why.size(), _error.size() - 1);
+    std::memcpy(_error.data(), why.data(), kept);
+    _error[kept] = '\0';
+    for (Phase from : {Phase::ACTIVE, Phase::SEALING})
+        if (_phase.compare_exchange_strong(from, Phase::FAILED)) return;
 }
 
 void Encoder_t::charge (std::int64_t bytes) noexcept
@@ -482,11 +531,11 @@ void Encoder_t::charge (std::int64_t bytes) noexcept
 
 EncoderProgress Encoder_t::snapshot () const
 {
-    const EncoderState state = _state.load();
-    return {.state               = state,
+    const Phase phase = _phase.load();
+    return {.state               = public_state(phase),
             .fraction            = float(_tiles_written.load()) / float(_tiles_total),
             .file                = _file,
-            .error               = state == EncoderState::FAILED ? _error : std::string(),
+            .error               = phase == Phase::FAILED ? std::string(_error.data()) : std::string(),
             .resident_bytes      = std::uint64_t(std::max<std::int64_t>(0, _resident.load())),
             .peak_resident_bytes = std::uint64_t(std::max<std::int64_t>(0, _peak.load())),
             .memory_budget       = _budget};
@@ -494,19 +543,25 @@ EncoderProgress Encoder_t::snapshot () const
 
 void Encoder_t::interrupt ()
 {
-    auto active = EncoderState::ACTIVE;
-    if (!_state.compare_exchange_strong(active, EncoderState::INTERRUPTED))
-        throw std::runtime_error("only an active encode is interrupted");
+    auto active = Phase::ACTIVE;
+    if (!_phase.compare_exchange_strong(active, Phase::INTERRUPTED))
+        throw std::runtime_error(std::string("only an active encode is interrupted; this one is ") + phase_name(active) +
+                                 (active == Phase::SEALING ? ", writing its file's structure, and completes" : ""));
     _pool->terminate();
 }
 
 // MARK: - The boundary
 
-std::string output_name (const std::filesystem::path& source, Encoding encoding)
+Result output_name (const std::filesystem::path& source, Encoding encoding, std::string& name) noexcept
 {
-    const char* word = written_encoding(encoding);
-    if (!word) throw std::runtime_error(std::string("the rebuilt encoder does not write ") + encoding_name(encoding));
-    return source.stem().string() + "." + word + ".iris";
+    try {
+        name = file_name(source, encoding);
+        return Result::success();
+    } catch (const std::exception& error) {
+        return codec_failure(SlideError::ENCODER_FAILED, error.what());
+    } catch (...) {
+        return codec_failure(SlideError::ENCODER_FAILED, "output_name failed with an unknown exception");
+    }
 }
 
 Result create_encoder (const EncoderDesc& desc, Encoder& encoder) noexcept

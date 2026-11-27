@@ -84,9 +84,8 @@ HWY_EXPORT(SecondPassRow);
 HWY_EXPORT(ReduceTargetName);
 
 namespace {
-constexpr std::size_t RGBA = 4;
-constexpr std::size_t REGION_VALUES = std::size_t{REDUCE_REGION} * RGBA;   // values in a region row
-constexpr std::size_t TILE_VALUES   = std::size_t{RECUT_TILE} * RGBA;      // values in a tile row
+constexpr std::size_t REGION_VALUES = std::size_t{REDUCE_REGION} * RGBA_BYTES;   // values in a region row
+constexpr std::size_t TILE_VALUES   = std::size_t{RECUT_TILE} * RGBA_BYTES;      // values in a tile row
 constexpr std::uint8_t WHITE = 0xFF;
 
 void check_sizes (std::span<const std::uint8_t> region, std::span<std::uint8_t> tile)
@@ -113,8 +112,8 @@ void reduce_2x (std::span<const std::uint8_t> region, std::span<std::uint8_t> ti
     std::vector<std::int16_t> transposed(std::size_t{REDUCE_REGION} * TILE_VALUES);
     for (std::uint32_t j = 0; j < RECUT_TILE; ++j)
         for (std::uint32_t x = 0; x < REDUCE_REGION; ++x)
-            std::memcpy(&transposed[std::size_t{x} * TILE_VALUES + std::size_t{j} * RGBA],
-                        &first[std::size_t{j} * REGION_VALUES + std::size_t{x} * RGBA], RGBA * sizeof(std::int16_t));
+            std::memcpy(&transposed[std::size_t{x} * TILE_VALUES + std::size_t{j} * RGBA_BYTES],
+                        &first[std::size_t{j} * REGION_VALUES + std::size_t{x} * RGBA_BYTES], RGBA_BYTES * sizeof(std::int16_t));
     // Second pass, the horizontal one as a vertical pass over the transposed rows.
     std::vector<std::uint8_t> second(std::size_t{RECUT_TILE} * TILE_VALUES);
     for (std::uint32_t i = 0; i < RECUT_TILE; ++i) {
@@ -125,8 +124,8 @@ void reduce_2x (std::span<const std::uint8_t> region, std::span<std::uint8_t> ti
     // Transpose back: row i of the second pass is output column i.
     for (std::uint32_t i = 0; i < RECUT_TILE; ++i)
         for (std::uint32_t j = 0; j < RECUT_TILE; ++j)
-            std::memcpy(&tile[std::size_t{j} * TILE_VALUES + std::size_t{i} * RGBA],
-                        &second[std::size_t{i} * TILE_VALUES + std::size_t{j} * RGBA], RGBA);
+            std::memcpy(&tile[std::size_t{j} * TILE_VALUES + std::size_t{i} * RGBA_BYTES],
+                        &second[std::size_t{i} * TILE_VALUES + std::size_t{j} * RGBA_BYTES], RGBA_BYTES);
 }
 
 void reduce_2x_reference (std::span<const std::uint8_t> region, std::span<std::uint8_t> tile)
@@ -142,11 +141,11 @@ void reduce_2x_reference (std::span<const std::uint8_t> region, std::span<std::u
         }
     for (std::uint32_t j = 0; j < RECUT_TILE; ++j)
         for (std::uint32_t i = 0; i < RECUT_TILE; ++i)
-            for (std::size_t c = 0; c < RGBA; ++c) {
+            for (std::size_t c = 0; c < RGBA_BYTES; ++c) {
                 std::int32_t sum = 1 << (REDUCE_SECOND_SHIFT - 1);
                 for (std::uint32_t k = 0; k < REDUCE_TAPS; ++k)
-                    sum += REDUCE_WEIGHTS[k] * std::int32_t{first[std::size_t{j} * REGION_VALUES + (2 * std::size_t{i} + k) * RGBA + c]};
-                tile[std::size_t{j} * TILE_VALUES + std::size_t{i} * RGBA + c] =
+                    sum += REDUCE_WEIGHTS[k] * std::int32_t{first[std::size_t{j} * REGION_VALUES + (2 * std::size_t{i} + k) * RGBA_BYTES + c]};
+                tile[std::size_t{j} * TILE_VALUES + std::size_t{i} * RGBA_BYTES + c] =
                     static_cast<std::uint8_t>(std::clamp(sum >> REDUCE_SECOND_SHIFT, 0, 255));
             }
 }
@@ -159,8 +158,8 @@ void whiten_beyond (LayerSize layer, std::uint32_t out_x, std::uint32_t out_y, s
     const auto rows    = static_cast<std::uint32_t>(std::min<std::uint64_t>(RECUT_TILE, layer.height > top ? layer.height - top : 0));
     for (std::uint32_t y = 0; y < RECUT_TILE; ++y) {
         const std::uint32_t from = y < rows ? columns : 0;
-        std::memset(tile.data() + std::size_t{y} * TILE_VALUES + std::size_t{from} * RGBA, WHITE,
-                    std::size_t{RECUT_TILE - from} * RGBA);
+        std::memset(tile.data() + std::size_t{y} * TILE_VALUES + std::size_t{from} * RGBA_BYTES, WHITE,
+                    std::size_t{RECUT_TILE - from} * RGBA_BYTES);
     }
 }
 

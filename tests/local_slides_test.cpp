@@ -347,6 +347,10 @@ TEST_CASE("The rebuilt encoder reads an HTJ2K slide directly and writes every la
     REQUIRE_FALSE(htj2k.empty());
     const auto out = std::filesystem::temp_directory_path() / ("IrisSlideTest_htj2k_" + std::to_string(std::random_device{}()));
     std::filesystem::create_directories(out);
+    struct RemoveFolder {
+        std::filesystem::path path;
+        ~RemoveFolder() { std::error_code ignored; std::filesystem::remove_all(path, ignored); }   // nothing to report if absent
+    } const removal {out};
     IrisSlide::Rebuilt::Encoder encoder;
     const auto created = IrisSlide::Rebuilt::create_encoder({.source = htj2k, .destination = out}, encoder);
     INFO(created.message);
@@ -384,8 +388,6 @@ TEST_CASE("The rebuilt encoder reads an HTJ2K slide directly and writes every la
     const double psnr = psnr_rgb(recut, static_cast<const std::uint8_t*>(decoded->data()));
     INFO("PSNR " << psnr << " dB");
     CHECK(psnr >= JPEG_PSNR_FLOOR_DB);
-    std::error_code ignored;
-    std::filesystem::remove_all(out, ignored);
 }
 
 TEST_CASE("Each local slide's frame index gives libdicom's exact frame bytes", "[Testing_01][Dicom_06]")

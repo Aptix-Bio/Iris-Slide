@@ -17,7 +17,6 @@
 
 namespace IrisSlide {
 namespace {
-constexpr std::size_t RGB = 3;
 constexpr std::string_view TILED_FULL = "TILED_FULL";
 constexpr std::size_t DICOM_PREAMBLE = 128;                         // PS3.10 7.1
 constexpr std::array<char, 4> DICOM_PREFIX {'D', 'I', 'C', 'M'};
@@ -55,7 +54,7 @@ _measurements   {.microns_per_pixel = instance.spacing.column_mm * MICRONS_PER_M
                  .icc_profile       = instance.icc_profile},
 _index          (instance.path, instance.frames)
 {
-    if (!decodes(_codec))
+    if (!is_decodable(_codec))
         refuse(instance, "has transfer syntax " + instance.transfer_syntax + ", whose frames this encoder does not decode");
     if (instance.dimension_organization != TILED_FULL)
         refuse(instance, "has DimensionOrganizationType \"" + instance.dimension_organization +
@@ -76,7 +75,7 @@ std::uint64_t DicomSource::read_scratch_bytes () const noexcept
     // plus one frame's fragments joined; a compressed frame is read in place from the map.
     const std::uint64_t across = (RECUT_TILE - 1) / _grid.frame.columns + 2;
     const std::uint64_t down   = (RECUT_TILE - 1) / _grid.frame.rows + 2;
-    return (across * down + 1) * std::uint64_t{_grid.frame.columns} * _grid.frame.rows * RGB;
+    return (across * down + 1) * std::uint64_t{_grid.frame.columns} * _grid.frame.rows * RGB_BYTES;
 }
 
 void DicomSource::read_tile (std::uint32_t x, std::uint32_t y, std::span<std::uint8_t> rgba)
@@ -95,7 +94,7 @@ void DicomSource::read_tile (std::uint32_t x, std::uint32_t y, std::span<std::ui
     for (std::uint32_t row = first_row; row <= last_row; ++row)
         for (std::uint32_t column = first_column; column <= last_column; ++column) {
             auto& pixels = frames[(row - first_row) * columns + (column - first_column)];
-            pixels.resize(std::size_t{_grid.frame.columns} * _grid.frame.rows * RGB);
+            pixels.resize(std::size_t{_grid.frame.columns} * _grid.frame.rows * RGB_BYTES);
             decode_frame(_codec, _index.frame(row * _frames_across + column, joined), _grid.frame, pixels);
         }
     recut_tile(_grid, x, y,

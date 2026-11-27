@@ -9,6 +9,7 @@
 #include "IrisSlideDicomSeries.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -103,6 +104,9 @@ const DcmDataSet* nested_item (const std::filesystem::path& path, const DcmDataS
     }
     return data;
 }
+std::uint32_t count_of (const std::filesystem::path& path, std::uint32_t tag, const std::string& text);
+double decimal_of (const std::filesystem::path& path, std::uint32_t tag, const std::string& text);
+
 /// The first optical path's objective power and ICC profile, each optional (PS3.3 C.8.12.5): an
 /// absent one stays 0 or empty, an unreadable one is refused naming it.
 void read_optical_path (const std::filesystem::path& path, const DcmDataSet* data, DicomInstance& instance)
@@ -110,7 +114,7 @@ void read_optical_path (const std::filesystem::path& path, const DcmDataSet* dat
     if (!element_of(data, TAG_OPTICAL_PATH_SEQUENCE)) return;
     const DcmDataSet* optical = nested_item(path, data, std::array{TAG_OPTICAL_PATH_SEQUENCE});
     if (element_of(optical, TAG_OBJECTIVE_LENS_POWER))
-        instance.objective_power = std::strtod(text_of(path, optical, TAG_OBJECTIVE_LENS_POWER).c_str(), nullptr);
+        instance.objective_power = decimal_of(path, TAG_OBJECTIVE_LENS_POWER, text_of(path, optical, TAG_OBJECTIVE_LENS_POWER));
     DcmElement* icc = element_of(optical, TAG_ICC_PROFILE);
     if (!icc) return;
     DcmError* error = nullptr;
@@ -118,6 +122,27 @@ void read_optical_path (const std::filesystem::path& path, const DcmDataSet* dat
     if (!dcm_element_get_value_binary(&error, icc, &bytes) || !bytes)
         refuse(path, TAG_ICC_PROFILE, "is unreadable: " + take_error(error, "no value"));
     instance.icc_profile.assign(static_cast<const char*>(bytes), dcm_element_get_length(icc));
+}
+std::string trimmed (std::string_view text);
+/// An IS value (PS3.5 6.2): a positive integer, refused naming the file, the attribute and the text.
+std::uint32_t count_of (const std::filesystem::path& path, std::uint32_t tag, const std::string& text)
+{
+    const std::string value = trimmed(text);
+    std::uint32_t count = 0;
+    const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), count);
+    if (value.empty() || error != std::errc() || end != value.data() + value.size() || count == 0)
+        refuse(path, tag, "\"" + text + "\" is not a positive count");
+    return count;
+}
+/// A DS value (PS3.5 6.2): a finite decimal, refused naming the file, the attribute and the text.
+double decimal_of (const std::filesystem::path& path, std::uint32_t tag, const std::string& text)
+{
+    const std::string value = trimmed(text);
+    char* end = nullptr;
+    const double parsed = value.empty() ? 0.0 : std::strtod(value.c_str(), &end);
+    if (value.empty() || end != value.c_str() + value.size() || !std::isfinite(parsed))
+        refuse(path, tag, "\"" + text + "\" is not a decimal");
+    return parsed;
 }
 std::string trimmed (std::string_view text)
 {
@@ -200,7 +225,7 @@ DicomInstance read_dicom_instance (const std::filesystem::path& path)
         .rows            = static_cast<std::uint32_t>(integer_of(path, data, TAG_ROWS)),
         // IS is text in libdicom; PS3.3 C.7.6.6: an instance without NumberOfFrames holds one frame.
         .frames          = element_of(data, TAG_NUMBER_OF_FRAMES)
-                         ? static_cast<std::uint32_t>(std::stoul(text_of(path, data, TAG_NUMBER_OF_FRAMES))) : 1,
+                         ? count_of(path, TAG_NUMBER_OF_FRAMES, text_of(path, data, TAG_NUMBER_OF_FRAMES)) : 1,
     };
     const DcmDataSet* measures = nested_item(path, data, PIXEL_SPACING_PATH);
     instance.spacing = parse_pixel_spacing(text_of(path, measures, TAG_PIXEL_SPACING, 0) + VALUE_SEPARATOR +

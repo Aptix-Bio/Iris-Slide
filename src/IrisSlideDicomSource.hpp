@@ -16,6 +16,7 @@
 
 #include "IrisSlideDicomFrames.hpp"
 #include "IrisSlideDicomSeries.hpp"
+#include "IrisSlideRetile.hpp"
 #include "IrisSlideSource.hpp"
 #include "IrisSlideSourceCodec.hpp"
 
