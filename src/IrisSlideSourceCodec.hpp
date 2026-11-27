@@ -15,8 +15,9 @@
 namespace IrisSlide {
 // RTM Dicom_04
 /// The codec a source's frames are compressed with. It is the encoder's own enumeration, since a
-/// source's codec is not an IFE tile encoding: a JPEG 2000 or HTJ2K frame is decoded and
-/// re-encoded, never passed through (ARCHITECTURE D17, decided 2026-11-27).
+/// source's codec is not an IFE tile encoding: IFE has no JPEG 2000 or HTJ2K tile encoding, so the
+/// rebuilt encoder decodes such a frame (decode_jpeg2000_frame) and compresses its pixels again
+/// (ARCHITECTURE D17, decided 2026-11-27).
 enum class SourceCodec : std::uint8_t {
     JPEG,       ///< ISO/IEC 10918-1: baseline, extended and lossless process 14
     JPEG_2000,  ///< ISO/IEC 15444-1, decoded by OpenJPEG

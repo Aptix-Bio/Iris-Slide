@@ -157,14 +157,18 @@ inline std::vector<std::filesystem::path> FIND_DICOM_FILE_WITH_STUDY_UID
 }
 
 // RTM Dicom_04: the transfer syntax's codec comes from the one table (IrisSlideSourceCodec.hpp),
-// which refuses an unknown syntax naming its UID. Until the rebuilt encoder decodes JPEG 2000 and
-// HTJ2K frames (OpenJpegFrames_22.3), only JPEG frames have a tile encoding to pass through as.
+// which refuses an unknown syntax naming its UID. This encoder passes DICOM frames through
+// unchanged, so only 8-bit baseline JPEG frames (1.2.840.10008.1.2.4.50) have a tile encoding to
+// pass through as: an IFE JPEG tile is decoded as 8-bit baseline, where 12-bit extended (.51) and
+// lossless (.70) frames are not. The rebuilt encoder decodes the others (EncoderRewrite_24).
+constexpr std::string_view DICOM_JPEG_BASELINE = "1.2.840.10008.1.2.4.50";
 inline Encoding PARSE_DICOM_ENCODING (DcmFilehandle* handle)
 {
     const char* TS_UID = dcm_filehandle_get_transfer_syntax_uid(handle);
     if (!TS_UID) throw std::runtime_error("the DICOM file declares no transfer syntax");
     switch (source_codec(TS_UID)) {
-        case SourceCodec::JPEG:         return TILE_ENCODING_JPEG;
+        case SourceCodec::JPEG:         return TS_UID == DICOM_JPEG_BASELINE ? TILE_ENCODING_JPEG
+                                                                              : TILE_ENCODING_UNDEFINED;
         case SourceCodec::JPEG_2000:
         case SourceCodec::HTJ2K:        return TILE_ENCODING_UNDEFINED;
     }
