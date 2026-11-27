@@ -16,6 +16,14 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 _CACHES = _ROOT / "scripts" / "ci_caches.cmake"
 _REPORT = _ROOT / "scripts" / "cache_report.cmake"
 _PROVIDER = "projects/1/locations/global/workloadIdentityPools/pool/providers/provider"
+# Placeholders for the repository variables that name the cache bucket and its two service
+# accounts: a public file names none of them (PublicNames in test_review_configuration.py).
+_BUCKET = "cache-bucket"
+_READER = "cache-reader@project.example"
+_WRITER = "cache-writer@project.example"
+# The repository variables the sign-in needs, by the environment name the caches action gives each.
+_VARIABLES = {"GCP_PROVIDER": _PROVIDER, "GCP_PROJECT": "project", "CACHE_BUCKET": _BUCKET,
+              "CACHE_READER": _READER, "CACHE_WRITER": _WRITER}
 
 
 @dataclass(frozen=True)
@@ -38,7 +46,7 @@ def _run(script: Path, defines: dict[str, str], environment: dict[str, str]) -> 
 
 def _mode(**environment: str) -> Run:
     base = {"REQUESTED": "quarantine", "EVENT": "pull_request", "HEAD_REPOSITORY": "Aptix-Bio/Iris-Slide",
-            "REPOSITORY": "Aptix-Bio/Iris-Slide", "GCP_PROVIDER": _PROVIDER, "GCP_PROJECT": "project"}
+            "REPOSITORY": "Aptix-Bio/Iris-Slide", **_VARIABLES}
     return _run(_CACHES, {"STEP": "mode"}, {**base, **environment})
 
 
@@ -46,12 +54,19 @@ class CacheMode(unittest.TestCase):
     def test_same_repository_pull_request_gets_the_quarantine(self) -> None:
         run = _mode()
         self.assertEqual(run.code, 0, run.output)
-        self.assertEqual(run.files["GITHUB_OUTPUT"], "mode=quarantine\n")
+        self.assertEqual(run.files["GITHUB_OUTPUT"], f"mode=quarantine\naccount={_READER}\n")
+
+    def test_only_write_signs_in_as_the_writer(self) -> None:
+        for requested, account in (("quarantine", _READER), ("read", _READER), ("write", _WRITER)):
+            with self.subTest(requested=requested):
+                run = _mode(REQUESTED=requested, EVENT="push")
+                self.assertEqual(run.code, 0, run.output)
+                self.assertIn(f"account={account}\n", run.files["GITHUB_OUTPUT"])
 
     def test_fork_pull_request_builds_without_the_store(self) -> None:
-        run = _mode(HEAD_REPOSITORY="someone/Iris-Slide", GCP_PROVIDER="", GCP_PROJECT="")
+        run = _mode(HEAD_REPOSITORY="someone/Iris-Slide", **{variable: "" for variable in _VARIABLES})
         self.assertEqual(run.code, 0, run.output)
-        self.assertEqual(run.files["GITHUB_OUTPUT"], "mode=none\n")
+        self.assertEqual(run.files["GITHUB_OUTPUT"], "mode=none\naccount=\n")
 
     def test_missing_variables_fail_naming_them(self) -> None:
         run = _mode(GCP_PROVIDER="", GCP_PROJECT="")
@@ -59,20 +74,30 @@ class CacheMode(unittest.TestCase):
         self.assertIn("IRIS_SLIDE_GCP_PROVIDER, IRIS_SLIDE_GCP_PROJECT are unset", " ".join(run.output.split()))
         self.assertEqual(run.files["GITHUB_OUTPUT"], "")
 
+    def test_each_missing_cache_variable_fails_naming_it(self) -> None:
+        for variable in ("CACHE_BUCKET", "CACHE_READER", "CACHE_WRITER"):
+            with self.subTest(variable=variable):
+                run = _mode(**{variable: ""})
+                self.assertNotEqual(run.code, 0)
+                self.assertIn(f"the repository variables IRIS_SLIDE_{variable} are unset", " ".join(run.output.split()))
+                self.assertEqual(run.files["GITHUB_OUTPUT"], "")
+
     def test_unknown_access_fails(self) -> None:
         self.assertNotEqual(_mode(REQUESTED="everything").code, 0)
 
 
 class CacheEnvironment(unittest.TestCase):
-    def _env(self, mode: str, compiler_cache: str = "true", token: str = "token") -> Run:
-        return _run(_CACHES, {"STEP": "env"}, {"MODE": mode, "GCS_TOKEN": token, "COMPILER_CACHE": compiler_cache})
+    def _env(self, mode: str, compiler_cache: str = "true", token: str = "token", bucket: str = _BUCKET) -> Run:
+        return _run(_CACHES, {"STEP": "env"}, {"MODE": mode, "GCS_TOKEN": token, "COMPILER_CACHE": compiler_cache,
+                                               "CACHE_BUCKET": bucket})
 
     def test_quarantine_reads_main_and_writes_pr(self) -> None:
         run = self._env("quarantine")
         self.assertEqual(run.code, 0, run.output)
         sources = next(line for line in run.files["GITHUB_ENV"].splitlines() if line.startswith("VCPKG_BINARY_SOURCES="))
-        self.assertIn("iris-vcpkg-cache/iris-slide/vcpkg/{triplet}/{name}-{version}-{sha}.zip,read,", sources)
-        self.assertIn("iris-vcpkg-cache/iris-slide/pr/vcpkg/{triplet}/{name}-{version}-{sha}.zip,readwrite,", sources)
+        self.assertIn(f"/{_BUCKET}/iris-slide/vcpkg/{{triplet}}/{{name}}-{{version}}-{{sha}}.zip,read,", sources)
+        self.assertIn(f"/{_BUCKET}/iris-slide/pr/vcpkg/{{triplet}}/{{name}}-{{version}}-{{sha}}.zip,readwrite,", sources)
+        self.assertIn(f"SCCACHE_GCS_BUCKET={_BUCKET}\n", run.files["GITHUB_ENV"])
         self.assertIn("SCCACHE_GCS_KEY_PREFIX=iris-slide/pr/sccache\n", run.files["GITHUB_ENV"])
         self.assertIn("CMAKE_CXX_COMPILER_LAUNCHER=sccache\n", run.files["GITHUB_ENV"])
 
@@ -97,6 +122,11 @@ class CacheEnvironment(unittest.TestCase):
 
     def test_missing_token_fails(self) -> None:
         self.assertNotEqual(self._env("quarantine", token="").code, 0)
+
+    def test_missing_bucket_fails_naming_it(self) -> None:
+        run = self._env("quarantine", bucket="")
+        self.assertNotEqual(run.code, 0)
+        self.assertIn("IRIS_SLIDE_CACHE_BUCKET", run.output)
 
 
 _STATS = """Compile requests                    {requests}

@@ -2,9 +2,10 @@
 # vcpkg and sccache read, for one job. Each step is one action or one CMake script call; the logic
 # is scripts/ci_caches.cmake (tested by tools/tests/test_ci_scripts.py).
 #
-# The store is gs://iris-vcpkg-cache, under iris-slide/ only: vcpkg's packages through vcpkg's
-# HTTP binary source with the sign-in's token, uploaded as each is built, and the compiler's objects
-# through sccache, uploaded as each compiles, so a failed job still speeds up the next. Pull
+# The store is the cache bucket (repository variable IRIS_SLIDE_CACHE_BUCKET), under iris-slide/
+# only: vcpkg's packages through vcpkg's HTTP binary source with the sign-in's token, uploaded as
+# each is built, and the compiler's objects through sccache, uploaded as each compiles, so a failed
+# job still speeds up the next. Pull
 # requests write a quarantine (iris-slide/pr/) that main and releases never read; only cache.yml on
 # main writes main's store, and Google, not this file, decides which account a run may use
 # (tools/cloud_federation.sh). A pull request from a fork has no sign-in and builds without the
@@ -25,6 +26,15 @@ inputs:
   project:
     description: the Google Cloud project (vars.IRIS_SLIDE_GCP_PROJECT)
     required: true
+  bucket:
+    description: the cache bucket (vars.IRIS_SLIDE_CACHE_BUCKET)
+    required: true
+  reader:
+    description: the reader service account's address (vars.IRIS_SLIDE_CACHE_READER)
+    required: true
+  writer:
+    description: the writer service account's address (vars.IRIS_SLIDE_CACHE_WRITER)
+    required: true
 runs:
   using: composite
   steps:
@@ -38,6 +48,9 @@ runs:
         REPOSITORY: ${{ github.repository }}
         GCP_PROVIDER: ${{ inputs.provider }}
         GCP_PROJECT: ${{ inputs.project }}
+        CACHE_BUCKET: ${{ inputs.bucket }}
+        CACHE_READER: ${{ inputs.reader }}
+        CACHE_WRITER: ${{ inputs.writer }}
       run: cmake -DSTEP=mode -P scripts/ci_caches.cmake
     - name: Sign in to Google Cloud
       id: auth
@@ -45,7 +58,7 @@ runs:
       uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
       with:
         workload_identity_provider: ${{ inputs.provider }}
-        service_account: iris-slide-cache-${{ steps.mode.outputs.mode == 'write' && 'writer' || 'reader' }}@${{ inputs.project }}.iam.gserviceaccount.com
+        service_account: ${{ steps.mode.outputs.account }}
         token_format: access_token
     - name: Cache settings
       shell: bash
@@ -53,6 +66,7 @@ runs:
         MODE: ${{ steps.mode.outputs.mode }}
         GCS_TOKEN: ${{ steps.auth.outputs.access_token }}
         COMPILER_CACHE: ${{ inputs.compiler-cache }}
+        CACHE_BUCKET: ${{ inputs.bucket }}
       run: cmake -DSTEP=env -P scripts/ci_caches.cmake
     - name: Install sccache
       if: steps.mode.outputs.mode != 'none' && inputs.compiler-cache == 'true'

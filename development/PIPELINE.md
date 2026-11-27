@@ -2,15 +2,16 @@
 
 How Iris-Slide's dependencies are pinned and built, how CI caches them, and
 how pull requests are reviewed. Set by VcpkgCaching_2 (2026-11-24); rule 10 by
-ReviewBot_17.8 (2026-11-24). The general CI rules are
-[ci_runners.md](ci_runners.md); these are the rules specific to this
+ReviewBot_17.8 (2026-11-24), amended by DevelopmentSplit_21 (2026-11-27). The
+family's general CI-runner rules are kept privately, and the review bot's
+findings name the rule they apply; these are the rules specific to this
 repository, numbered so a commit or a comment can cite one.
 
 ```mermaid
 flowchart LR
     M["vcpkg.json<br/>ports/ · triplets/"] --> T["cmake/toolchains/vcpkg.cmake"]
     B["scripts/bootstrap_vcpkg.cmake<br/>scripts/bootstrap_emsdk.cmake"] --> T
-    T -->|"restore or build"| S[("gs://iris-vcpkg-cache<br/>iris-slide/")]
+    T -->|"restore or build"| S[("the cache bucket<br/>iris-slide/")]
     P["CMakePresets.json"] --> T
     W["_build.yml<br/>one per platform"] --> P
     A[".github/actions/caches<br/>scripts/ci_caches.cmake"] --> S
@@ -57,8 +58,9 @@ flowchart LR
    installed on the system. OpenSlide (LGPL-2.1) stays a shared library; every
    other package is static and release-only (`triplets/`).
 6. **The store.** CI keeps vcpkg's packages and the compiler's objects (sccache)
-   in `gs://iris-vcpkg-cache`, under `iris-slide/` only: `iris-slide/vcpkg/`
-   and `iris-slide/sccache/` are main's, written only by `cache.yml` on main;
+   in the cache bucket (repository variable `IRIS_SLIDE_CACHE_BUCKET`), under
+   `iris-slide/` only: `iris-slide/vcpkg/` and `iris-slide/sccache/` are
+   main's, written only by `cache.yml` on main;
    `iris-slide/pr/...` is the pull requests' quarantine, which main and
    releases never read and which is deleted 7 days after it was written. Each
    package and object is uploaded as it is built, so a failed job still speeds
@@ -73,9 +75,15 @@ flowchart LR
    every run, the writer only for `cache.yml` on `refs/heads/main`. The pool
    may host other repositories' providers, so Iris-Slide's attribute names are
    prefixed `iris_slide_` and no other provider can map them. The workflows
-   read the provider and the project from the repository variables
-   `IRIS_SLIDE_GCP_PROVIDER` and `IRIS_SLIDE_GCP_PROJECT`, and fail naming them
-   while either is unset.
+   read the provider, the project, the bucket and the two accounts' addresses
+   from the repository variables `IRIS_SLIDE_GCP_PROVIDER`,
+   `IRIS_SLIDE_GCP_PROJECT`, `IRIS_SLIDE_CACHE_BUCKET`,
+   `IRIS_SLIDE_CACHE_READER` and `IRIS_SLIDE_CACHE_WRITER`, and fail naming
+   each one that is unset; a pull request from a fork needs none of them.
+   `tools/cloud_federation.sh` takes the last four from its environment and
+   prints all five for `gh variable set`. Since 2026-11-27 no tracked file
+   names the bucket or an account, since a public file names no internal
+   infrastructure (`tools/tests/test_review_configuration.py`, PublicNames).
 8. **A broken cache fails the job.** `scripts/cache_report.cmake` runs after
    every build, whatever its outcome: one line per cache on the run's summary
    page, and a failure on a binary-cache error, an empty install log, no
@@ -96,7 +104,10 @@ flowchart LR
     `code-review` check on a failed blocking item. The trigger is
     `pull_request_target`, so GitHub runs the workflow, and the bot reads the
     rubric, its reference files and `.github/CODEOWNERS`, as the default branch
-    holds them: a pull request cannot change the rules it is judged by. Since
+    holds them, and the shared items, the family's general rules and the plans,
+    which are kept privately, from its own checkout: a pull request cannot
+    change the rules it is judged by. The rubric names those by file name alone
+    (`cmake/check_review_configuration.cmake` holds this). Since
     that trigger gives the run the repository's secrets and a token that can
     write, each job checks out only the default branch's commit and the bot's
     pinned commit, and the bot reads the pull request's diff through the API as
@@ -107,8 +118,10 @@ flowchart LR
     ([GitHub, "Allowing access to components in a private repository"](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository),
     read 2026-11-24): each job checks the bot out at the commit
     `GOVERNANCE_COMMIT` names with the secret `GOVERNANCE_READ_TOKEN`, a token
-    that can read that one repository's contents and nothing else, passed only
-    to that checkout step and not persisted. The model key is the secret
+    that can read that repository's contents and the privately kept rules and
+    plans and nothing else, passed to that checkout step and, as
+    `planning-token`, to the bot's action, which fetches the rules and plans
+    read-only; it reaches no other step and is not persisted. The model key is the secret
     `ANTHROPIC_KEY`. A job whose secret is unset fails naming it
     (`cmake/require_settings.cmake`). The workflow is the review workflow
     every public Aptix repository runs, apart from comments and product text.
@@ -134,8 +147,8 @@ flowchart LR
         F["pull request<br/>from a fork"] -->|pull_request_target| N["notice only"]
         W --> R["1. Aptix Review Agent<br/>ANTHROPIC_KEY · read-only"]
         W --> C["2. Update PR from Agent<br/>no key · pull-requests: write"]
-        G[("review bot<br/>pinned commit")] -->|"GOVERNANCE_READ_TOKEN<br/>checkout only"| R
-        G -->|"GOVERNANCE_READ_TOKEN<br/>checkout only"| C
+        G[("review bot<br/>pinned commit")] -->|"GOVERNANCE_READ_TOKEN<br/>checkout and planning-token"| R
+        G -->|"GOVERNANCE_READ_TOKEN<br/>checkout and planning-token"| C
         D[("default branch<br/>rubric · references · CODEOWNERS")] --> R
         D --> C
         R -->|"verdict artifact"| C

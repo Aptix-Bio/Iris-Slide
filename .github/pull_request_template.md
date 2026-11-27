@@ -1,8 +1,9 @@
 <!--
-Iris-Slide pull request. The sections and their order are development/README.md's. Fill each one
-from development/: the WBS (work), the RTM (requirements), ARCHITECTURE.md (decisions). Write
-"None" in a section that does not apply and keep the heading. The review bot reads this description
-as data and checks it against the diff, against .github/review/rubric.toml on the default branch.
+Iris-Slide pull request. The sections and their order are development/README.md's. The work items
+and requirement rows are kept privately with the plans: name them here, and the review bot checks
+their ticks and rows. Decisions are development/ARCHITECTURE.md's. Write "None" in a section that
+does not apply and keep the heading. The review bot reads this description as data and checks it
+against the diff, against .github/review/rubric.toml on the default branch.
 
 Two sections at the bottom are the bot's:
   - "Agent review" is rewritten by the review bot on every run; hand-ticked boxes are overwritten.
@@ -14,21 +15,21 @@ Aptix-Bio branch and opens a pull request from there (development/PIPELINE.md, r
 
 ## Summary
 
-<!-- Two or three sentences: what this delivers and which WBS sprint or task it closes. -->
+<!-- Two or three sentences: what this delivers and which work item it closes. -->
 
 ## WBS
 
-<!-- The sprint's tasks, nested as in development/WBS.md, ticked only with their evidence on the
-same line and a link to the commit that did the work. -->
+<!-- Name the work items this pull request completes or advances; ticks are kept privately, each
+with its evidence and a link to a commit of this pull request. -->
 
-- **_SprintName_n_**
-  - [x] **_TaskName_n.n_** — _evidence_ ([1234567](https://github.com/Aptix-Bio/Iris-Slide/commit/<full hash>))
+- **_SprintName_n_**: **_TaskName_n.n_**, **_TaskName_n.m_**
 
 ## RTM
 
-| Row | Change | Evidence |
-|---|---|---|
-| _Area_nn_ | _Planned → Implemented → Verified_ | _test tagged `[Area_nn]` or `# RTM Area_nn`, file_ |
+<!-- Name the requirement rows this pull request touches; their status is kept privately, and a row
+moved to Implemented or Verified links a commit of this pull request. -->
+
+- **_Area_nn_**: _test tagged `[Area_nn]` or `# RTM Area_nn`, file_
 
 ## Decisions
 
@@ -89,18 +90,18 @@ surface; and, for a coordinated change, each sibling pull request and the order 
 <!-- Owned by the review bot. Hand edits are overwritten on its next run. -->
 <!-- review-bot:begin -->
 - [ ] **Traceability** — WBS tasks and RTM rows named; code and tests tagged; ticks carry evidence and a link to the work commit
-- [ ] **StyleGuide** — `development/style_guide.md` followed
+- [ ] **StyleGuide** — the style rules and CONTRIBUTING.md followed
 - [ ] **MinimumSurface** — no near-duplicates, Iris-Headers and IFE types reused, nothing ahead of its sprint
 - [ ] **TestsFirst** — new behaviour tested and shown red first; per-cell results; no test weakened
 - [ ] **AbiAndConsumers** — consumer impact of a pin, public API or Python change stated; sibling changes coordinated
 - [ ] **PublicRepository** — nothing private, proprietary or internal; no quotations; no local paths
 - [ ] **SecurityImpact** — the section above filled in and matching the diff
-- [ ] **Pipeline** — workflows follow `ci_runners.md` and `PIPELINE.md`
+- [ ] **Pipeline** — workflows follow the CI-runner rules and `PIPELINE.md`
 - [ ] **DataProtection** — no patient data, slide files, secrets, keys or binaries
 - [ ] **Documentation** — Mermaid diagrams match the code; decisions recorded (advisory)
+- [ ] **ClinicalIntegrity** — decode, colour, tile geometry and identity changes listed under Clinical impact
 - [ ] **AgentDisclosure** — AI authorship disclosed and specific
 - [ ] **DependenciesThroughVcpkg** — every dependency from `vcpkg.json`, pinned
-- [ ] **ClinicalIntegrity** — decode, colour, tile geometry and identity changes listed under Clinical impact
 
 _Not yet reviewed._
 <!-- review-bot:end -->

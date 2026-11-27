@@ -1,13 +1,14 @@
-# RTM Review_01
+# RTM Review_01, Review_02
 """Iris-Slide's review rules, template and step order, beside the shared workflow check.
 
-WorkflowRunners_17 (ReviewBot_17.8; RTM Review_01). `.github/workflows/review.yml` is the review
+WorkflowRunners_17 (ReviewBot_17.8; RTM Review_01) and DevelopmentSplit_21 (RTM Review_02). `.github/workflows/review.yml` is the review
 workflow every public Aptix repository runs, and cmake/check_review_configuration.cmake, the check
 those repositories share, holds its safety properties under `pull_request_target` (the trigger,
 least privilege, base-only checkouts, the head as data, the confined token and key, forks
 skipped, SHA pins). The tests here hold what that check does not: Iris-Slide's rubric, its pull
 request template, the order of the steps in each job, and cmake/require_settings.cmake's
-behaviour. The workflow is read as text, as tools/workflow_lint.py reads every workflow, so no
+behaviour, and that no tracked file names the cache store's bucket or service accounts. Since 2026-11-27 the rubric selects the shared items and names the family's general
+rules and the plans, which are kept privately, by file name; none of them is in this repository. The workflow is read as text, as tools/workflow_lint.py reads every workflow, so no
 YAML parser joins the tools' dependencies.
 
 Run: python3 -m unittest discover -s tools/tests
@@ -27,13 +28,12 @@ RUBRIC = REPOSITORY / ".github" / "review" / "rubric.toml"
 TEMPLATE = REPOSITORY / ".github" / "pull_request_template.md"
 REQUIRE_SETTINGS = "cmake/require_settings.cmake"
 BOT_REPOSITORY = "repository: Aptix-Bio/governance"
-WBS = "development/WBS.md"
-RTM = "development/RTM.md"
 SECRETS = ("ANTHROPIC_KEY", "GOVERNANCE_READ_TOKEN")
 
-# Each rubric item and whether a failure of it fails the `code-review` check: the items every
-# Aptix repository's rubric shares, in their order, then Iris-Slide's own.
-ITEMS = {
+# The items every Aptix repository's rubric shares, in their shared order, that apply to Iris-Slide;
+# the bot reads their text from its own checkout. Each says whether a failure of it fails the
+# `code-review` check.
+SHARED_ITEMS = {
     "Traceability": True,
     "StyleGuide": True,
     "MinimumSurface": True,
@@ -44,17 +44,33 @@ ITEMS = {
     "Pipeline": True,
     "DataProtection": True,
     "Documentation": False,
-    "AgentDisclosure": True,
-    "DependenciesThroughVcpkg": True,
     "ClinicalIntegrity": True,
+    "AgentDisclosure": True,
 }
+# Iris-Slide's own items, which follow the shared ones.
+OWN_ITEMS = {
+    "DependenciesThroughVcpkg": True,
+}
+# This repository's own documents, sent whole from the default branch.
 REFERENCE_FILES = [
-    "development/style_guide.md",
-    "development/ci_runners.md",
     "development/ARCHITECTURE.md",
     "development/README.md",
     "development/PIPELINE.md",
+    "CONTRIBUTING.md",
+]
+# The family's general rules, named by file name; the bot reads them from its own checkout.
+SHARED_REFERENCE_FILES = ["style_guide.md", "ci_runners.md", "planning.md", "public_repositories.md"]
+# The plan files, named by file name: the work items and requirement rows are kept privately, and
+# the bot reads them, and checks their ticks and rows, from its own checkout.
+PLAN_EXCERPT_FILES = ["WBS.md", "RTM.md"]
+# Files that left this repository on 2026-11-27: the plans and their record are kept privately, and
+# the general rules are the family's, which the bot reads from its own checkout.
+REMOVED = [
+    "development/WBS.md",
     "development/RTM.md",
+    "development/analysis",
+    "development/style_guide.md",
+    "development/ci_runners.md",
 ]
 # The sections development/README.md gives a pull request's description, in its order, then the
 # disclosure and the bot's section.
@@ -63,6 +79,19 @@ TEMPLATE_SECTIONS = [
     "Failures fixed", "Clinical impact", "Consumer impact", "Security impact", "AI authorship",
     "Agent review", "Human verification",
 ]
+
+
+# Internal cloud infrastructure a public file must not name (decided 2026-11-27): a Cloud Storage
+# URL with a literal bucket name, and a service account's address, which is the account's name
+# joined to the project's. The cache store's bucket and accounts are the repository variables
+# IRIS_SLIDE_CACHE_BUCKET, IRIS_SLIDE_CACHE_READER and IRIS_SLIDE_CACHE_WRITER, read at run time,
+# so a file names the bucket as `gs://$BUCKET` and an account only through a variable.
+INFRASTRUCTURE_NAMES = re.compile(r"gs://[a-z0-9]|\.iam\.gserviceaccount\.com")
+
+
+def _infrastructure_names(text: str) -> list[str]:
+    """Each line of text that names a bucket or a service account literally."""
+    return [line.strip() for line in text.splitlines() if INFRASTRUCTURE_NAMES.search(line)]
 
 
 def _job(name: str) -> str:
@@ -122,23 +151,64 @@ class RequireSettings(unittest.TestCase):
 
 
 class Rubric(unittest.TestCase):
-    def test_the_rubric_names_iris_slides_rules(self) -> None:
-        review = tomllib.loads(RUBRIC.read_text(encoding="utf-8"))["review"]
+    def setUp(self) -> None:
+        self.rubric = tomllib.loads(RUBRIC.read_text(encoding="utf-8"))
+
+    def test_the_rubric_names_iris_slides_documents_and_the_shared_rules(self) -> None:
+        review = self.rubric["review"]
         self.assertEqual(review["reference_files"], REFERENCE_FILES)
-        # The bot excerpts the items a pull request names by their `PascalCase_n` IDs, which is
-        # how development/WBS.md writes them (`ReviewBot_17.8`).
-        self.assertEqual(review["excerpt_files"], [WBS])
+        self.assertEqual(review.get("excerpt_files", []), [])
+        self.assertEqual(review["shared_reference_files"], SHARED_REFERENCE_FILES)
         self.assertIn("open-source decoder and encoder of Iris slide files", str(review["product"]))
-        for name in REFERENCE_FILES + [WBS]:
+        for name in REFERENCE_FILES:
             self.assertTrue((REPOSITORY / name).is_file(), name)
 
-    def test_the_trace_checks_the_wbs_and_the_rtm(self) -> None:
-        trace = tomllib.loads(RUBRIC.read_text(encoding="utf-8"))["trace"]
-        self.assertEqual(trace, {"item": "Traceability", "ticks": [WBS], "rows": [RTM], "row_statuses": ["Implemented", "Verified"]})
+    def test_the_rubric_names_the_plan_files_by_file_name(self) -> None:
+        # A path would tell a public reader where the plans are kept; the bot takes the directory
+        # from the repository the review runs for.
+        review = self.rubric["review"]
+        self.assertEqual(review["plan_excerpt_files"], PLAN_EXCERPT_FILES)
+        self.assertEqual(review.get("plan_reference_files", []), [])
+        for name in SHARED_REFERENCE_FILES + PLAN_EXCERPT_FILES:
+            self.assertNotIn("/", name)
+
+    def test_the_trace_checks_the_kept_wbs_and_rtm(self) -> None:
+        self.assertEqual(self.rubric["trace"], {
+            "item": "Traceability", "ticks": [], "rows": [], "row_statuses": ["Implemented", "Verified"],
+            "plan_ticks": ["WBS.md"], "plan_rows": ["RTM.md"],
+        })
 
     def test_the_items_and_which_of_them_block(self) -> None:
-        items = tomllib.loads(RUBRIC.read_text(encoding="utf-8"))["item"]
-        self.assertEqual([(str(item["id"]), bool(item["blocking"])) for item in items], list(ITEMS.items()))
+        self.assertEqual(self.rubric["review"]["shared_items"], list(SHARED_ITEMS))
+        own = [(str(item["id"]), bool(item["blocking"])) for item in self.rubric["item"]]
+        self.assertEqual(own, list(OWN_ITEMS.items()))
+        # Text added to a shared item's guidance belongs to an item the rubric selects.
+        self.assertLessEqual(set(self.rubric["shared_guidance"]), set(SHARED_ITEMS))
+
+    def test_the_plans_and_the_general_rules_are_not_in_this_repository(self) -> None:
+        for name in REMOVED:
+            self.assertFalse((REPOSITORY / name).exists(), name)
+
+
+class PublicNames(unittest.TestCase):
+    def test_the_pattern_finds_literal_names_and_passes_variables(self) -> None:
+        # Joined here, so this file holds no literal name for the repository test to find.
+        domain = ".iam." + "gserviceaccount.com"
+        literal = ["sources: gs:" + "//some-bucket/prefix/", "account: reader@some-project" + domain,
+                   "account: cache-${{ mode }}@${{ inputs.project }}" + domain]
+        variable = ['gcloud storage buckets describe "gs://$BUCKET"', "describe gs://<bucket>",
+                    "account: ${{ inputs.reader }}", 'gcloud iam service-accounts describe "$READER"']
+        self.assertEqual(_infrastructure_names("\n".join(literal + variable)), literal)
+
+    @unittest.skipIf(shutil.which("git") is None, "git is not on PATH")
+    def test_no_tracked_file_names_a_bucket_or_a_service_account(self) -> None:
+        listed = subprocess.run(["git", "ls-files", "-z"], cwd=REPOSITORY, capture_output=True, check=True)
+        found = []
+        for name in listed.stdout.decode().split("\0"):
+            path = REPOSITORY / name
+            if name and path.is_file():
+                found += [f"{name}: {line}" for line in _infrastructure_names(path.read_text(encoding="utf-8", errors="replace"))]
+        self.assertEqual(found, [], "use the repository variables IRIS_SLIDE_CACHE_BUCKET, _READER and _WRITER")
 
 
 class Template(unittest.TestCase):
@@ -150,7 +220,7 @@ class Template(unittest.TestCase):
         text = TEMPLATE.read_text(encoding="utf-8")
         section = text[text.index("<!-- review-bot:begin -->"):text.index("<!-- review-bot:end -->")]
         boxes = [line.split("**")[1] for line in section.splitlines() if line.startswith("- [ ] **")]
-        self.assertEqual(boxes, list(ITEMS))
+        self.assertEqual(boxes, list(SHARED_ITEMS) + list(OWN_ITEMS))
         self.assertIn("<!-- human-verification:begin -->", text)
         self.assertIn("<!-- human-verification:end -->", text)
 

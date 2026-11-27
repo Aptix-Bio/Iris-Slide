@@ -3,7 +3,8 @@
 # SHA-512 (the SHA-256 GitHub lists for each asset matched, read 2026-11-24). vcpkg's openslide port
 # builds OpenSlide with glib and cairo, and one of their build tools (gperf) needs autoconf,
 # automake and libtool installed on the system (measured on macOS, 2026-11-24); the prebuilt library
-# needs nothing, and is the one the encoder linked before (ci_runners.md: prebuilt over built).
+# needs nothing, and is the one the encoder linked before. A prebuilt dependency is taken over one
+# built from source, since a build on a runner spends billed minutes on every cache miss.
 # OpenSlide is LGPL-2.1 and stays a shared library, linked dynamically.
 set(VCPKG_BUILD_TYPE release)   # openslide-bin ships one build
 set(VCPKG_POLICY_SKIP_ARCHITECTURE_CHECK enabled)   # the macOS archive is universal (arm64, x86_64)

@@ -1,6 +1,7 @@
 # VcpkgCaching_2 (OneReusableBuild_2.5; RTM Build_06): what a CI job's caches supplied, one line each
 # on the run's summary page, and a failure when a cache looks broken instead of slow
-# (ci_runners.md, "Fail loudly"). Run after the build whatever its outcome.
+# (a broken cache fails loudly, since a run that only slows down hides the defect; PIPELINE.md
+# rule 8). Run after the build whatever its outcome.
 #
 # - vcpkg: reads the build folder's vcpkg-install-history.log (cmake/toolchains/vcpkg.cmake appends
 #   each configure's install log to it) and says which packages the binary cache restored and which

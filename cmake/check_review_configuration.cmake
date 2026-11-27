@@ -1,8 +1,9 @@
-# RTM Review_01
-# ReviewBot_17.8 (development/WBS.md; development/PIPELINE.md, rule 10): the review bot's workflow
+# RTM Review_01, Review_02
+# ReviewBot_17.8, DevelopmentSplit_21 (development/PIPELINE.md, rule 10): the review bot's workflow
 # keeps the safety properties that make `pull_request_target` safe in a public repository, runs the
-# same steps as every other public Aptix repository's review workflow, and the files the bot reads
-# from the default branch exist.
+# same steps as every other public Aptix repository's review workflow, the files the bot reads
+# from the default branch exist, and the files it reads from its own checkout (the shared rules and
+# the plans) are named by file name alone.
 #
 #   cmake -P cmake/check_review_configuration.cmake      (from the repository root)
 #
@@ -17,7 +18,8 @@
 #   - both review jobs run only for a pull request from a branch of this repository, and a
 #     fork's pull request gets a job that states why it is skipped;
 #   - GOVERNANCE_READ_TOKEN reaches only the step that checks out Aptix-Bio/governance at the
-#     pinned commit, and every other action is pinned by a full commit SHA;
+#     pinned commit and, as `planning-token`, the bot's action, which checks out the private plans
+#     and conventions read-only, and every other action is pinned by a full commit SHA;
 #   - pull request text reaches a `run:` script only through `env:`, and every job is bounded;
 #   - the jobs, the settings check, the review step and its variables are those of the review
 #     workflow Iris-Headers and Iris-File-Extension run, which differs from this one only in
@@ -162,6 +164,7 @@ escaped(base_checkout [=[ref: ${{ github.sha }}]=])
 escaped(governance_ref [=[ref: ${{ env.GOVERNANCE_COMMIT }}]=])
 escaped(token_use [=[token: ${{ secrets.GOVERNANCE_READ_TOKEN }}]=])
 escaped(token_check [=[GOVERNANCE_READ_TOKEN: ${{ secrets.GOVERNANCE_READ_TOKEN != '' }}]=])
+escaped(planning_token [=[planning-token: ${{ secrets.GOVERNANCE_READ_TOKEN }}]=])
 escaped(head_data [=[HEAD_SHA: ${{ github.event.pull_request.head.sha }}]=])
 set(fetches_code "(git (checkout|fetch|switch|clone|pull)|gh pr checkout|refs/pull/|github\\.head_ref)")
 string(REPLACE "\n      - " ";" steps "${jobs_text}")
@@ -233,8 +236,12 @@ foreach(step IN LISTS steps)
             problem("step '${first}': '${stripped}' uses the head beyond HEAD_SHA")
         endif()
         string(FIND "${line}" "secrets.GOVERNANCE_READ_TOKEN" at)
-        if(NOT at EQUAL -1 AND NOT stripped STREQUAL token_use AND NOT stripped STREQUAL token_check)
+        if(NOT at EQUAL -1 AND NOT stripped STREQUAL token_use AND NOT stripped STREQUAL token_check
+           AND NOT stripped STREQUAL planning_token)
             problem("step '${first}': '${stripped}' passes GOVERNANCE_READ_TOKEN beyond the governance checkout")
+        endif()
+        if(stripped STREQUAL planning_token AND NOT step MATCHES "(^|\n) *uses: \\./governance/review-bot\n")
+            problem("step '${first}': planning-token is given to a step that is not the bot's action")
         endif()
         if(stripped STREQUAL token_use AND NOT step MATCHES "\n *repository: Aptix-Bio/governance\n")
             problem("step '${first}': the governance token is given to a step that is not the governance checkout")
@@ -297,19 +304,25 @@ endforeach()
 
 # --- what the bot reads from the default branch ---------------------------------------------
 file(READ "${REPOSITORY}/.github/review/rubric.toml" rubric)
-string(FIND "${rubric}" "reference_files = [" begin)
-set(references "")
-if(NOT begin EQUAL -1)
-    string(SUBSTRING "${rubric}" ${begin} -1 rest)
-    string(FIND "${rest}" "]" end)
-    string(SUBSTRING "${rest}" 0 ${end} rest)
-    string(REGEX MATCHALL "\"[^\"]+\"" references "${rest}")
-endif()
+# The array that opens a line `<key> = [`, as a CMake list of its quoted strings; the key at the
+# start of a line, so `reference_files` does not match inside `shared_reference_files`.
+function(rubric_array key out)
+    set(values "")
+    string(FIND "${rubric}" "\n${key} = [" begin)
+    if(NOT begin EQUAL -1)
+        string(SUBSTRING "${rubric}" ${begin} -1 rest)
+        string(FIND "${rest}" "]" end)
+        string(SUBSTRING "${rest}" 0 ${end} rest)
+        string(REGEX MATCHALL "\"[^\"]+\"" values "${rest}")
+        string(REPLACE "\"" "" values "${values}")
+    endif()
+    set(${out} "${values}" PARENT_SCOPE)
+endfunction()
+rubric_array(reference_files references)
 if(NOT references)
     problem("the rubric names no reference_files")
 endif()
 foreach(reference IN LISTS references)
-    string(REPLACE "\"" "" reference "${reference}")
     if(NOT EXISTS "${REPOSITORY}/${reference}")
         problem("the rubric's reference file ${reference} is missing; the bot fails every review by name")
     endif()
@@ -317,11 +330,13 @@ endforeach()
 if(NOT rubric MATCHES "\n\\[trace\\]\n(#[^\n]*\n)*item = \"Traceability\"\n")
     problem("the rubric's [trace] table does not name the Traceability item")
 endif()
-# The files whose ticks and rows must link their work commit (development/WBS.md, development/RTM.md):
-# a [trace] entry naming a file that does not exist matches no line, so every tick would go
-# unchecked and the item would pass on nothing.
+# The files whose ticks and rows must link their work commit: the WBS and RTM, kept privately and
+# named by `plan_ticks` and `plan_rows`, or a file of this repository named by `ticks` and `rows`.
+# A [trace] entry naming a file of this repository that does not exist matches no line, so every
+# tick would go unchecked and the item would pass on nothing; with no file named at all, likewise.
 string(FIND "${rubric}" "\n[trace]\n" trace_at)
 set(traced "")
+set(planned "")
 if(NOT trace_at EQUAL -1)
     math(EXPR trace_at "${trace_at} + 1")
     string(SUBSTRING "${rubric}" ${trace_at} -1 trace_text)
@@ -329,16 +344,31 @@ if(NOT trace_at EQUAL -1)
     if(NOT next_table EQUAL -1)
         string(SUBSTRING "${trace_text}" 0 ${next_table} trace_text)
     endif()
-    foreach(key ticks rows)
+    foreach(key ticks rows plan_ticks plan_rows)
         if(trace_text MATCHES "\n${key} = \\[([^]\n]*)\\]")
             string(REGEX MATCHALL "\"[^\"]+\"" names "${CMAKE_MATCH_1}")
-            list(APPEND traced ${names})
+            if(key MATCHES "^plan_")
+                list(APPEND planned ${names})
+            else()
+                list(APPEND traced ${names})
+            endif()
         endif()
     endforeach()
 endif()
-if(NOT traced)
+if(NOT traced AND NOT planned)
     problem("the rubric's [trace] table names no ticks or rows file")
 endif()
+# The plan files and the shared rules are named by file name alone: the bot takes their directory
+# from its own checkout, and a path would tell a public reader where the plans are kept.
+rubric_array(plan_reference_files plan_references)
+rubric_array(plan_excerpt_files plan_excerpts)
+rubric_array(shared_reference_files shared_references)
+string(REPLACE "\"" "" planned "${planned}")
+foreach(name IN LISTS planned plan_references plan_excerpts shared_references)
+    if(NOT name MATCHES "^[A-Za-z0-9_.-]+$" OR name MATCHES "^\\.")
+        problem("the rubric names '${name}' from the bot's checkout; it takes a file name alone")
+    endif()
+endforeach()
 foreach(name IN LISTS traced)
     string(REPLACE "\"" "" name "${name}")
     if(NOT EXISTS "${REPOSITORY}/${name}")
@@ -360,7 +390,7 @@ string(STRIP "${maintainers}" maintainers)
 if(NOT maintainers MATCHES "^@[A-Za-z0-9-]+([ \t]+@[A-Za-z0-9-]+)*$")
     problem("CODEOWNERS' last '*' line, whose owners may grant an exception, names no @login (or names a team or an email): '${catch_all}'")
 endif()
-foreach(path /.github/review/ /.github/workflows/)
+foreach(path /.github/review/ /.github/workflows/ /CONTRIBUTING.md /development/)
     string(REPLACE "." "\\." pattern "${path}")
     set(owned FALSE)
     foreach(line IN LISTS owners)
