@@ -23,13 +23,15 @@
 
 namespace IrisSlide {
 // RTM Pyramid_01
+/// The reduction's scale on each axis: output pixel i stands for the source pair (2i, 2i+1).
+constexpr std::uint32_t REDUCE_SCALE       = 2;
 /// Output pixel i of a reduced row reads source pixels 2i-3 to 2i+4: 3 before its pair (2i, 2i+1)
 /// and 3 after it.
 constexpr std::uint32_t REDUCE_HALO_BEFORE = 3;
 constexpr std::uint32_t REDUCE_HALO_AFTER  = 3;
-constexpr std::uint32_t REDUCE_TAPS        = REDUCE_HALO_BEFORE + 2 + REDUCE_HALO_AFTER;   // the pair and its halo
+constexpr std::uint32_t REDUCE_TAPS        = REDUCE_HALO_BEFORE + REDUCE_SCALE + REDUCE_HALO_AFTER;   // the pair and its halo
 /// The side of the source region a 256-pixel reduced tile reads: 3 + 512 + 3 pixels.
-constexpr std::uint32_t REDUCE_REGION = 2 * RECUT_TILE + REDUCE_HALO_BEFORE + REDUCE_HALO_AFTER;
+constexpr std::uint32_t REDUCE_REGION = REDUCE_SCALE * RECUT_TILE + REDUCE_HALO_BEFORE + REDUCE_HALO_AFTER;
 /// The memory one reduce_2x call and its gathered region hold while they run: the region (RGBA8),
 /// the first pass and its transpose (int16), and the second pass (RGBA8).
 constexpr std::uint64_t REDUCE_SCRATCH_BYTES =
@@ -103,7 +105,7 @@ consteval std::array<std::int32_t, REDUCE_TAPS> make_weights ()
     std::array<double, REDUCE_TAPS> raw {};
     double sum = 0;
     for (std::uint32_t k = 0; k < REDUCE_TAPS; ++k) {
-        raw[k] = mitchell((double(k) - (REDUCE_HALO_BEFORE + 0.5)) / 2.0);
+        raw[k] = mitchell((double(k) - (REDUCE_HALO_BEFORE + 0.5)) / double(REDUCE_SCALE));
         sum += raw[k];
     }
     std::array<std::int32_t, REDUCE_TAPS> weights {};
@@ -113,8 +115,8 @@ consteval std::array<std::int32_t, REDUCE_TAPS> make_weights ()
         total += weights[k];
     }
     const std::int32_t shortfall = (1 << REDUCE_WEIGHT_BITS) - total;   // even: the table is symmetric
-    weights[REDUCE_HALO_BEFORE] += shortfall / 2;
-    weights[REDUCE_HALO_BEFORE + 1] += shortfall / 2;
+    weights[REDUCE_HALO_BEFORE] += shortfall / std::int32_t{REDUCE_SCALE};
+    weights[REDUCE_HALO_BEFORE + REDUCE_SCALE - 1] += shortfall / std::int32_t{REDUCE_SCALE};
     return weights;
 }
 } // namespace detail
@@ -155,8 +157,8 @@ void gather_region (LayerSize layer, std::uint32_t out_x, std::uint32_t out_y, T
     const auto clamp = [](std::int64_t v, std::uint64_t size) {
         return static_cast<std::uint64_t>(std::clamp<std::int64_t>(v, 0, std::int64_t(size) - 1));
     };
-    const std::int64_t left = std::int64_t{out_x} * 2 * RECUT_TILE - REDUCE_HALO_BEFORE;
-    const std::int64_t top  = std::int64_t{out_y} * 2 * RECUT_TILE - REDUCE_HALO_BEFORE;
+    const std::int64_t left = std::int64_t{out_x} * REDUCE_SCALE * RECUT_TILE - REDUCE_HALO_BEFORE;
+    const std::int64_t top  = std::int64_t{out_y} * REDUCE_SCALE * RECUT_TILE - REDUCE_HALO_BEFORE;
     for (std::uint32_t ry = 0; ry < REDUCE_REGION; ++ry) {
         const std::uint64_t sy = clamp(top + ry, layer.height);
         std::uint8_t* out = region.data() + std::size_t{ry} * REDUCE_REGION * RGBA_BYTES;

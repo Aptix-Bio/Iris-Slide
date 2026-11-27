@@ -90,7 +90,7 @@ void reduce_2x (std::span<const std::uint8_t> region, std::span<std::uint8_t> ti
     std::vector<std::int16_t> first(std::size_t{RECUT_TILE} * REGION_VALUES);
     for (std::uint32_t j = 0; j < RECUT_TILE; ++j) {
         std::array<const std::uint8_t*, REDUCE_TAPS> rows {};
-        for (std::uint32_t k = 0; k < REDUCE_TAPS; ++k) rows[k] = region.data() + (2 * std::size_t{j} + k) * REGION_VALUES;
+        for (std::uint32_t k = 0; k < REDUCE_TAPS; ++k) rows[k] = region.data() + (REDUCE_SCALE * std::size_t{j} + k) * REGION_VALUES;
         HWY_DYNAMIC_DISPATCH(first_pass_row)(rows.data(), first.data() + std::size_t{j} * REGION_VALUES, REGION_VALUES);
     }
     // Transpose by pixel (4 values): column x of the first pass becomes row x.
@@ -103,7 +103,7 @@ void reduce_2x (std::span<const std::uint8_t> region, std::span<std::uint8_t> ti
     std::vector<std::uint8_t> second(std::size_t{RECUT_TILE} * TILE_VALUES);
     for (std::uint32_t i = 0; i < RECUT_TILE; ++i) {
         std::array<const std::int16_t*, REDUCE_TAPS> rows {};
-        for (std::uint32_t k = 0; k < REDUCE_TAPS; ++k) rows[k] = transposed.data() + (2 * std::size_t{i} + k) * TILE_VALUES;
+        for (std::uint32_t k = 0; k < REDUCE_TAPS; ++k) rows[k] = transposed.data() + (REDUCE_SCALE * std::size_t{i} + k) * TILE_VALUES;
         HWY_DYNAMIC_DISPATCH(second_pass_row)(rows.data(), second.data() + std::size_t{i} * TILE_VALUES, TILE_VALUES);
     }
     // Transpose back: row i of the second pass is output column i.
@@ -120,13 +120,13 @@ void reduce_2x_reference (std::span<const std::uint8_t> region, std::span<std::u
     for (std::uint32_t j = 0; j < RECUT_TILE; ++j)
         for (std::size_t v = 0; v < REGION_VALUES; ++v)
             first[std::size_t{j} * REGION_VALUES + v] = detail::tap_sum<std::int16_t, REDUCE_FIRST_SHIFT>(
-                [&region, j, v](std::uint32_t k) { return region[(2 * std::size_t{j} + k) * REGION_VALUES + v]; });
+                [&region, j, v](std::uint32_t k) { return region[(REDUCE_SCALE * std::size_t{j} + k) * REGION_VALUES + v]; });
     // Second pass, horizontal: output value (j, i, c) reads first-pass row j at pixels 2i to 2i+7.
     for (std::uint32_t j = 0; j < RECUT_TILE; ++j)
         for (std::size_t value = 0; value < TILE_VALUES; ++value) {
             const std::size_t i = value / RGBA_BYTES, c = value % RGBA_BYTES;
             tile[std::size_t{j} * TILE_VALUES + value] = detail::tap_sum<std::uint8_t, REDUCE_SECOND_SHIFT>(
-                [&first, j, i, c](std::uint32_t k) { return first[std::size_t{j} * REGION_VALUES + (2 * i + k) * RGBA_BYTES + c]; });
+                [&first, j, i, c](std::uint32_t k) { return first[std::size_t{j} * REGION_VALUES + (REDUCE_SCALE * i + k) * RGBA_BYTES + c]; });
         }
 }
 

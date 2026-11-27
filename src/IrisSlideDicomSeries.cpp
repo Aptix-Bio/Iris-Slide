@@ -65,6 +65,7 @@ std::string tag_name (std::uint32_t tag)
 {
     throw std::runtime_error("DICOM instance " + path.string() + ": " + tag_name(tag) + " " + why);
 }
+// RTM Dicom_03: an attribute is read, or refused naming the file, the attribute and why.
 DcmElement* element_of (const DcmDataSet* data, std::uint32_t tag)
 {
     const bool is_present = dcm_dataset_contains(data, tag);

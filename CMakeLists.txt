@@ -173,7 +173,7 @@ function(iris_slide_compile_settings target)
         IFE_EXPORT=)
     # MSVC reads a source file in the system code page unless told otherwise; the sources are UTF-8
     # (a u8"" literal written in the system code page arrives with different bytes). MSVC is set for
-    # cl and for clang-cl, which takes the same option (WindowsCompilers_17.9).
+    # cl and for clang-cl, which takes the same option (WindowsCompilers_17.9; RTM Build_08).
     if(MSVC)
         target_compile_options(${target} PRIVATE /utf-8)
     endif()

@@ -90,6 +90,7 @@ jobs:
       - name: The compiler's environment (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+      # WindowsCompilers_17.9 (RTM Build_08): Visual Studio's clang-cl for the ClangCL cell.
       - name: ClangCL on PATH (Windows)
         if: runner.os == 'Windows' && inputs.cxx == 'clang-cl'
         run: cmake -P scripts/clang_cl_path.cmake

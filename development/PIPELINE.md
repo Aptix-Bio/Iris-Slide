@@ -13,7 +13,7 @@ flowchart LR
     B["scripts/bootstrap_vcpkg.cmake<br/>scripts/bootstrap_emsdk.cmake"] --> T
     T -->|"restore or build"| S[("the cache bucket<br/>iris-slide/")]
     P["CMakePresets.json"] --> T
-    W["_build.yml<br/>one per platform"] --> P
+    W["_build.yml<br/>one per cell"] --> P
     A[".github/actions/caches<br/>scripts/ci_caches.cmake"] --> S
     W --> A
     W --> R["scripts/cache_report.cmake"]
@@ -88,7 +88,8 @@ flowchart LR
    compile through sccache, any sccache read or write error, or lookup errors
    with no hit or above one compile in twenty.
 9. **One reusable build, CMake does the work.** `_build.yml` configures, builds
-   and packages one cell and is called once per platform; Linux runs first,
+   and packages one cell and is called once per cell (a platform, and on
+   Windows a compiler); Linux runs first,
    Windows and macOS only after it passes. Windows is two cells, one per compiler
    (`cl` and `clang-cl`, D21); `scripts/clang_cl_path.cmake` puts Visual Studio's
    clang-cl on the ClangCL cell's PATH. Each `run:` step is one command, at
