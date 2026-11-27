@@ -28,6 +28,27 @@ target_link_libraries(
     PRIVATE ${test_dependencies} Catch2::Catch2WithMain
 )
 catch_discover_tests(IrisSlideTests)
+# CommandLine_24.11 (RTM Encode_09): the command line refuses what it cannot convert by name,
+# before any encode, with exit code 2; each case matches its refusal.
+if (IRIS_BUILD_ENCODER)
+    set(cli_cases
+        "help|--help|encodes a whole-slide image"
+        "quality_too_large|-s,absent.dcm,-q,65626|quality 65626 is above 65535"
+        "budget_not_a_number|-s,absent.dcm,--memory-budget,2abc|memory budget \"2abc\""
+        "subsampling_unknown|-s,absent.dcm,--subsampling,411|subsampling \"411\""
+        "argument_unknown|-s,absent.dcm,--colour,red|unknown argument \"--colour\""
+        "source_missing|-q,90|a source slide is needed"
+        "source_absent|-s,absent.dcm|absent.dcm is not a file")
+    foreach(case IN LISTS cli_cases)
+        string(REPLACE "|" ";" fields "${case}")
+        list(GET fields 0 name)
+        list(GET fields 1 arguments)
+        list(GET fields 2 expected)
+        string(REPLACE "," ";" arguments "${arguments}")
+        add_test(NAME cli_${name} COMMAND IrisSlideEncoder ${arguments})
+        set_tests_properties(cli_${name} PROPERTIES PASS_REGULAR_EXPRESSION "${expected}")
+    endforeach()
+endif()
 # LocalSlidesOptIn_22.10 (decided 2026-11-27): the tests on the maintainer's own slides decode and
 # encode whole real slides (a minute or more), so they are hidden from the default run ([.local])
 # and run together as one test labelled "local": ctest --preset local.

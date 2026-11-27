@@ -38,8 +38,8 @@ EncoderHandle create (const std::string& source, const std::string& destination,
                       std::uint64_t layer_step, const std::map<std::string, std::string>& i2s_attributes,
                       std::uint64_t i2s_version)
 {
-    // Python's int is unbounded: each is range-checked before it narrows (std::out_of_range is
-    // raised as ValueError), so a large number is refused instead of wrapped.
+    // Python's int is unbounded: each is range-checked before it narrows (raised as ValueError),
+    // so a large number is refused instead of wrapped.
     IrisSlide::EncoderDesc desc {.source        = source,
                                  .destination   = destination,
                                  .quality       = IrisSlide::narrowed<IrisSlide::Quality>(quality, "quality"),

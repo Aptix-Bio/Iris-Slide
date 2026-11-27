@@ -42,12 +42,14 @@ inline std::string_view subsampling_name (Subsampling subsampling)
 }
 
 /// @p value as T, refused naming @p what when T cannot hold it, so a large number is never
-/// wrapped into one the encoder accepts (65626 as an 8-bit quality is 90).
+/// wrapped into one the encoder accepts (65626 as a 16-bit quality is 90). It throws
+/// std::invalid_argument, which Python's binding raises as ValueError; pybind11 would raise
+/// std::out_of_range as IndexError, the error for a sequence index.
 template <std::unsigned_integral T>
 T narrowed (std::uint64_t value, std::string_view what)
 {
     if (value > std::numeric_limits<T>::max())
-        throw std::out_of_range(std::string(what) + " " + std::to_string(value) + " is above " +
+        throw std::invalid_argument(std::string(what) + " " + std::to_string(value) + " is above " +
                                 std::to_string(std::numeric_limits<T>::max()));
     return static_cast<T>(value);
 }

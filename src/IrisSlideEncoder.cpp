@@ -729,13 +729,12 @@ Result at_boundary (const char* call, std::invocable auto&& body) noexcept
     }
 }
 
-/// The encoder for @p source, after every check the descriptor's values must pass; throws naming the value refused.
-Encoder make_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source)
+/// Every check the descriptor alone decides, made before a source is opened so a wrong option is
+/// refused by name without reading the slide; throws naming the value refused.
+void check_desc (const EncoderDesc& desc)
 {
-    if (!source) throw std::runtime_error("create_encoder was given no source");
-    check_attributes(desc.attributes);
-    const std::uint32_t per_step = reductions_per_step(desc.layer_step);
-    if (per_step == 0)
+    check_attributes(desc.attributes);   // D10
+    if (reductions_per_step(desc.layer_step) == 0)
         throw std::runtime_error("layer step " + std::to_string(desc.layer_step) + " is not a power of two from 2");
     if (!is_written_encoding(desc.encoding))
         throw std::runtime_error(std::string("the rebuilt encoder does not write ") + encoding_name(desc.encoding));
@@ -744,6 +743,14 @@ Encoder make_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source)
     if (desc.concurrency == 0) throw std::runtime_error("concurrency 0 is refused: an encode needs at least 1 worker thread");
     if (!std::filesystem::is_directory(desc.destination))
         throw std::runtime_error("the destination " + desc.destination.string() + " is not a folder");
+}
+
+/// The encoder for @p source, after the descriptor's checks and the source's; throws naming the value refused.
+Encoder make_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source)
+{
+    if (!source) throw std::runtime_error("create_encoder was given no source");
+    check_desc(desc);
+    const std::uint32_t per_step = reductions_per_step(desc.layer_step);
     if (source->size().width == 0 || source->size().height == 0)
         throw std::runtime_error("the source is " + std::to_string(source->size().width) + " x " +
                                  std::to_string(source->size().height) + " pixels; an empty slide is not encoded");
@@ -778,7 +785,7 @@ Result encoder_output_name (const std::filesystem::path& source, Encoding encodi
 Result create_encoder (const EncoderDesc& desc, Encoder& encoder) noexcept
 {
     return at_boundary("create_encoder", [&] {
-        check_attributes(desc.attributes);   // refused before the source is opened (D10)
+        check_desc(desc);   // refused before the source is opened
         encoder = make_encoder(desc, open_source(desc.source));
     });
 }

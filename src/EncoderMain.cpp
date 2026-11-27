@@ -77,7 +77,7 @@ int encode_failed (const std::string& why)
     return EXIT_ENCODE_FAILED;
 }
 
-/// The arguments as an EncoderDesc; throws std::invalid_argument or std::out_of_range naming the one refused.
+/// The arguments as an EncoderDesc; throws std::invalid_argument naming the one refused.
 IrisSlide::EncoderDesc desc_of (int argc, char const* argv[])
 {
     IrisSlide::EncoderDesc desc;
@@ -135,7 +135,7 @@ int main (int argc, char const* argv[])
         IrisSlide::EncoderDesc desc;
         try {
             desc = desc_of(argc, argv);
-        } catch (const std::logic_error& refused) {   // invalid_argument and out_of_range
+        } catch (const std::invalid_argument& refused) {
             return usage(refused.what());
         }
         return encode(desc);
