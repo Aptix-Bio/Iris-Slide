@@ -214,11 +214,12 @@ TEST_CASE("Each local slide's series yields its highest VOLUME instance, TILED_F
         const auto across = (source.total_columns + source.columns - 1) / source.columns;
         const auto down   = (source.total_rows + source.rows - 1) / source.rows;
         CHECK(std::uint64_t{source.frames} == across * down);
-        CHECK(source.spacing.row_mm > 0.0);
-        CHECK(source.spacing.column_mm > 0.0);
+        REQUIRE(source.spacing);
+        CHECK(source.spacing->row_mm > 0.0);
+        CHECK(source.spacing->column_mm > 0.0);
         WARN(source.path.filename() << ": " << source.total_columns << " x " << source.total_rows << ", "
-             << source.columns << " px frames, spacing " << source.spacing.row_mm << " x "
-             << source.spacing.column_mm << " mm");
+             << source.columns << " px frames, spacing " << source.spacing->row_mm << " x "
+             << source.spacing->column_mm << " mm");
     }
 }
 

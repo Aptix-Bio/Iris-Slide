@@ -75,7 +75,8 @@ struct WholeSlide {
     std::uint32_t      width = 0, height = 0, frame_columns = 0, frame_rows = 0;
     std::string        transfer_syntax = "1.2.840.10008.1.2.4.50";
     std::string        photometric = "YBR_FULL_422";
-    std::string        pixel_spacing = "0.00025\\0.00025";
+    std::string        image_flavor = "VOLUME";                 ///< ImageType value 3
+    std::string        pixel_spacing = "0.00025\\0.00025";       ///< empty: no SharedFunctionalGroupsSequence
     std::string        series_uid = "1.2.826.0.1.3680043.10.2";
     std::string        sop_uid = "1.2.826.0.1.3680043.10.3";
     std::vector<Bytes> frames;
@@ -85,7 +86,7 @@ inline Bytes whole_slide(const WholeSlide& slide)
     constexpr const char* WSI_CLASS = "1.2.840.10008.5.1.4.1.1.77.1.6";
     Bytes b;
     file_meta(b, slide.transfer_syntax, WSI_CLASS, slide.sop_uid);
-    text(b, 0x0008, 0x0008, "CS", "DERIVED\\PRIMARY\\VOLUME\\NONE");
+    text(b, 0x0008, 0x0008, "CS", "DERIVED\\PRIMARY\\" + slide.image_flavor + "\\NONE");
     text(b, 0x0008, 0x0016, "UI", WSI_CLASS);
     text(b, 0x0008, 0x0018, "UI", slide.sop_uid);
     text(b, 0x0020, 0x000D, "UI", "1.2.826.0.1.3680043.10.4");
@@ -101,13 +102,15 @@ inline Bytes whole_slide(const WholeSlide& slide)
     ul(b, 0x0048, 0x0006, slide.width);
     ul(b, 0x0048, 0x0007, slide.height);
     // SharedFunctionalGroupsSequence › PixelMeasuresSequence › PixelSpacing, undefined lengths.
-    long_header(b, 0x5200, 0x9229, "SQ", UNDEFINED);
-    item(b, UNDEFINED);
-    long_header(b, 0x0028, 0x9110, "SQ", UNDEFINED);
-    item(b, UNDEFINED);
-    text(b, 0x0028, 0x0030, "DS", slide.pixel_spacing);
-    item_end(b); sequence_end(b);
-    item_end(b); sequence_end(b);
+    if (!slide.pixel_spacing.empty()) {
+        long_header(b, 0x5200, 0x9229, "SQ", UNDEFINED);
+        item(b, UNDEFINED);
+        long_header(b, 0x0028, 0x9110, "SQ", UNDEFINED);
+        item(b, UNDEFINED);
+        text(b, 0x0028, 0x0030, "DS", slide.pixel_spacing);
+        item_end(b); sequence_end(b);
+        item_end(b); sequence_end(b);
+    }
     long_header(b, 0x7FE0, 0x0010, "OB", UNDEFINED);
     item(b, 0);                                                        // an empty Basic Offset Table
     for (Bytes frame : slide.frames) {
@@ -129,6 +132,21 @@ inline std::filesystem::path write_instance(const Bytes& bytes, const std::strin
     const auto path = folder / "instance.dcm";
     std::ofstream(path, std::ios::binary).write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
     return path;
+}
+/// @p instances written as instance_0.dcm, instance_1.dcm, … in one new folder, a series; returns
+/// their paths in order.
+inline std::vector<std::filesystem::path> write_series(const std::vector<Bytes>& instances, const std::string& name)
+{
+    const auto folder = std::filesystem::temp_directory_path() / ("IrisSlideTest_" + name);
+    std::filesystem::remove_all(folder);
+    std::filesystem::create_directories(folder);
+    std::vector<std::filesystem::path> paths;
+    for (std::size_t i = 0; i < instances.size(); ++i) {
+        paths.push_back(folder / ("instance_" + std::to_string(i) + ".dcm"));
+        std::ofstream(paths.back(), std::ios::binary)
+            .write(reinterpret_cast<const char*>(instances[i].data()), std::streamsize(instances[i].size()));
+    }
+    return paths;
 }
 } // namespace dicom_builder
 #endif /* IrisSlideTestDicomBuilder_hpp */

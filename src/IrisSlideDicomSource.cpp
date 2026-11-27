@@ -49,7 +49,7 @@ _codec          (source_codec(instance.transfer_syntax)),   // refuses a syntax 
 _color          (frame_color(_codec, instance.photometric)),
 _grid           {.width = instance.total_columns, .height = instance.total_rows,
                  .frame = {.columns = instance.columns, .rows = instance.rows}},
-_measurements   {.microns_per_pixel = instance.spacing.column_mm * MICRONS_PER_MILLIMETRE,
+_measurements   {.microns_per_pixel = instance.spacing ? instance.spacing->column_mm * MICRONS_PER_MILLIMETRE : 0.0,
                  .magnification     = instance.objective_power,
                  .icc_profile       = instance.icc_profile},
 _index          (instance.path, instance.frames)
@@ -59,9 +59,12 @@ _index          (instance.path, instance.frames)
     check_tiled_full(instance);
     // A slide records one microns-per-pixel value (IFE MICRONS_PIXEL): a pixel that is not square
     // would misstate one axis, so it is refused instead of averaged or taken from one axis.
-    if (instance.spacing.row_mm != instance.spacing.column_mm)
-        refuse(instance, "has Pixel Spacing " + std::format("{:g}", instance.spacing.row_mm) + " mm (rows) by " +
-                         std::format("{:g}", instance.spacing.column_mm) + " mm (columns); a slide records one square pixel size");
+    if (!instance.spacing)
+        refuse(instance, "has no Pixel Spacing (SharedFunctionalGroupsSequence › PixelMeasuresSequence); "
+                         "the slide's physical scale comes from it");
+    if (instance.spacing->row_mm != instance.spacing->column_mm)
+        refuse(instance, "has Pixel Spacing " + std::format("{:g}", instance.spacing->row_mm) + " mm (rows) by " +
+                         std::format("{:g}", instance.spacing->column_mm) + " mm (columns); a slide records one square pixel size");
     if (instance.columns == 0 || instance.rows == 0)
         refuse(instance, "declares frames of " + std::to_string(instance.columns) + " x " +
                          std::to_string(instance.rows) + " pixels");

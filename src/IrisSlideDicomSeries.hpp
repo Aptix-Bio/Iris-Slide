@@ -12,6 +12,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <optional>
 #include <vector>
 
 namespace IrisSlide {
@@ -35,7 +36,9 @@ struct DicomInstance {
     std::uint32_t         columns       = 0;       ///< Columns: a frame's width
     std::uint32_t         rows          = 0;       ///< Rows: a frame's height
     std::uint32_t         frames        = 0;       ///< NumberOfFrames, 1 when absent
-    PixelSpacing          spacing;
+    /// Pixel Spacing from SharedFunctionalGroupsSequence › PixelMeasuresSequence; absent on many
+    /// LABEL and OVERVIEW instances, which the encoder does not read, so the source requires it.
+    std::optional<PixelSpacing> spacing;
     double                objective_power = 0.0;   ///< OpticalPathSequence › ObjectiveLensPower; 0 when absent
     std::string           photometric;             ///< PhotometricInterpretation (0028,0004)
     std::string           icc_profile;             ///< OpticalPathSequence › ICCProfile, verbatim; empty when absent
@@ -59,7 +62,7 @@ void check_tiled_full (const DicomInstance& instance);
 PixelSpacing parse_pixel_spacing (std::string_view text);
 
 /// One instance's attributes, read with libdicom; Pixel Spacing from SharedFunctionalGroupsSequence
-/// › PixelMeasuresSequence. Throws std::runtime_error naming the file and the attribute that is
+/// › PixelMeasuresSequence when the instance has it. Throws std::runtime_error naming the file and the attribute that is
 /// missing or unreadable.
 DicomInstance read_dicom_instance (const std::filesystem::path& path);
 

@@ -240,9 +240,13 @@ DicomInstance read_dicom_instance (const std::filesystem::path& path)
         .frames          = element_of(data, TAG_NUMBER_OF_FRAMES)
                          ? count_of(path, TAG_NUMBER_OF_FRAMES, text_of(path, data, TAG_NUMBER_OF_FRAMES)) : 1,
     };
-    const DcmDataSet* measures = nested_item(path, data, PIXEL_SPACING_PATH);
-    instance.spacing = parse_pixel_spacing(text_of(path, measures, TAG_PIXEL_SPACING, 0) + VALUE_SEPARATOR +
-                                           text_of(path, measures, TAG_PIXEL_SPACING, 1));
+    // Absent spacing is a value here (DicomSource refuses it on the instance it encodes); spacing
+    // that is present and unreadable is refused, whichever instance it is on.
+    const bool has_measures = element_of(data, TAG_SHARED_FUNCTIONAL_GROUPS) != nullptr;
+    const DcmDataSet* measures = has_measures ? nested_item(path, data, PIXEL_SPACING_PATH) : nullptr;
+    if (measures && element_of(measures, TAG_PIXEL_SPACING))
+        instance.spacing = parse_pixel_spacing(text_of(path, measures, TAG_PIXEL_SPACING, 0) + VALUE_SEPARATOR +
+                                               text_of(path, measures, TAG_PIXEL_SPACING, 1));
     instance.photometric = text_of(path, data, TAG_PHOTOMETRIC);
     read_optical_path(path, data, instance);
     return instance;

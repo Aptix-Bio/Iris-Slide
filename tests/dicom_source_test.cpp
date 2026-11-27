@@ -152,3 +152,24 @@ TEST_CASE("A synthetic JPEG whole-slide instance encodes through the public API"
     encoder.reset();
     std::filesystem::remove_all(path.parent_path());
 }
+
+TEST_CASE("An instance the encoder does not read may lack Pixel Spacing; the one it encodes may not", "[Dicom_03]")
+{
+    // A series' LABEL image often has no SharedFunctionalGroupsSequence (seen in a published JPEG
+    // 2000 series): it must not make the series unreadable, since only the VOLUME is encoded.
+    dicom_builder::WholeSlide label {.width = 240, .height = 240, .frame_columns = 240, .frame_rows = 240};
+    label.image_flavor = "LABEL";
+    label.pixel_spacing.clear();
+    label.sop_uid = "1.2.826.0.1.3680043.10.5";
+    label.frames.push_back(jpeg_frame(0, 0));
+    const auto series = dicom_builder::write_series({dicom_builder::whole_slide(slide()), dicom_builder::whole_slide(label)},
+                                                    "source_label");
+    const auto source = IrisSlide::open_dicom_source(series[1]);   // named by its label: the VOLUME is chosen
+    CHECK(source->size().width == WIDTH);
+    auto unmeasured = slide();
+    unmeasured.pixel_spacing.clear();
+    const auto path = dicom_builder::write_instance(dicom_builder::whole_slide(unmeasured), "source_unmeasured");
+    CHECK_THROWS_WITH(IrisSlide::open_dicom_source(path), ContainsSubstring("Pixel Spacing"));
+    std::filesystem::remove_all(series[0].parent_path());
+    std::filesystem::remove_all(path.parent_path());
+}
