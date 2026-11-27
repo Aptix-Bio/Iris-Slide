@@ -16,7 +16,7 @@ only when its tests run green on every CI cell that runs them; code alone is
 - **Tests:** `Unit` · `Contract` (a public call's promise) · `Integration`
   (the encoder or a binding end to end) · `Hostile` (a damaged or hostile
   stream, under AddressSanitizer) · `Concurrency` (under ThreadSanitizer) ·
-  `Static` (a gate that reads the source or settings) · `Benchmark` ·
+  `Static` (a gate that reads the source or settings) · `Property` (an invariant checked over generated inputs with a fixed seed) · `Benchmark` ·
   `Review` (a document the maintainer reads; no test can prove it).
 - **Tags:** a comment line `// RTM <ID>[, <ID>…]` (C++) or `# RTM <ID>[, <ID>…]`
   (Python, CMake, workflows) on the code and the test; Catch2 tests also carry
