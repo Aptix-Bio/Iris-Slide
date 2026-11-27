@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <span>
 
-#include "IrisSlideOpenJpeg.hpp"
+#include "IrisSlideGeometry.hpp"
 
 namespace IrisSlide {
 // RTM Dicom_05

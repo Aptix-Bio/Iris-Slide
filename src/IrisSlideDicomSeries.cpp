@@ -84,8 +84,9 @@ std::uint64_t integer_of (const std::filesystem::path& path, const DcmDataSet* d
     if (!element) refuse(path, tag, "is absent");
     DcmError* error = nullptr;
     int64_t value = 0;
-    if (!dcm_element_get_value_integer(&error, element, 0, &value) || value < 0)
-        refuse(path, tag, "is unreadable: " + take_error(error, "negative"));
+    const bool is_read = dcm_element_get_value_integer(&error, element, 0, &value);
+    if (!is_read) refuse(path, tag, "is unreadable: " + take_error(error, "no detail"));
+    if (value < 0) refuse(path, tag, "is negative: " + std::to_string(value));
     return static_cast<std::uint64_t>(value);
 }
 /// The data set at the end of @p path_of_sequences: the first item of each sequence in turn.
@@ -134,15 +135,22 @@ std::uint32_t count_of (const std::filesystem::path& path, std::uint32_t tag, co
         refuse(path, tag, "\"" + text + "\" is not a positive count");
     return count;
 }
-/// A DS value (PS3.5 6.2): a finite decimal, refused naming the file, the attribute and the text.
-double decimal_of (const std::filesystem::path& path, std::uint32_t tag, const std::string& text)
+/// A DS value (PS3.5 6.2), spaces trimmed: a finite decimal filling the text, or none. Each caller
+/// refuses with its own context (the file and attribute, or the whole Pixel Spacing text).
+std::optional<double> decimal_value (std::string_view text)
 {
     const std::string value = trimmed(text);
     char* end = nullptr;
     const double parsed = value.empty() ? 0.0 : std::strtod(value.c_str(), &end);
-    if (value.empty() || end != value.c_str() + value.size() || !std::isfinite(parsed))
-        refuse(path, tag, "\"" + text + "\" is not a decimal");
+    const bool is_decimal = !value.empty() && end == value.c_str() + value.size() && std::isfinite(parsed);
+    if (!is_decimal) return std::nullopt;
     return parsed;
+}
+double decimal_of (const std::filesystem::path& path, std::uint32_t tag, const std::string& text)
+{
+    const auto value = decimal_value(text);
+    if (!value) refuse(path, tag, "\"" + text + "\" is not a decimal");
+    return *value;
 }
 std::string trimmed (std::string_view text)
 {
@@ -150,16 +158,14 @@ std::string trimmed (std::string_view text)
     if (first == std::string_view::npos) return {};
     return std::string(text.substr(first, text.find_last_not_of(' ') - first + 1));
 }
-/// One positive, finite decimal that fills @p text, or a refusal naming @p whole.
+/// One positive decimal of Pixel Spacing, or a refusal naming the @p whole text.
 double positive_decimal (std::string_view text, std::string_view whole)
 {
-    const std::string value = trimmed(text);
-    char* end = nullptr;
-    const double parsed = value.empty() ? 0.0 : std::strtod(value.c_str(), &end);
-    if (value.empty() || end != value.c_str() + value.size() || !std::isfinite(parsed) || parsed <= 0.0)
+    const auto value = decimal_value(text);
+    if (!value || *value <= 0.0)
         throw std::runtime_error("Pixel Spacing \"" + std::string(whole) + "\" is not two positive decimals: \"" +
-                                 value + "\"");
-    return parsed;
+                                 trimmed(text) + "\"");
+    return *value;
 }
 std::string sizes_text (const DicomInstance& instance)
 {
@@ -183,11 +189,17 @@ const DicomInstance& highest_volume (std::span<const DicomInstance> series)
                                            std::to_string(series.size()) + " instances");
     if (tied) throw std::runtime_error("the DICOM series has two highest-resolution VOLUME instances, " +
                                        highest->sop_uid + " and " + tied->sop_uid + ", both " + sizes_text(*highest));
-    if (highest->dimension_organization != TILED_FULL)
-        throw std::runtime_error("DICOM instance " + highest->sop_uid + " has DimensionOrganizationType \"" +
-                                 highest->dimension_organization + "\"; only TILED_FULL frames are read, "
-                                 "since their order is row-major without per-frame positions");
+    check_tiled_full(*highest);
     return *highest;
+}
+
+void check_tiled_full (const DicomInstance& instance)
+{
+    if (instance.dimension_organization != TILED_FULL)
+        throw std::runtime_error("DICOM instance " + instance.sop_uid + " (" + instance.path.string() +
+                                 ") has DimensionOrganizationType \"" + instance.dimension_organization +
+                                 "\"; only TILED_FULL frames are read, since their order is row-major without "
+                                 "per-frame positions");
 }
 
 PixelSpacing parse_pixel_spacing (std::string_view text)

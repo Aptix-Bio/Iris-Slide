@@ -105,13 +105,17 @@ TEST_CASE("At the slide's edge the edge pixel repeats, and beyond the next layer
     // A 300 x 200 layer in two 256-pixel tiles across, one down: its 2x reduction is 150 x 100,
     // one tile. Pixels left of x = 150 are grey 100, the rest grey 200, so the edge column (299)
     // is 200 and a clamp repeats 200 where a white pad would pull the edge toward 255.
-    const IrisSlide::LayerSize layer {.width = 300, .height = 200};
+    constexpr std::uint32_t WIDTH = 300, HEIGHT = 200, SPLIT = WIDTH / 2;
+    constexpr std::uint8_t LEFT_GREY = 100, RIGHT_GREY = 200;
+    constexpr std::uint32_t TILE = IrisSlide::RECUT_TILE, RGB = 3;
+    const IrisSlide::LayerSize layer {.width = WIDTH, .height = HEIGHT};
     std::vector<std::vector<std::uint8_t>> tiles(2, std::vector<std::uint8_t>(TILE_BYTES, WHITE));
     for (std::uint32_t t = 0; t < 2; ++t)
-        for (std::uint32_t y = 0; y < 200; ++y)
-            for (std::uint32_t x = 0; x < 256 && t * 256 + x < 300; ++x)
-                for (std::uint32_t c = 0; c < 3; ++c)
-                    tiles[t][(std::size_t{y} * 256 + x) * RGBA + c] = t * 256 + x < 150 ? 100 : 200;
+        for (std::size_t pixel = 0; pixel < std::size_t{TILE} * HEIGHT; ++pixel) {
+            const std::uint32_t x = t * TILE + static_cast<std::uint32_t>(pixel % TILE);
+            if (x >= WIDTH) continue;
+            for (std::uint32_t c = 0; c < RGB; ++c) tiles[t][pixel * RGBA + c] = x < SPLIT ? LEFT_GREY : RIGHT_GREY;
+        }
     const auto tile_of = [&tiles](std::uint32_t x, std::uint32_t y) {
         return y == 0 && x < 2 ? std::span<const std::uint8_t>(tiles[x]) : std::span<const std::uint8_t>();
     };
@@ -119,9 +123,10 @@ TEST_CASE("At the slide's edge the edge pixel repeats, and beyond the next layer
     IrisSlide::gather_region(layer, 0, 0, tile_of, region);
     IrisSlide::reduce_2x_reference(region, tile);
     IrisSlide::whiten_beyond(IrisSlide::reduced(layer), 0, 0, tile);
-    const auto pixel = [&tile](std::uint32_t x, std::uint32_t y) { return tile[(std::size_t{y} * 256 + x) * RGBA]; };
-    CHECK(pixel(149, 50) == 200);   // the last column of the reduced layer, from the repeated edge
-    CHECK(pixel(10, 99) == 100);    // the last row, from the repeated bottom edge
-    CHECK(pixel(150, 50) == WHITE); // beyond the reduced layer's width
-    CHECK(pixel(10, 100) == WHITE); // beyond its height
+    const auto pixel = [&tile](std::uint32_t x, std::uint32_t y) { return tile[(std::size_t{y} * TILE + x) * RGBA]; };
+    constexpr std::uint32_t REDUCED_WIDTH = WIDTH / 2, REDUCED_HEIGHT = HEIGHT / 2;
+    CHECK(pixel(REDUCED_WIDTH - 1, 50) == RIGHT_GREY);   // the last column of the reduced layer, from the repeated edge
+    CHECK(pixel(10, REDUCED_HEIGHT - 1) == LEFT_GREY);   // the last row, from the repeated bottom edge
+    CHECK(pixel(REDUCED_WIDTH, 50) == WHITE);            // beyond the reduced layer's width
+    CHECK(pixel(10, REDUCED_HEIGHT) == WHITE);           // beyond its height
 }

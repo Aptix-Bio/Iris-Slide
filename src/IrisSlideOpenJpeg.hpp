@@ -9,14 +9,9 @@
 #include <cstdint>
 #include <span>
 
-namespace IrisSlide {
-// RTM Dicom_05
-/// The pixel size an instance declares for each of its frames (DICOM Columns and Rows).
-struct FrameShape {
-    std::uint32_t columns = 0;
-    std::uint32_t rows    = 0;
-};
+#include "IrisSlideGeometry.hpp"
 
+namespace IrisSlide {
 /// Decode one JPEG 2000 or HTJ2K codestream (a raw J2K codestream or a JP2 file) into @p rgb as
 /// interleaved 8-bit RGB, rows top to bottom. The frame's size is read from the codestream's own
 /// header and must equal @p expected; @p rgb must hold exactly columns × rows × 3 bytes. A

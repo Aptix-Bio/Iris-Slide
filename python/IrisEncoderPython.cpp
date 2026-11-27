@@ -9,7 +9,6 @@
 #include <map>
 #include <optional>
 #include <string>
-#include <thread>
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -19,6 +18,7 @@ namespace py = pybind11;
 
 #include "IrisTypesPython.hpp"
 #include "IrisSlidePython.hpp"
+#include "IrisSlideEncoderOptions.hpp"
 
 namespace {
 // RTM Bindings_01
@@ -30,29 +30,27 @@ void raise_if_failed (const Iris::Result& result)
 {
     if (result.failed()) throw std::runtime_error(result.message);
 }
-IrisSlide::Subsampling subsampling_of (const std::string& text)
+/// The encoder's own defaults, so Python's keyword defaults are the core's and are written once.
+const IrisSlide::EncoderDesc DEFAULTS;
+
+EncoderHandle create (const std::string& source, const std::string& destination, std::uint64_t quality,
+                      const std::string& subsampling, std::uint64_t memory_budget, std::uint64_t concurrency,
+                      std::uint64_t layer_step, const std::map<std::string, std::string>& i2s_attributes,
+                      std::uint64_t i2s_version)
 {
-    if (text == "444") return IrisSlide::SUBSAMPLE_444;
-    if (text == "422") return IrisSlide::SUBSAMPLE_422;
-    if (text == "420") return IrisSlide::SUBSAMPLE_420;
-    throw std::invalid_argument("subsampling \"" + text + "\" is not 444, 422 or 420");
-}
-EncoderHandle create (const std::string& source, const std::string& destination, unsigned quality,
-                      const std::string& subsampling, std::uint64_t memory_budget, unsigned concurrency,
-                      std::uint32_t layer_step, const std::map<std::string, std::string>& i2s_attributes,
-                      std::uint16_t i2s_version)
-{
+    // Python's int is unbounded: each is range-checked before it narrows (std::out_of_range is
+    // raised as ValueError), so a large number is refused instead of wrapped.
     IrisSlide::EncoderDesc desc {.source        = source,
                                  .destination   = destination,
-                                 .quality       = static_cast<IrisSlide::Quality>(quality),
-                                 .subsampling   = subsampling_of(subsampling),
+                                 .quality       = IrisSlide::narrowed<IrisSlide::Quality>(quality, "quality"),
+                                 .subsampling   = IrisSlide::subsampling_of(subsampling),
                                  .memory_budget = memory_budget,
-                                 .concurrency   = concurrency ? concurrency : std::max(1u, std::thread::hardware_concurrency()),
-                                 .layer_step    = layer_step};
+                                 .concurrency   = IrisSlide::narrowed<std::uint32_t>(concurrency, "concurrency"),
+                                 .layer_step    = IrisSlide::narrowed<std::uint32_t>(layer_step, "layer step")};
     // RTM Identity_07: Python's str arrives as UTF-8; the encoder checks the pairs and the version.
     if (!i2s_attributes.empty()) {
         desc.attributes.type    = IrisSlide::METADATA_I2S;
-        desc.attributes.version = i2s_version;
+        desc.attributes.version = IrisSlide::narrowed<std::uint16_t>(i2s_version, "I2S version");
         for (const auto& [key, value] : i2s_attributes)
             desc.attributes[key] = std::u8string(value.begin(), value.end());
     }
@@ -82,9 +80,11 @@ PYBIND11_MODULE(encoder, m)
     m.def("create_encoder", &create,
           "An encoder for one slide (a DICOM whole-slide instance: JPEG, JPEG 2000 or HTJ2K frames), writing "
           "<source stem>.jpeg.iris into destination; raises RuntimeError naming what it refuses",
-          py::arg("source"), py::arg("destination"), py::arg("quality") = 90, py::arg("subsampling") = "422",
-          py::arg("memory_budget") = 0, py::arg("concurrency") = 0, py::arg("layer_step") = 2,
-          py::arg("i2s_attributes") = std::map<std::string, std::string>(), py::arg("i2s_version") = std::uint16_t{0});
+          py::arg("source"), py::arg("destination"), py::arg("quality") = std::uint64_t{DEFAULTS.quality},
+          py::arg("subsampling") = std::string(IrisSlide::subsampling_name(DEFAULTS.subsampling)),
+          py::arg("memory_budget") = DEFAULTS.memory_budget, py::arg("concurrency") = std::uint64_t{DEFAULTS.concurrency},
+          py::arg("layer_step") = std::uint64_t{DEFAULTS.layer_step},
+          py::arg("i2s_attributes") = std::map<std::string, std::string>(), py::arg("i2s_version") = std::uint64_t{0});
     m.def("dispatch_encoder", [](const EncoderHandle& e) { raise_if_failed(IrisSlide::dispatch_encoder(e.encoder)); },
           "Starts the encode and returns; raises when the encoder was already dispatched", py::arg("encoder"));
     m.def("encoder_progress", [](const EncoderHandle& e) {

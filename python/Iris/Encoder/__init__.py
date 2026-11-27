@@ -20,19 +20,25 @@ __all__ = ["encode_slide_file", "EncoderState", "EncoderProgress", "Encoder", "c
 _POLL_SECONDS = 0.5
 
 
-def encode_slide_file(source: str, outdir: str = "", quality: int = 90, subsampling: str = "422",
-                      layer_step: int = 2, memory_budget: int = 0, concurrency: int = 0,
-                      i2s_attributes: dict[str, str] | None = None, i2s_version: int = 0,
-                      show_progress: bool = True) -> str:
+def encode_slide_file(source: str, outdir: str = "", quality: int | None = None, subsampling: str | None = None,
+                      layer_step: int | None = None, memory_budget: int | None = None,
+                      concurrency: int | None = None, i2s_attributes: dict[str, str] | None = None,
+                      i2s_version: int = 0, show_progress: bool = True) -> str:
     """Encode source as an Iris slide in outdir (default: the source's folder); returns the file written.
+
+    An option left as None takes the encoder's own default (create_encoder's), so the defaults are
+    written once, in the core.
 
     i2s_attributes are the slide's Iris Interoperability Specification (I2S) attributes as key and
     value text, written as its METADATA_I2S attributes. i2s_version is the I2S version they conform
     to, as IFE's 16-bit ATTRIBUTES.VERSION holds it: major << 8 | minor, so I2S 0.1 is 1. It is
     required with i2s_attributes; 0, an unversioned claim, is refused.
     """
-    encoder = create_encoder(source, outdir or os.path.dirname(os.path.abspath(source)), quality, subsampling,
-                             memory_budget, concurrency, layer_step, i2s_attributes or {}, i2s_version)
+    given = {"quality": quality, "subsampling": subsampling, "layer_step": layer_step,
+             "memory_budget": memory_budget, "concurrency": concurrency}
+    options = {name: value for name, value in given.items() if value is not None}
+    encoder = create_encoder(source, outdir or os.path.dirname(os.path.abspath(source)),
+                             i2s_attributes=i2s_attributes or {}, i2s_version=i2s_version, **options)
     dispatch_encoder(encoder)
     try:
         while (progress := encoder_progress(encoder)).state == EncoderState.ACTIVE:

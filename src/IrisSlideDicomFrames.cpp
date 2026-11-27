@@ -15,20 +15,27 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <format>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 
 namespace IrisSlide {
 namespace {
-constexpr std::uint64_t PREAMBLE = 128;
-constexpr std::string_view PREFIX = "DICM";
 constexpr std::uint32_t UNDEFINED_LENGTH = 0xFFFFFFFF;
 constexpr std::uint16_t ITEM_GROUP = 0xFFFE;
 constexpr std::uint16_t ITEM = 0xE000, ITEM_END = 0xE00D, SEQUENCE_END = 0xE0DD;
 constexpr std::uint16_t PIXEL_GROUP = 0x7FE0;
 constexpr std::uint16_t EXTENDED_OFFSETS = 0x0001, EXTENDED_LENGTHS = 0x0002, PIXEL_DATA = 0x0010;
+constexpr std::uint16_t META_GROUP = 0x0002, GROUP_LENGTH = 0x0000;
 constexpr std::uint64_t ITEM_HEADER = 8;
+constexpr std::uint64_t ITEM_LENGTH_AT = 4;   // an item's 32-bit length follows its tag
+/// PS3.5 7.1.2: tag (4) and VR (2), then a 16-bit length; or two reserved bytes and a 32-bit length.
+constexpr std::uint64_t SHORT_LENGTH_AT = 6, SHORT_VALUE_AT = 8, LONG_LENGTH_AT = 8, LONG_VALUE_AT = 12;
+constexpr std::uint64_t VR_AT = 4, VR_SIZE = 2, ELEMENT_HEADER = 8;
+/// The width of the group-length value (UL) and of each offset-table entry: PS3.5 A.4 (32-bit
+/// Basic Offset Table entries), PS3.3 C.7.6.3.1.8 (64-bit Extended Offset Table entries).
+constexpr std::uint32_t UL_WIDTH = 4, BASIC_WIDTH = 4, EXTENDED_WIDTH = 8;
 /// PS3.5 Table 7.1-1: the VRs whose length is 32 bits after two reserved bytes.
 constexpr std::array<std::string_view, 13> LONG_VRS {"OB", "OD", "OF", "OL", "OV", "OW", "SQ", "SV", "UC", "UN", "UR", "UT", "UV"};
 
@@ -63,11 +70,11 @@ struct Element {
 };
 Element element_at (const Reader& reader, std::uint64_t at)
 {
-    reader.need(at, 8);
-    const std::string_view vr(reinterpret_cast<const char*>(reader.bytes.data() + at + 4), 2);
-    if (std::find(LONG_VRS.begin(), LONG_VRS.end(), vr) != LONG_VRS.end())
-        return {.value_at = at + 12, .length = static_cast<std::uint32_t>(reader.value(at + 8, 4))};
-    return {.value_at = at + 8, .length = static_cast<std::uint32_t>(reader.value(at + 6, 2))};
+    reader.need(at, ELEMENT_HEADER);
+    const std::string_view vr(reinterpret_cast<const char*>(reader.bytes.data() + at + VR_AT), VR_SIZE);
+    const bool is_long = std::find(LONG_VRS.begin(), LONG_VRS.end(), vr) != LONG_VRS.end();
+    if (is_long) return {.value_at = at + LONG_VALUE_AT, .length = static_cast<std::uint32_t>(reader.value(at + LONG_LENGTH_AT, 4))};
+    return {.value_at = at + SHORT_VALUE_AT, .length = static_cast<std::uint32_t>(reader.value(at + SHORT_LENGTH_AT, 2))};
 }
 
 /// The position after an undefined-length sequence whose items start at @p at. Items and nested
@@ -87,11 +94,11 @@ std::uint64_t skip_sequence (const Reader& reader, std::uint64_t at)
             continue;
         }
         const std::uint16_t marker = reader.element(at);
-        const auto length = static_cast<std::uint32_t>(reader.value(at + 4, 4));
+        const auto length = static_cast<std::uint32_t>(reader.value(at + ITEM_LENGTH_AT, 4));
         at += ITEM_HEADER;
         const Open expected = marker == ITEM_END ? Open::ITEM : Open::SEQUENCE;
         if (open.back() != expected || (marker != ITEM && marker != ITEM_END && marker != SEQUENCE_END))
-            reader.refuse(at - ITEM_HEADER, "an item marker (FFFE," + std::to_string(marker) + ") out of place");
+            reader.refuse(at - ITEM_HEADER, std::format("an item marker (FFFE,{:04X}) out of place", marker));
         if (marker == ITEM_END || marker == SEQUENCE_END) open.pop_back();
         else if (length == UNDEFINED_LENGTH) open.push_back(Open::ITEM);
         else at += length;
@@ -99,8 +106,15 @@ std::uint64_t skip_sequence (const Reader& reader, std::uint64_t at)
     return at;
 }
 
+/// An offset table's entries, each @p width bytes. Its length is defined, inside the file and a whole
+/// number of entries, so a malformed table cannot size an allocation from bytes the file lacks.
 std::vector<std::uint64_t> table_of (const Reader& reader, const Element& element, std::uint32_t width)
 {
+    if (element.length == UNDEFINED_LENGTH) reader.refuse(element.value_at, "has an offset table of undefined length");
+    reader.need(element.value_at, element.length);
+    if (element.length % width != 0)
+        reader.refuse(element.value_at, "has an offset table of " + std::to_string(element.length) +
+                                        " bytes, not a whole number of " + std::to_string(width) + "-byte entries");
     std::vector<std::uint64_t> entries(element.length / width);
     for (std::size_t i = 0; i < entries.size(); ++i) entries[i] = reader.value(element.value_at + i * width, width);
     return entries;
@@ -114,27 +128,26 @@ _path (path)
     const Iris::Result mapped = Iris::create_memory({.filepath = path, .read_only = true}, _map);
     if (mapped.failed()) throw std::runtime_error("DICOM file " + path.string() + " did not map: " + mapped.message);
     const Reader reader {.bytes = std::span<const std::uint8_t>(_map.base(), _map.capacity()), .path = _path};
-    reader.need(PREAMBLE, PREFIX.size());
-    if (std::memcmp(reader.bytes.data() + PREAMBLE, PREFIX.data(), PREFIX.size()) != 0)
-        reader.refuse(PREAMBLE, "has no \"DICM\" prefix");
+    reader.need(DICOM_PREAMBLE, DICOM_PREFIX.size());
+    if (std::memcmp(reader.bytes.data() + DICOM_PREAMBLE, DICOM_PREFIX.data(), DICOM_PREFIX.size()) != 0)
+        reader.refuse(DICOM_PREAMBLE, "has no \"DICM\" prefix");
 
     // The file meta group's length element (0002,0000) says where the data set begins.
-    const std::uint64_t meta = PREAMBLE + PREFIX.size();
-    if (reader.group(meta) != 0x0002 || reader.element(meta) != 0x0000)
+    const std::uint64_t meta = DICOM_PREAMBLE + DICOM_PREFIX.size();
+    if (reader.group(meta) != META_GROUP || reader.element(meta) != GROUP_LENGTH)
         reader.refuse(meta, "does not begin its file meta group with (0002,0000)");
     const Element meta_length = element_at(reader, meta);
-    std::uint64_t at = meta_length.value_at + 4 + reader.value(meta_length.value_at, 4);
+    std::uint64_t at = meta_length.value_at + UL_WIDTH + reader.value(meta_length.value_at, UL_WIDTH);
 
     // The data set's top-level elements, to Pixel Data, keeping the Extended Offset Table.
     std::vector<std::uint64_t> extended_offsets, extended_lengths;
     Element pixels {};
-    for (bool found = false; !found;) {
+    for (;;) {
         const Element element = element_at(reader, at);
         const std::uint16_t group = reader.group(at), number = reader.element(at);
-        found = group == PIXEL_GROUP && number == PIXEL_DATA;
-        if (found) { pixels = element; break; }
-        if (group == PIXEL_GROUP && number == EXTENDED_OFFSETS) extended_offsets = table_of(reader, element, 8);
-        if (group == PIXEL_GROUP && number == EXTENDED_LENGTHS) extended_lengths = table_of(reader, element, 8);
+        if (group == PIXEL_GROUP && number == PIXEL_DATA) { pixels = element; break; }
+        if (group == PIXEL_GROUP && number == EXTENDED_OFFSETS) extended_offsets = table_of(reader, element, EXTENDED_WIDTH);
+        if (group == PIXEL_GROUP && number == EXTENDED_LENGTHS) extended_lengths = table_of(reader, element, EXTENDED_WIDTH);
         at = element.length == UNDEFINED_LENGTH ? skip_sequence(reader, element.value_at) : element.value_at + element.length;
     }
     if (pixels.length != UNDEFINED_LENGTH) reader.refuse(pixels.value_at, "holds native Pixel Data; only encapsulated frames are indexed");
@@ -143,8 +156,8 @@ _path (path)
     if (reader.group(pixels.value_at) != ITEM_GROUP || reader.element(pixels.value_at) != ITEM)
         reader.refuse(pixels.value_at, "does not begin Pixel Data with its Basic Offset Table item");
     const Element basic {.value_at = pixels.value_at + ITEM_HEADER,
-                         .length = static_cast<std::uint32_t>(reader.value(pixels.value_at + 4, 4))};
-    const std::vector<std::uint64_t> basic_offsets = table_of(reader, basic, 4);
+                         .length = static_cast<std::uint32_t>(reader.value(pixels.value_at + ITEM_LENGTH_AT, 4))};
+    const std::vector<std::uint64_t> basic_offsets = table_of(reader, basic, BASIC_WIDTH);
     const std::uint64_t first = basic.value_at + basic.length;
 
     // Every fragment item, in order, until the sequence delimiter.
@@ -152,7 +165,7 @@ _path (path)
     for (std::uint64_t item = first; reader.element(item) != SEQUENCE_END;) {
         if (reader.group(item) != ITEM_GROUP || reader.element(item) != ITEM)
             reader.refuse(item, "holds something other than a fragment item in Pixel Data");
-        const std::uint64_t length = reader.value(item + 4, 4);
+        const std::uint64_t length = reader.value(item + ITEM_LENGTH_AT, 4);
         reader.need(item + ITEM_HEADER, length);
         item_starts.push_back(item - first);
         _fragments.push_back({.offset = item + ITEM_HEADER, .length = length});
@@ -165,6 +178,9 @@ _path (path)
     if (!starts.empty() && starts.size() != frames)
         reader.refuse(first, "has an offset table of " + std::to_string(starts.size()) + " frames where " +
                              std::to_string(frames) + " are declared");
+    if (!extended_offsets.empty() && extended_lengths.size() != extended_offsets.size())
+        reader.refuse(first, "has an Extended Offset Table of " + std::to_string(extended_lengths.size()) + " lengths for " +
+                             std::to_string(extended_offsets.size()) + " frames");
     if (starts.empty() && _fragments.size() != frames)
         reader.refuse(first, "holds " + std::to_string(_fragments.size()) + " fragments and no offset table, where " +
                              std::to_string(frames) + " frames are declared");

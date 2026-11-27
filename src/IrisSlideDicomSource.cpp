@@ -2,8 +2,9 @@
 //  IrisSlideDicomSource.cpp
 //  Iris
 //
-//  libdicom reads each frame's bytes; decode_frame decodes them by the instance's codec; the
-//  re-cut assembles 256-pixel tiles from the decoded frames (recut_tile).
+//  The instance's frame index (DicomFrameIndex, a read-only memory map) gives each frame's bytes;
+//  decode_frame decodes them by the instance's codec; the re-cut assembles 256-pixel tiles from the
+//  decoded frames (recut_tile). libdicom reads only the instance's attributes (DicomSeries).
 //
 #include "IrisSlideDicomSource.hpp"
 
@@ -17,9 +18,6 @@
 
 namespace IrisSlide {
 namespace {
-constexpr std::string_view TILED_FULL = "TILED_FULL";
-constexpr std::size_t DICOM_PREAMBLE = 128;                         // PS3.10 7.1
-constexpr std::array<char, 4> DICOM_PREFIX {'D', 'I', 'C', 'M'};
 constexpr double MICRONS_PER_MILLIMETRE = 1000.0;
 
 [[noreturn]] void refuse (const DicomInstance& instance, const std::string& why)
@@ -33,8 +31,9 @@ bool is_dicom_file (const std::filesystem::path& path)
 {
     std::ifstream file(path, std::ios::binary);
     std::array<char, DICOM_PREFIX.size()> prefix {};
-    file.seekg(DICOM_PREAMBLE);
-    return file.read(prefix.data(), prefix.size()) && prefix == DICOM_PREFIX;
+    file.seekg(std::streamoff(DICOM_PREAMBLE));
+    const bool is_read = static_cast<bool>(file.read(prefix.data(), prefix.size()));
+    return is_read && std::string_view(prefix.data(), prefix.size()) == DICOM_PREFIX;
 }
 
 std::unique_ptr<Source> open_dicom_source (const std::filesystem::path& path)
@@ -45,7 +44,6 @@ std::unique_ptr<Source> open_dicom_source (const std::filesystem::path& path)
 
 // RTM Encode_10, Dicom_05
 DicomSource::DicomSource (const DicomInstance& instance) :
-_instance       (instance),
 _codec          (source_codec(instance.transfer_syntax)),   // refuses a syntax outside the table
 _grid           {.width = instance.total_columns, .height = instance.total_rows,
                  .frame = {.columns = instance.columns, .rows = instance.rows}},
@@ -56,17 +54,15 @@ _index          (instance.path, instance.frames)
 {
     if (!is_decodable(_codec))
         refuse(instance, "has transfer syntax " + instance.transfer_syntax + ", whose frames this encoder does not decode");
-    if (instance.dimension_organization != TILED_FULL)
-        refuse(instance, "has DimensionOrganizationType \"" + instance.dimension_organization +
-                         "\"; only TILED_FULL frames are in row-major order");
+    check_tiled_full(instance);
     if (instance.columns == 0 || instance.rows == 0)
         refuse(instance, "declares frames of " + std::to_string(instance.columns) + " x " +
                          std::to_string(instance.rows) + " pixels");
     _frames_across = static_cast<std::uint32_t>((instance.total_columns + instance.columns - 1) / instance.columns);
-    _frames_down   = static_cast<std::uint32_t>((instance.total_rows + instance.rows - 1) / instance.rows);
-    if (std::uint64_t{instance.frames} != std::uint64_t{_frames_across} * _frames_down)
+    const auto frames_down = static_cast<std::uint32_t>((instance.total_rows + instance.rows - 1) / instance.rows);
+    if (std::uint64_t{instance.frames} != std::uint64_t{_frames_across} * frames_down)
         refuse(instance, "holds " + std::to_string(instance.frames) + " frames where one focal plane of " +
-                         std::to_string(_frames_across) + " x " + std::to_string(_frames_down) + " is read");
+                         std::to_string(_frames_across) + " x " + std::to_string(frames_down) + " is read");
 }
 
 std::uint64_t DicomSource::read_scratch_bytes () const noexcept

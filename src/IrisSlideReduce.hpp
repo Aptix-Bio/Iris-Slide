@@ -13,6 +13,7 @@
 #include <concepts>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -119,6 +120,20 @@ constexpr std::int32_t REDUCE_WEIGHT_SUM = [] {
     return sum;
 }();
 static_assert(REDUCE_WEIGHT_SUM == (1 << REDUCE_WEIGHT_BITS), "the reduction's weights sum to the fixed-point unit");
+
+namespace detail {
+/// One output value of a pass: the weighted sum of the REDUCE_TAPS samples sample(k) gives,
+/// rounded, shifted right by Shift and saturated to Out, as Highway's DemoteTo saturates, so the
+/// vector kernels' scalar tails and the reference compute it the same way.
+template <typename Out, int Shift, typename Sample>
+    requires std::invocable<Sample, std::uint32_t>
+Out tap_sum (Sample&& sample)
+{
+    std::int32_t sum = 1 << (Shift - 1);
+    for (std::uint32_t k = 0; k < REDUCE_TAPS; ++k) sum += REDUCE_WEIGHTS[k] * std::int32_t{sample(k)};
+    return static_cast<Out>(std::clamp<std::int32_t>(sum >> Shift, std::numeric_limits<Out>::min(), std::numeric_limits<Out>::max()));
+}
+} // namespace detail
 
 // RTM Pyramid_03
 template <TileLookup TileOf>

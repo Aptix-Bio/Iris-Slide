@@ -3,7 +3,8 @@
 //  Iris
 //
 //  The rebuilt encoder's shared geometry, defined once: the tile side, the bytes per pixel of its
-//  two pixel formats, a layer's size, its tile counts, and the size of its 2x reduction.
+//  two pixel formats, a source frame's shape, a layer's size, its tile counts, and the size of its
+//  2x reduction.
 //
 #ifndef IrisSlideGeometry_hpp
 #define IrisSlideGeometry_hpp
@@ -16,6 +17,13 @@ constexpr std::uint32_t RECUT_TILE = 256;
 /// Bytes per pixel of interleaved 8-bit RGB (a decoded source frame) and RGBA (a tile).
 constexpr std::size_t RGB_BYTES  = 3;
 constexpr std::size_t RGBA_BYTES = 4;
+
+// RTM Dicom_05
+/// The pixel size an instance declares for each of its frames (DICOM Columns and Rows).
+struct FrameShape {
+    std::uint32_t columns = 0;
+    std::uint32_t rows    = 0;
+};
 
 /// A layer's size in pixels.
 struct LayerSize {

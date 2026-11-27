@@ -27,7 +27,8 @@ target_link_libraries(
     PRIVATE ${test_dependencies} Catch2::Catch2WithMain
 )
 catch_discover_tests(IrisSlideTests)
-# LocalSlideInputs_22.6 (RTM Testing_01): the folder of the maintainer's own slides the local-slide
+# RTM Testing_01
+# LocalSlideInputs_22.6: the folder of the maintainer's own slides the local-slide
 # tests read, decided 2026-11-27. No slide enters the repository; unset, those tests fail by name.
 set(IRIS_SLIDE_TEST_SLIDES "" CACHE PATH "Folder of DICOM slides the local-slide tests read")
 if (IRIS_SLIDE_TEST_SLIDES)

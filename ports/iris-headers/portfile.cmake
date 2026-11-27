@@ -2,15 +2,15 @@
 # archive's SHA-512, in place of FetchContent at the tip of a branch. The commit is the tip of the
 # paired branch feature/EncoderRewrite_24, merged before Iris-Slide's: the rebuilt encoder's public
 # API (create_encoder(const EncoderDesc&, Encoder&), dispatch_encoder, encoder_progress,
-# interrupt_encoder, encoder_output_name) in place of the old one (decided 2026-11-27, D14); then
+# interrupt_encoder, encoder_output_name, LAYER_STEP_DEFAULT) in place of the old one (decided 2026-11-27, D14); then
 # its commit on main (PortsPinMain_17.6).
 set(VCPKG_BUILD_TYPE release)   # headers and sources only: nothing is compiled here
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO Aptix-Bio/Iris-Headers
-    REF ce21a2be526e30fce75b69c8d068e7c3031c66fe
-    SHA512 d9c189a82f8a61f2952361c763d95f1fb3099b7f69499c450fc1b4c38083ee4e69f5a4c588d04ac26b764a71d7d938aaebc8a1710d0fad337c039ef431842423
-    HEAD_REF main
+    REF 2cfb551c5d5a4a931c98a26ae1a377268dbe969a
+    SHA512 b146223e674710f653df0ea39e7f3527b34eae624addf48c997fc7bacfeddea3cf8aeef708bf247d9cbd03cf079aa0240c255f3a7b6de1206cbb2356949f7fd9
+    HEAD_REF feature/EncoderRewrite_24   # main once Aptix-Bio/Iris-Headers#13 merges
 )
 vcpkg_cmake_configure(SOURCE_PATH "${SOURCE_PATH}" OPTIONS -DIRIS_HEADERS_CHECK_STANDALONE=OFF)
 vcpkg_cmake_install()

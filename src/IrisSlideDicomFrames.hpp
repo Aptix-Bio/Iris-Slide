@@ -11,11 +11,16 @@
 #include <cstdint>
 #include <filesystem>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "IrisMemory.hpp"
 
 namespace IrisSlide {
+/// PS3.10 7.1: a DICOM file opens with a 128-byte preamble and the prefix "DICM".
+constexpr std::uint64_t DICOM_PREAMBLE = 128;
+constexpr std::string_view DICOM_PREFIX = "DICM";
+
 // RTM Dicom_06
 /// The frames of one instance whose Pixel Data is encapsulated (PS3.5 A.4) and whose data set is
 /// explicit VR little endian, as every encapsulated transfer syntax the encoder reads is.

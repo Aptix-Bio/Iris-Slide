@@ -44,15 +44,11 @@ public:
     void read_tile (std::uint32_t x, std::uint32_t y, std::span<std::uint8_t> rgba) override;
     std::uint64_t read_scratch_bytes () const noexcept override;
 
-    const DicomInstance& instance () const noexcept { return _instance; }
-
 private:
-    DicomInstance       _instance;
     SourceCodec         _codec;
     SlideGrid           _grid;
     SourceMeasurements  _measurements;
     std::uint32_t       _frames_across = 0;
-    std::uint32_t       _frames_down = 0;
     DicomFrameIndex     _index;
 };
 } // END IRIS SLIDE NAMESPACE

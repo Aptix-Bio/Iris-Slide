@@ -10,51 +10,65 @@
  */
 #include <charconv>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
+#include <format>
 #include <iomanip>
 #include <iostream>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
 
 #include "IrisSlideCore.hpp"
+#include "IrisSlideEncoderOptions.hpp"
 
 namespace {
-constexpr char HELP[] =
-    "IrisSlideEncoder encodes a whole-slide image as an Iris slide (.iris).\n"
-    "  -s, --source PATH        the slide: a DICOM whole-slide instance (JPEG, JPEG 2000 or HTJ2K frames)\n"
-    "  -o, --outdir PATH        the folder <source stem>.jpeg.iris is written to (default: the source's)\n"
-    "  -q, --quality N          JPEG quality, 1-100 (default 90)\n"
-    "      --subsampling S      JPEG chroma subsampling: 444, 422 or 420 (default 422)\n"
-    "      --layer-step N       the scale between written layers: 2, 4 or 8 (default 2)\n"
-    "      --memory-budget GIB  memory held at once (default: a quarter of physical memory)\n"
-    "  -c, --concurrency N      worker threads (default: every core)\n"
-    "  -h, --help               this text\n";
 constexpr auto PROGRESS_INTERVAL = std::chrono::milliseconds(500);
 constexpr double BYTES_PER_GIB = 1024.0 * 1024.0 * 1024.0;
 constexpr std::uint64_t BYTES_PER_MIB = 1024 * 1024;
 // Exit codes: 0 done, 1 the encode failed, 2 the arguments were wrong.
 constexpr int EXIT_DONE = 0, EXIT_ENCODE_FAILED = 1, EXIT_USAGE = 2;
 
-std::optional<std::uint64_t> number_of (std::string_view text)
+/// The help text, its defaults read from the encoder's own so they are stated once.
+std::string help ()
+{
+    const IrisSlide::EncoderDesc defaults;
+    return std::format(
+        "IrisSlideEncoder encodes a whole-slide image as an Iris slide (.iris).\n"
+        "  -s, --source PATH        the slide: a DICOM whole-slide instance (JPEG, JPEG 2000 or HTJ2K frames)\n"
+        "  -o, --outdir PATH        the folder <source stem>.jpeg.iris is written to (default: the source's)\n"
+        "  -q, --quality N          JPEG quality, 1-100 (default {})\n"
+        "      --subsampling S      JPEG chroma subsampling: 444, 422 or 420 (default {})\n"
+        "      --layer-step N       the scale between written layers, a power of two from 2 (default {})\n"
+        "      --memory-budget GIB  memory held at once (default: a quarter of physical memory)\n"
+        "  -c, --concurrency N      worker threads (default: every core, {} here)\n"
+        "  -h, --help               this text\n",
+        defaults.quality, IrisSlide::subsampling_name(defaults.subsampling), defaults.layer_step, defaults.concurrency);
+}
+/// A whole decimal number; throws std::invalid_argument naming @p flag and the text otherwise.
+std::uint64_t number_of (std::string_view flag, std::string_view text)
 {
     std::uint64_t value = 0;
     const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-    if (error != std::errc() || end != text.data() + text.size()) return std::nullopt;
+    const bool is_whole = error == std::errc() && end == text.data() + text.size();
+    if (!is_whole) throw std::invalid_argument(std::string(flag) + " takes a whole number, given \"" + std::string(text) + "\"");
     return value;
 }
-std::optional<IrisSlide::Subsampling> subsampling_of (std::string_view text)
+/// A positive number of GiB as bytes; the whole text must be the number.
+std::uint64_t gib_of (std::string_view text)
 {
-    if (text == "444") return IrisSlide::SUBSAMPLE_444;
-    if (text == "422") return IrisSlide::SUBSAMPLE_422;
-    if (text == "420") return IrisSlide::SUBSAMPLE_420;
-    return std::nullopt;
+    const std::string copy(text);
+    char* end = nullptr;
+    const double gib = std::strtod(copy.c_str(), &end);
+    const bool is_positive = end == copy.c_str() + copy.size() && std::isfinite(gib) && gib > 0;
+    if (!is_positive) throw std::invalid_argument("memory budget \"" + copy + "\" is not a positive number of GiB");
+    return static_cast<std::uint64_t>(gib * BYTES_PER_GIB);
 }
 int usage (const std::string& why)
 {
-    std::cerr << "IrisSlideEncoder: " << why << "\n" << HELP;
+    std::cerr << "IrisSlideEncoder: " << why << "\n" << help();
     return EXIT_USAGE;
 }
 int encode_failed (const std::string& why)
@@ -62,40 +76,34 @@ int encode_failed (const std::string& why)
     std::cerr << "\nIrisSlideEncoder: " << why << "\n";
     return EXIT_ENCODE_FAILED;
 }
-} // namespace
 
-int main (int argc, char const* argv[])
+/// The arguments as an EncoderDesc; throws std::invalid_argument or std::out_of_range naming the one refused.
+IrisSlide::EncoderDesc desc_of (int argc, char const* argv[])
 {
     IrisSlide::EncoderDesc desc;
     for (int i = 1; i < argc; ++i) {
         const std::string_view flag = argv[i];
-        if (flag == "-h" || flag == "--help") { std::cout << HELP; return EXIT_DONE; }
-        if (i + 1 >= argc) return usage(std::string(flag) + " needs a value");
+        if (i + 1 >= argc) throw std::invalid_argument(std::string(flag) + " needs a value");
         const std::string_view value = argv[++i];
-        if (flag == "-s" || flag == "--source") { desc.source = std::string(value); continue; }
-        if (flag == "-o" || flag == "--outdir") { desc.destination = std::string(value); continue; }
-        if (flag == "--subsampling") {
-            const auto subsampling = subsampling_of(value);
-            if (!subsampling) return usage("subsampling \"" + std::string(value) + "\" is not 444, 422 or 420");
-            desc.subsampling = *subsampling;
-            continue;
-        }
-        if (flag == "--memory-budget") {
-            const double gib = std::strtod(std::string(value).c_str(), nullptr);
-            if (!(gib > 0)) return usage("memory budget \"" + std::string(value) + "\" is not a positive number of GiB");
-            desc.memory_budget = static_cast<std::uint64_t>(gib * BYTES_PER_GIB);
-            continue;
-        }
-        const auto number = number_of(value);
-        if (!number) return usage(std::string(flag) + " takes a number, given \"" + std::string(value) + "\"");
-        if (flag == "-q" || flag == "--quality") desc.quality = static_cast<IrisSlide::Quality>(*number);
-        else if (flag == "--layer-step") desc.layer_step = static_cast<std::uint32_t>(*number);
-        else if (flag == "-c" || flag == "--concurrency") desc.concurrency = static_cast<std::uint32_t>(*number);
-        else return usage("unknown argument \"" + std::string(flag) + "\"");
+        if (flag == "-s" || flag == "--source") desc.source = std::string(value);
+        else if (flag == "-o" || flag == "--outdir") desc.destination = std::string(value);
+        else if (flag == "--subsampling") desc.subsampling = IrisSlide::subsampling_of(value);
+        else if (flag == "--memory-budget") desc.memory_budget = gib_of(value);
+        else if (flag == "-q" || flag == "--quality")
+            desc.quality = IrisSlide::narrowed<IrisSlide::Quality>(number_of(flag, value), "quality");
+        else if (flag == "--layer-step")
+            desc.layer_step = IrisSlide::narrowed<std::uint32_t>(number_of(flag, value), "layer step");
+        else if (flag == "-c" || flag == "--concurrency")
+            desc.concurrency = IrisSlide::narrowed<std::uint32_t>(number_of(flag, value), "concurrency");
+        else throw std::invalid_argument("unknown argument \"" + std::string(flag) + "\"");
     }
-    if (desc.source.empty()) return usage("a source slide is needed (-s)");
+    if (desc.source.empty()) throw std::invalid_argument("a source slide is needed (-s)");
     if (desc.destination.empty()) desc.destination = desc.source.has_parent_path() ? desc.source.parent_path() : ".";
+    return desc;
+}
 
+int encode (const IrisSlide::EncoderDesc& desc)
+{
     IrisSlide::Encoder encoder;
     if (const auto created = IrisSlide::create_encoder(desc, encoder); created.failed()) return encode_failed(created.message);
     if (const auto started = IrisSlide::dispatch_encoder(encoder); started.failed()) return encode_failed(started.message);
@@ -113,4 +121,27 @@ int main (int argc, char const* argv[])
     const auto seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
     std::cout << "\rWrote " << progress.file.string() << " in " << std::fixed << std::setprecision(1) << seconds << " s\n";
     return EXIT_DONE;
+}
+} // namespace
+
+int main (int argc, char const* argv[])
+{
+    // The command line's boundary: every exception becomes a message and a non-zero exit.
+    try {
+        for (int i = 1; i < argc; ++i) {
+            const std::string_view flag = argv[i];
+            if (flag == "-h" || flag == "--help") { std::cout << help(); return EXIT_DONE; }
+        }
+        IrisSlide::EncoderDesc desc;
+        try {
+            desc = desc_of(argc, argv);
+        } catch (const std::logic_error& refused) {   // invalid_argument and out_of_range
+            return usage(refused.what());
+        }
+        return encode(desc);
+    } catch (const std::exception& error) {
+        return encode_failed(error.what());
+    } catch (...) {
+        return encode_failed("an unknown exception reached main");
+    }
 }

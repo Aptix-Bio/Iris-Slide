@@ -46,9 +46,15 @@ struct Built {
 
 enum class Table { EXTENDED, BASIC, EMPTY };
 
+/// How a built instance departs from a well-formed one, to show each refusal.
+struct Faults {
+    std::uint32_t missing_lengths = 0;   // Extended Offset Lengths entries left out
+    std::uint32_t basic_table_pad = 0;   // bytes added to the Basic Offset Table item's length
+};
+
 /// A small instance: file meta, a nested undefined-length sequence, NumberOfFrames, and Pixel Data
 /// with the chosen offset table. Frame 1 is in two fragments when the table is BASIC.
-Built build(Table table, std::uint32_t frames = 3)
+Built build(Table table, std::uint32_t frames = 3, Faults faults = {})
 {
     Built built;
     Bytes& b = built.file;
@@ -91,13 +97,15 @@ Built build(Table table, std::uint32_t frames = 3)
     if (table == Table::EXTENDED) {
         long_header(b, 0x7FE0, 0x0001, "OV", frames * 8);
         for (const auto s : starts) u64(b, s);
-        long_header(b, 0x7FE0, 0x0002, "OV", frames * 8);
-        for (const auto& f : built.frames) u64(b, f.size());
+        const std::uint32_t lengths = frames - faults.missing_lengths;
+        long_header(b, 0x7FE0, 0x0002, "OV", lengths * 8);
+        for (std::uint32_t f = 0; f < lengths; ++f) u64(b, built.frames[f].size());
     }
     long_header(b, 0x7FE0, 0x0010, "OB", UNDEFINED);
     if (table == Table::BASIC) {
-        item(b, frames * 4);
+        item(b, frames * 4 + faults.basic_table_pad);
         for (const auto s : starts) u32(b, std::uint32_t(s));
+        b.insert(b.end(), faults.basic_table_pad, 0);
     } else {
         item(b, 0);
     }
@@ -169,4 +177,20 @@ TEST_CASE("A frame count that disagrees with the file, and a cut-short file, are
     const auto short_path = write(cut, "cut");
     CHECK_THROWS_WITH(IrisSlide::DicomFrameIndex(short_path, 3), ContainsSubstring(short_path.string()));
     std::filesystem::remove(short_path);
+}
+
+TEST_CASE("An Extended Offset Table whose lengths do not match its offsets is refused naming both counts", "[Dicom_06]")
+{
+    const auto built = build(Table::EXTENDED, 3, {.missing_lengths = 1});
+    const auto path = write(built.file, "eot_lengths");
+    CHECK_THROWS_WITH(IrisSlide::DicomFrameIndex(path, 3), ContainsSubstring("2 lengths") && ContainsSubstring("3 frames"));
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("An offset table whose length is not a whole number of entries is refused", "[Dicom_06]")
+{
+    const auto built = build(Table::BASIC, 3, {.basic_table_pad = 2});
+    const auto path = write(built.file, "bot_width");
+    CHECK_THROWS_WITH(IrisSlide::DicomFrameIndex(path, 3), ContainsSubstring("14 bytes") && ContainsSubstring("4-byte"));
+    std::filesystem::remove(path);
 }

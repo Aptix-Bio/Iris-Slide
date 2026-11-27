@@ -21,6 +21,8 @@ constexpr std::uint8_t WHITE = 0xFF;
 constexpr std::uint8_t OPAQUE = 0xFF;
 constexpr std::uint32_t RGB = 3;
 constexpr std::uint32_t RGBA = 4;
+constexpr std::uint32_t FRAME = 240;   // the source frame side the 256-pixel tiles are re-cut from
+constexpr std::uint32_t TILE = IrisSlide::RECUT_TILE;
 
 std::vector<std::uint8_t> random_bytes(std::size_t count, std::mt19937& random)
 {
@@ -34,6 +36,34 @@ std::vector<std::uint8_t> random_bytes(std::size_t count, std::mt19937& random)
 std::uint8_t pattern(std::uint64_t x, std::uint64_t y, std::uint32_t channel)
 {
     return static_cast<std::uint8_t>((x * 7 + y * 13 + channel * 101) % 251);
+}
+
+/// Frame (fx, fy) of the synthetic slide: FRAME x FRAME RGB8 pixels of pattern().
+std::vector<std::uint8_t> pattern_frame(std::uint32_t fx, std::uint32_t fy)
+{
+    std::vector<std::uint8_t> frame(std::size_t{FRAME} * FRAME * RGB);
+    for (std::size_t i = 0; i < frame.size(); ++i) {
+        const std::size_t pixel = i / RGB;
+        frame[i] = pattern(std::uint64_t{fx} * FRAME + pixel % FRAME, std::uint64_t{fy} * FRAME + pixel / FRAME,
+                           static_cast<std::uint32_t>(i % RGB));
+    }
+    return frame;
+}
+
+/// The values of tile (tx, ty) that differ from the pattern inside the slide, from white beyond
+/// it, or from opaque alpha.
+std::size_t wrong_values(const std::vector<std::uint8_t>& tile, const IrisSlide::SlideGrid& grid,
+                         std::uint32_t tx, std::uint32_t ty)
+{
+    std::size_t wrong = 0;
+    for (std::size_t pixel = 0; pixel < std::size_t{TILE} * TILE; ++pixel) {
+        const std::uint64_t gx = std::uint64_t{tx} * TILE + pixel % TILE, gy = std::uint64_t{ty} * TILE + pixel / TILE;
+        const bool inside = gx < grid.width && gy < grid.height;
+        const auto* px = &tile[pixel * RGBA];
+        for (std::uint32_t c = 0; c < RGB; ++c) wrong += px[c] != (inside ? pattern(gx, gy, c) : WHITE);
+        wrong += px[RGB] != OPAQUE;
+    }
+    return wrong;
 }
 } // namespace
 
@@ -76,37 +106,22 @@ TEST_CASE("240-pixel frames re-cut into 256-pixel tiles keep every pixel, white 
 {
     // A 600 x 500 slide in 240-pixel frames: 3 x 3 frames, 3 x 2 tiles, the last row and column
     // of tiles partly beyond the slide.
-    const IrisSlide::SlideGrid grid {.width = 600, .height = 500, .frame = {.columns = 240, .rows = 240}};
+    const IrisSlide::SlideGrid grid {.width = 600, .height = 500, .frame = {.columns = FRAME, .rows = FRAME}};
     const std::uint32_t across = 3, down = 3;
-    std::vector<std::vector<std::uint8_t>> frames(across * down);
+    std::vector<std::vector<std::uint8_t>> frames;
     for (std::uint32_t fy = 0; fy < down; ++fy)
-        for (std::uint32_t fx = 0; fx < across; ++fx) {
-            auto& frame = frames[fy * across + fx];
-            frame.resize(std::size_t{240} * 240 * RGB);
-            for (std::uint32_t y = 0; y < 240; ++y)
-                for (std::uint32_t x = 0; x < 240; ++x)
-                    for (std::uint32_t c = 0; c < RGB; ++c)
-                        frame[(std::size_t{y} * 240 + x) * RGB + c] = pattern(fx * 240 + x, fy * 240 + y, c);
-        }
+        for (std::uint32_t fx = 0; fx < across; ++fx) frames.push_back(pattern_frame(fx, fy));
     const auto frame_of = [&frames, across](std::uint32_t fx, std::uint32_t fy) {
         return std::span<const std::uint8_t>(frames[fy * across + fx]);
     };
     CHECK(IrisSlide::tiles_across({.width = grid.width, .height = grid.height}) == 3);
     CHECK(IrisSlide::tiles_down({.width = grid.width, .height = grid.height}) == 2);
-    std::vector<std::uint8_t> tile(std::size_t{IrisSlide::RECUT_TILE} * IrisSlide::RECUT_TILE * RGBA);
+    std::vector<std::uint8_t> tile(std::size_t{TILE} * TILE * RGBA);
     std::size_t wrong = 0;
     for (std::uint32_t ty = 0; ty < 2; ++ty)
         for (std::uint32_t tx = 0; tx < 3; ++tx) {
             IrisSlide::recut_tile(grid, tx, ty, frame_of, tile);
-            for (std::uint32_t y = 0; y < IrisSlide::RECUT_TILE; ++y)
-                for (std::uint32_t x = 0; x < IrisSlide::RECUT_TILE; ++x) {
-                    const std::uint64_t gx = std::uint64_t{tx} * 256 + x, gy = std::uint64_t{ty} * 256 + y;
-                    const bool inside = gx < grid.width && gy < grid.height;
-                    const auto* px = &tile[(std::size_t{y} * 256 + x) * RGBA];
-                    for (std::uint32_t c = 0; c < RGB; ++c)
-                        wrong += px[c] != (inside ? pattern(gx, gy, c) : WHITE);
-                    wrong += px[3] != OPAQUE;
-                }
+            wrong += wrong_values(tile, grid, tx, ty);
         }
     CHECK(wrong == 0);
 }

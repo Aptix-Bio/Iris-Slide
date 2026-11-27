@@ -48,6 +48,10 @@ struct DicomInstance {
 /// positions (PS3.3 C.7.6.17.3).
 const DicomInstance& highest_volume (std::span<const DicomInstance> series);
 
+/// Throws std::runtime_error naming @p instance's SOP Instance UID and DimensionOrganizationType
+/// unless it is TILED_FULL, whose frames alone are in row-major tile order (PS3.3 C.7.6.17.3).
+void check_tiled_full (const DicomInstance& instance);
+
 /// Pixel Spacing's two decimal-string values, joined by DICOM's value separator `\`, each read to
 /// the precision it was written with. Throws std::runtime_error naming the text unless it holds
 /// exactly two positive decimals.

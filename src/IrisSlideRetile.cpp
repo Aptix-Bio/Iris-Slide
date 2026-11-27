@@ -27,7 +27,7 @@ namespace hn = hwy::HWY_NAMESPACE;
 // RTM Pyramid_04
 /// Whole vectors: three planes loaded from interleaved RGB_BYTES, stored interleaved with an opaque
 /// fourth plane. The pixels left over after the last whole vector go one at a time.
-void Rgb8ToRgba8 (const std::uint8_t* HWY_RESTRICT rgb, std::uint8_t* HWY_RESTRICT rgba, std::size_t pixels)
+void rgb8_to_rgba8_row (const std::uint8_t* HWY_RESTRICT rgb, std::uint8_t* HWY_RESTRICT rgba, std::size_t pixels)
 {
     const hn::ScalableTag<std::uint8_t> d;
     const std::size_t lanes = hn::Lanes(d);
@@ -46,7 +46,7 @@ void Rgb8ToRgba8 (const std::uint8_t* HWY_RESTRICT rgb, std::uint8_t* HWY_RESTRI
     }
 }
 
-const char* ChosenTargetName ()
+const char* rgb8_to_rgba8_target_name ()
 {
     return hwy::TargetName(HWY_TARGET);
 }
@@ -56,8 +56,8 @@ HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace IrisSlide {
-HWY_EXPORT(Rgb8ToRgba8);
-HWY_EXPORT(ChosenTargetName);
+HWY_EXPORT(rgb8_to_rgba8_row);
+HWY_EXPORT(rgb8_to_rgba8_target_name);
 
 namespace {
 std::size_t pixels_of (std::span<const std::uint8_t> rgb, std::span<std::uint8_t> rgba)
@@ -72,7 +72,7 @@ std::size_t pixels_of (std::span<const std::uint8_t> rgb, std::span<std::uint8_t
 void rgb8_to_rgba8 (std::span<const std::uint8_t> rgb, std::span<std::uint8_t> rgba)
 {
     const std::size_t pixels = pixels_of(rgb, rgba);
-    HWY_DYNAMIC_DISPATCH(Rgb8ToRgba8)(rgb.data(), rgba.data(), pixels);
+    HWY_DYNAMIC_DISPATCH(rgb8_to_rgba8_row)(rgb.data(), rgba.data(), pixels);
 }
 
 void rgb8_to_rgba8_reference (std::span<const std::uint8_t> rgb, std::span<std::uint8_t> rgba)
@@ -88,7 +88,7 @@ void rgb8_to_rgba8_reference (std::span<const std::uint8_t> rgb, std::span<std::
 
 const char* rgb8_to_rgba8_target () noexcept
 {
-    return HWY_DYNAMIC_DISPATCH(ChosenTargetName)();
+    return HWY_DYNAMIC_DISPATCH(rgb8_to_rgba8_target_name)();
 }
 
 std::vector<std::int64_t> rgb8_to_rgba8_targets ()

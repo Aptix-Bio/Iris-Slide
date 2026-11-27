@@ -4,7 +4,7 @@
 //
 //  The one funnel from a source frame's compressed bytes to its pixels: a source module reads the
 //  bytes, decode_frame decodes them by the codec they declare. A codec is one case here and one
-//  module behind it (JPEG 2000 and HTJ2K: IrisSlideOpenJpeg).
+//  module behind it (JPEG 2000 and HTJ2K: IrisSlideOpenJpeg; JPEG: IrisSlideJpegFrames).
 //
 #ifndef IrisSlideFrameCodec_hpp
 #define IrisSlideFrameCodec_hpp
