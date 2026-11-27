@@ -1,8 +1,8 @@
 // RTM Encode_10, Dicom_03, Dicom_05, Dicom_06
-// DicomSourceSynthetic_24.10 (decided 2026-11-27): the DICOM source is tested on whole-slide
+// DicomSourceSynthetic_24.12 (decided 2026-11-27): the DICOM source is tested on whole-slide
 // instances built in the test (dicom_builder.hpp), so CI covers it with no slide hosted: series
 // reading, the frame index, the codec and colour checks, the re-cut, and an encode through the
-// public API. ClinicalSpacing_24.9: a pixel that is not square is refused naming both spacings,
+// public API. ClinicalSpacing_24.11: a pixel that is not square is refused naming both spacings,
 // since a slide's one microns-per-pixel value would misstate one axis.
 #include <chrono>
 #include <cmath>

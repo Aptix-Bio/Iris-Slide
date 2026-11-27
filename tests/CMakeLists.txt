@@ -28,7 +28,7 @@ target_link_libraries(
     PRIVATE ${test_dependencies} Catch2::Catch2WithMain
 )
 catch_discover_tests(IrisSlideTests)
-# CommandLine_24.11 (RTM Encode_09): the command line refuses what it cannot convert by name,
+# CommandLine_24.13 (RTM Encode_09): the command line refuses what it cannot convert by name,
 # before any encode, with exit code 2; each case matches its refusal.
 if (IRIS_BUILD_ENCODER)
     set(cli_cases

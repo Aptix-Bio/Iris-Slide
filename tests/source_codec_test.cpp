@@ -2,7 +2,7 @@
 // Jpeg2000SyntaxesMapped_22.2. Decided 2026-11-27 (ARCHITECTURE D17): each DICOM transfer syntax
 // whose frames the encoder decodes maps to a source codec, a scoped enumeration of the encoder's
 // own, since a source's codec is not an IFE tile encoding; any other transfer syntax is refused
-// naming its UID. ClinicalColour_24.9 (decided 2026-11-27): a frame's PhotometricInterpretation
+// naming its UID. ClinicalColour_24.10 (decided 2026-11-27): a frame's PhotometricInterpretation
 // names the components its stream stores, checked against what each codec can carry.
 #include <stdexcept>
 #include <string_view>
