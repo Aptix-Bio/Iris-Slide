@@ -19,8 +19,9 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent.parent
 _SCRIPT = _ROOT / "tools" / "cloud_federation.sh"
 _PROJECT = "project"
-_DOMAIN = f"{_PROJECT}.iam.gserviceaccount.com"
-# Placeholders: a public file names no real bucket, project or account (PublicNames).
+# Placeholders: a public file names no real bucket, project or account, nor the address form a
+# real account has (PublicNames), so the stub makes NAME@PROJECT.example, as test_ci_scripts does.
+_DOMAIN = f"{_PROJECT}.example"
 _READER = f"cache-reader@{_DOMAIN}"
 _WRITER = f"cache-writer@{_DOMAIN}"
 
@@ -38,7 +39,7 @@ if arguments[:3] == ["iam", "service-accounts", "describe"]:
 if arguments[:3] == ["iam", "service-accounts", "create"]:
     project = next(a.split("=", 1)[1] for a in arguments if a.startswith("--project="))
     with open(accounts_file, "a") as out:
-        out.write(f"{arguments[3]}@{project}.iam.gserviceaccount.com\\n")
+        out.write(f"{arguments[3]}@{project}.example\\n")
     sys.exit(0)
 if arguments[:2] == ["projects", "describe"]:
     print("123")
@@ -91,7 +92,7 @@ class CloudFederationAccountsTest(unittest.TestCase):
         self.assertFalse([call for call in run.calls if call.startswith("iam service-accounts create")])
 
     def test_an_address_in_another_project_is_refused_naming_it(self) -> None:
-        elsewhere = "cache-writer@other.iam.gserviceaccount.com"
+        elsewhere = "cache-writer@other.example"
         run = _run(_environment(WRITER=elsewhere), accounts=[_READER])
         self.assertEqual(run.code, 1, run.output)
         self.assertIn(f"no service account {elsewhere} in {_PROJECT}", run.output)
