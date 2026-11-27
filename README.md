@@ -33,7 +33,7 @@ The Iris Slide encoder reads a DICOM whole-slide image and writes it as an Iris 
 **Key Features:**
 - **Sources**: a DICOM whole-slide series' highest-resolution instance (TILED_FULL), its frames JPEG, JPEG 2000 or HTJ2K, read from a read-only memory map so every worker reads its own frames at once
 - **Tiles**: 256-pixel tiles re-cut from frames of any size; JPEG tiles, quality and chroma subsampling set by the caller (90, 4:2:2 by default). The Iris format's AV1, UASTC and XUASTC tile encodings are not yet encoded or decoded; a slide whose tiles declare one is refused with an error naming the encoding
-- **Layers**: each lower layer derived by a 2x Mitchell-Netravali reduction in fixed-point arithmetic, the same bytes on every CPU, down to the first that fits one tile; a layer step of 2, 4 or 8 between written layers
+- **Layers**: each lower layer derived by a 2x Mitchell-Netravali reduction in fixed-point arithmetic, the same bytes on every CPU, down to the first that fits one tile; a layer step of any power of two from 2 between written layers (default 2)
 - **Deterministic and bounded**: the same source and options give a byte-identical file; memory held at once stays within a budget (a quarter of physical memory by default)
 - **Identity**: from DICOM only the pixel spacing, magnification and ICC profile are carried; the caller's I2S attributes are the slide's only attributes
 
@@ -149,7 +149,7 @@ const irisSlide = await createModule();
 - `-o, --outdir`: the folder `<source stem>.jpeg.iris` is written to (default: the source's)
 - `-q, --quality`: JPEG quality, 1-100 (default 90)
 - `--subsampling`: JPEG chroma subsampling, `444`, `422` or `420` (default `422`)
-- `--layer-step`: the scale between written layers, 2, 4 or 8 (default 2)
+- `--layer-step`: the scale between written layers, a power of two from 2 (default 2)
 - `--memory-budget`: GiB held at once (default: a quarter of physical memory)
 - `-c, --concurrency`: worker threads (default: every core)
 
@@ -449,7 +449,7 @@ written = Encoder.encode_slide_file(
     outdir='./output/',     # writes ./output/slide.jpeg.iris
     quality=90,             # JPEG quality, 1-100
     subsampling='422',      # '444', '422' or '420'
-    layer_step=2,           # 2, 4 or 8 between written layers
+    layer_step=2,           # a power of two from 2 between written layers
 )                           # an option left out takes the encoder's default (every core for concurrency)
 ```
 

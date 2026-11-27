@@ -20,25 +20,32 @@
 
 namespace IrisSlide {
 // RTM Encode_09, Bindings_01
-/// The chroma subsamplings by the names callers type, in enumeration order.
-constexpr std::array<std::string_view, 3> SUBSAMPLING_NAMES {"444", "422", "420"};
+/// A chroma subsampling and the name callers type for it.
+struct SubsamplingName {
+    std::string_view name;
+    Subsampling      subsampling;
+};
+/// Every subsampling the encoder writes, by name. Each row states its enumerator, so the table
+/// holds whatever numbering Iris-Headers gives them.
+constexpr std::array<SubsamplingName, 3> SUBSAMPLING_NAMES {{
+    {"444", SUBSAMPLE_444},
+    {"422", SUBSAMPLE_422},
+    {"420", SUBSAMPLE_420},
+}};
 
 /// The subsampling @p text names; throws std::invalid_argument naming the text otherwise.
 inline Subsampling subsampling_of (std::string_view text)
 {
-    for (std::size_t i = 0; i < SUBSAMPLING_NAMES.size(); ++i)
-        if (SUBSAMPLING_NAMES[i] == text) return static_cast<Subsampling>(i);
+    for (const auto& row : SUBSAMPLING_NAMES)
+        if (row.name == text) return row.subsampling;
     throw std::invalid_argument("subsampling \"" + std::string(text) + "\" is not 444, 422 or 420");
 }
 
-/// The name a caller types for @p subsampling.
+/// The name a caller types for @p subsampling; throws std::invalid_argument for one with no row.
 inline std::string_view subsampling_name (Subsampling subsampling)
 {
-    switch (subsampling) {
-        case SUBSAMPLE_444: return SUBSAMPLING_NAMES[0];
-        case SUBSAMPLE_422: return SUBSAMPLING_NAMES[1];
-        case SUBSAMPLE_420: return SUBSAMPLING_NAMES[2];
-    }
+    for (const auto& row : SUBSAMPLING_NAMES)
+        if (row.subsampling == subsampling) return row.name;
     throw std::invalid_argument("subsampling " + std::to_string(int(subsampling)) + " has no name");
 }
 

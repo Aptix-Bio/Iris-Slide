@@ -25,7 +25,7 @@ namespace hn = hwy::HWY_NAMESPACE;
 
 /// out[v] = saturate((Σk W[k]·rows[k][v] + half) >> Shift): one pass of the reduction over count
 /// contiguous values, from In samples to Out (8 to 16 bits for the first pass, 16 to 8 for the second).
-template <typename In, typename Out, int Shift>
+template <PassValue In, PassValue Out, int Shift>
 HWY_INLINE void weighted_row (const In* const* rows, Out* HWY_RESTRICT out, std::size_t count)
 {
     const hn::ScalableTag<std::int32_t> d32;

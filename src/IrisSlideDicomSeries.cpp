@@ -67,7 +67,8 @@ std::string tag_name (std::uint32_t tag)
 }
 DcmElement* element_of (const DcmDataSet* data, std::uint32_t tag)
 {
-    return dcm_dataset_contains(data, tag) ? dcm_dataset_get(nullptr, data, tag) : nullptr;
+    const bool is_present = dcm_dataset_contains(data, tag);
+    return is_present ? dcm_dataset_get(nullptr, data, tag) : nullptr;
 }
 std::string text_of (const std::filesystem::path& path, const DcmDataSet* data, std::uint32_t tag,
                      std::uint32_t index = 0)
@@ -76,7 +77,8 @@ std::string text_of (const std::filesystem::path& path, const DcmDataSet* data, 
     if (!element) refuse(path, tag, "is absent");
     DcmError* error = nullptr;
     const char* value = nullptr;
-    if (!dcm_element_get_value_string(&error, element, index, &value) || !value)
+    const bool is_read = dcm_element_get_value_string(&error, element, index, &value);
+    if (!is_read || !value)
         refuse(path, tag, "is unreadable: " + take_error(error, "no value " + std::to_string(index + 1)));
     return value;
 }
@@ -100,7 +102,8 @@ const DcmDataSet* nested_item (const std::filesystem::path& path, const DcmDataS
         if (!element) refuse(path, tag, "is absent");
         DcmError* error = nullptr;
         DcmSequence* sequence = nullptr;
-        if (!dcm_element_get_value_sequence(&error, element, &sequence))
+        const bool is_sequence = dcm_element_get_value_sequence(&error, element, &sequence);
+        if (!is_sequence)
             refuse(path, tag, "is not a sequence: " + take_error(error, "no detail"));
         data = dcm_sequence_get(&error, sequence, 0);
         if (!data) refuse(path, tag, "has no item: " + take_error(error, "empty"));
@@ -122,7 +125,8 @@ void read_optical_path (const std::filesystem::path& path, const DcmDataSet* dat
     if (!icc) return;
     DcmError* error = nullptr;
     const void* bytes = nullptr;
-    if (!dcm_element_get_value_binary(&error, icc, &bytes) || !bytes)
+    const bool is_read = dcm_element_get_value_binary(&error, icc, &bytes);
+    if (!is_read || !bytes)
         refuse(path, TAG_ICC_PROFILE, "is unreadable: " + take_error(error, "no value"));
     instance.icc_profile.assign(static_cast<const char*>(bytes), dcm_element_get_length(icc));
 }

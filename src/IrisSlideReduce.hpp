@@ -27,7 +27,7 @@ namespace IrisSlide {
 /// and 3 after it.
 constexpr std::uint32_t REDUCE_HALO_BEFORE = 3;
 constexpr std::uint32_t REDUCE_HALO_AFTER  = 3;
-constexpr std::uint32_t REDUCE_TAPS        = 8;
+constexpr std::uint32_t REDUCE_TAPS        = REDUCE_HALO_BEFORE + 2 + REDUCE_HALO_AFTER;   // the pair and its halo
 /// The side of the source region a 256-pixel reduced tile reads: 3 + 512 + 3 pixels.
 constexpr std::uint32_t REDUCE_REGION = 2 * RECUT_TILE + REDUCE_HALO_BEFORE + REDUCE_HALO_AFTER;
 /// The memory one reduce_2x call and its gathered region hold while they run: the region (RGBA8),
@@ -44,6 +44,11 @@ constexpr int REDUCE_SECOND_SHIFT = 2 * REDUCE_WEIGHT_BITS - REDUCE_FIRST_SHIFT;
 /// The Mitchell-Netravali family's parameters (Q16: B = C = 1/3 to start, decided 2026-11-27).
 constexpr double MITCHELL_B = 1.0 / 3.0;
 constexpr double MITCHELL_C = 1.0 / 3.0;
+
+/// A value one pass of the reduction reads or writes: the 8-bit pixels, or the signed 16-bit
+/// first pass the second reads.
+template <typename T>
+concept PassValue = std::same_as<T, std::uint8_t> || std::same_as<T, std::int16_t>;
 
 /// A callable giving the RGBA8 pixels of tile (x, y) of a layer (RECUT_TILE² × 4 bytes).
 template <typename TileOf>
@@ -88,15 +93,17 @@ constexpr std::int32_t round_to_int (double v)
 {
     return static_cast<std::int32_t>(v >= 0 ? v + 0.5 : v - 0.5);
 }
-/// Tap k reads the source pixel whose centre is k - 3.5 source pixels from the output pixel's
-/// centre; the kernel is widened by 2 for a 2x reduction. The rounded weights' shortfall from
-/// 2^REDUCE_WEIGHT_BITS goes to the two centre taps, so the sum is exact and the table symmetric.
+/// Tap k reads the source pixel whose centre is k - (REDUCE_HALO_BEFORE + 0.5) source pixels from
+/// the output pixel's centre, which lies between its pair; the kernel is widened by 2 for a 2x
+/// reduction. The rounded weights' shortfall from 2^REDUCE_WEIGHT_BITS goes to the two centre taps
+/// (the pair, REDUCE_HALO_BEFORE and REDUCE_HALO_BEFORE + 1), so the sum is exact and the table
+/// symmetric.
 consteval std::array<std::int32_t, REDUCE_TAPS> make_weights ()
 {
     std::array<double, REDUCE_TAPS> raw {};
     double sum = 0;
     for (std::uint32_t k = 0; k < REDUCE_TAPS; ++k) {
-        raw[k] = mitchell((double(k) - 3.5) / 2.0);
+        raw[k] = mitchell((double(k) - (REDUCE_HALO_BEFORE + 0.5)) / 2.0);
         sum += raw[k];
     }
     std::array<std::int32_t, REDUCE_TAPS> weights {};
@@ -106,8 +113,8 @@ consteval std::array<std::int32_t, REDUCE_TAPS> make_weights ()
         total += weights[k];
     }
     const std::int32_t shortfall = (1 << REDUCE_WEIGHT_BITS) - total;   // even: the table is symmetric
-    weights[3] += shortfall / 2;
-    weights[4] += shortfall / 2;
+    weights[REDUCE_HALO_BEFORE] += shortfall / 2;
+    weights[REDUCE_HALO_BEFORE + 1] += shortfall / 2;
     return weights;
 }
 } // namespace detail
@@ -125,7 +132,7 @@ namespace detail {
 /// One output value of a pass: the weighted sum of the REDUCE_TAPS samples sample(k) gives,
 /// rounded, shifted right by Shift and saturated to Out, as Highway's DemoteTo saturates, so the
 /// vector kernels' scalar tails and the reference compute it the same way.
-template <typename Out, int Shift, typename Sample>
+template <PassValue Out, int Shift, typename Sample>
     requires std::invocable<Sample, std::uint32_t>
 Out tap_sum (Sample&& sample)
 {
