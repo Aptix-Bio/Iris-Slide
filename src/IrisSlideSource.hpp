@@ -28,8 +28,10 @@ struct SourceMeasurements {
     std::string icc_profile;               ///< ICC.1 bytes, verbatim; empty when the source has none
 };
 
-/// A slide's highest-resolution layer, read as 256-pixel RGBA8 tiles. One thread reads a source at
-/// a time; tiles read in row-major order cost the least.
+/// A slide's highest-resolution layer, read as 256-pixel RGBA8 tiles. read_tile is the whole of
+/// a tile's reading: one call takes the source data under the tile, decodes it and assembles the
+/// tile, so a worker that claims a tile does all of it on its own thread. It is safe to call from
+/// any number of threads at once, for any tiles, in any order.
 class Source {
 public:
     virtual ~Source () = default;
@@ -39,6 +41,9 @@ public:
     /// Tile (x, y) into @p rgba (RECUT_TILE² × 4 bytes), white beyond the slide. Throws
     /// std::runtime_error naming what did not read or decode.
     virtual void read_tile (std::uint32_t x, std::uint32_t y, std::span<std::uint8_t> rgba) = 0;
+    /// The most memory one read_tile call holds while it runs, beyond the tile it writes: the
+    /// encoder charges it to its byte budget for every tile being read.
+    virtual std::uint64_t read_scratch_bytes () const noexcept = 0;
 };
 
 /// The Source for the slide at @p path: the first row of the source table whose kind recognises

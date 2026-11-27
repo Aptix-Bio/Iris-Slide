@@ -28,6 +28,11 @@ constexpr std::uint32_t REDUCE_HALO_AFTER  = 4;
 constexpr std::uint32_t REDUCE_TAPS        = 8;
 /// The side of the source region a 256-pixel reduced tile reads: 3 + 512 + 4 pixels.
 constexpr std::uint32_t REDUCE_REGION = 2 * RECUT_TILE + REDUCE_HALO_BEFORE + REDUCE_HALO_AFTER;
+/// The memory one reduce_2x call and its gathered region hold while they run: the region (RGBA8),
+/// the first pass and its transpose (int16), and the second pass (RGBA8).
+constexpr std::uint64_t REDUCE_SCRATCH_BYTES =
+    std::uint64_t{REDUCE_REGION} * REDUCE_REGION * 4 + 2 * std::uint64_t{RECUT_TILE} * REDUCE_REGION * 4 * 2 +
+    std::uint64_t{RECUT_TILE} * RECUT_TILE * 4;
 /// The weights are integers summing to 2^REDUCE_WEIGHT_BITS. The first (vertical) pass keeps
 /// REDUCE_WEIGHT_BITS - REDUCE_FIRST_SHIFT fractional bits in signed 16 bits; the second
 /// (horizontal) pass shifts out the rest, rounding half up, and clamps to 0-255.

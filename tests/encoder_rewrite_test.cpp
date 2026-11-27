@@ -37,6 +37,7 @@ public:
     explicit PatternSource(IrisSlide::LayerSize size) : _size(size) {}
     IrisSlide::LayerSize size() const noexcept override { return _size; }
     const IrisSlide::SourceMeasurements& measurements() const noexcept override { return _measurements; }
+    std::uint64_t read_scratch_bytes() const noexcept override { return 0; }
     void read_tile(std::uint32_t x, std::uint32_t y, std::span<std::uint8_t> rgba) override
     {
         for (std::uint32_t row = 0; row < IrisSlide::RECUT_TILE; ++row)
@@ -69,10 +70,11 @@ struct ScratchFolder {
 
 /// Encodes a PatternSource of @p size into @p folder and waits for it to end.
 Rebuilt::EncoderProgress encode(IrisSlide::LayerSize size, const std::filesystem::path& folder,
-                                std::uint64_t budget = 0, const char* name = "pattern.dcm")
+                                std::uint64_t budget = 0, std::uint32_t concurrency = std::thread::hardware_concurrency())
 {
     Rebuilt::Encoder encoder;
-    const Rebuilt::EncoderDesc desc {.source = folder / name, .destination = folder, .memory_budget = budget};
+    const Rebuilt::EncoderDesc desc {.source = folder / "pattern.dcm", .destination = folder,
+                                     .memory_budget = budget, .concurrency = concurrency};
     const auto created = Rebuilt::create_encoder(desc, std::make_unique<PatternSource>(size), encoder);
     INFO(created.message);
     REQUIRE(created.succeeded());
@@ -186,10 +188,12 @@ TEST_CASE("The same source and options give a byte-identical file", "[Encode_12]
 TEST_CASE("A slide whose decoded size is over 4x the budget encodes within the budget", "[Encode_11]")
 {
     const ScratchFolder folder;
-    const IrisSlide::LayerSize size {.width = 2300, .height = 15300};   // 9 x 60 tiles, 141 MB decoded
-    constexpr std::uint64_t BUDGET = 32ull << 20;
-    const auto done = encode(size, folder.path, BUDGET);
+    const IrisSlide::LayerSize size {.width = 2300, .height = 20400};   // 9 x 80 tiles, 189 MB decoded
+    constexpr std::uint64_t BUDGET = 40ull << 20;
+    constexpr std::uint32_t WORKERS = 2;
+    const auto done = encode(size, folder.path, BUDGET, WORKERS);
     INFO("peak " << done.peak_resident_bytes << " of " << BUDGET);
     CHECK(done.peak_resident_bytes <= BUDGET);
-    CHECK(std::uint64_t{9} * 60 * TILE_BYTES > 4 * BUDGET);
+    CHECK(done.peak_resident_bytes > BUDGET / 4);   // the budget was charged, and used
+    CHECK(std::uint64_t{9} * 80 * TILE_BYTES > 4 * BUDGET);
 }

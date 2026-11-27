@@ -154,9 +154,9 @@ public:
 private:
     void advance () noexcept;
     void step ();
+    bool can_read_base () const noexcept;
     bool can_start (const Job& job) const noexcept;
-    void start (const Job& job);
-    void read_row (std::uint32_t row) noexcept;
+    void start_tiles (std::uint32_t depth, std::uint32_t row);
     void work_tile (std::uint32_t depth, std::uint32_t row, std::uint32_t x) noexcept;
     void tile_done (std::uint32_t depth, std::uint32_t row) noexcept;
     void write (const Job& job);
@@ -172,13 +172,17 @@ private:
     Context                      _context;
     std::vector<Layer>           _layers;
     std::vector<Job>             _schedule;
-    std::size_t                  _next_job = 0, _next_write = 0;   // advance()'s, under its claim
+    // advance()'s cursors, under its claim: base rows started in row order, derived rows started
+    // and every row written in schedule order.
+    std::uint32_t                _next_base = 0;
+    std::size_t                  _next_job = 0, _next_write = 0;
+    std::uint32_t                _rows_in_flight = 0;   // started and not yet written
     std::uint64_t                _tiles_total = 0;
     std::atomic<std::uint64_t>   _tiles_written {0};
     std::uint64_t                _budget;
+    std::uint64_t                _reserve = 0;   // kept free for derived rows and every worker's scratch
     std::atomic<std::int64_t>    _resident {0};
     std::atomic<std::int64_t>    _peak {0};
-    std::atomic<bool>            _reading {false};
     std::atomic<bool>            _advancing {false};
     std::atomic<std::uint32_t>   _advance_requests {0};
     std::atomic<EncoderState>    _state {EncoderState::READY};
@@ -212,6 +216,11 @@ _budget     (budget)
         _tiles_total += std::uint64_t{layer.across} * layer.down;
         if (layer.across == 1 && layer.down == 1) break;
     }
+    // A base row is read only with room left for one row of every derived layer and the scratch
+    // of every worker, so the rows that free memory can always start.
+    for (std::size_t d = 1; d < _layers.size(); ++d) _reserve += std::uint64_t{_layers[d].across} * TILE_BYTES;
+    _reserve += std::uint64_t{std::max<std::uint32_t>(1, _desc.concurrency)} *
+                std::max(_source->read_scratch_bytes(), REDUCE_SCRATCH_BYTES);
     // The schedule: each base row, then every derived row whose last input row is now made.
     std::vector<std::uint32_t> made(_layers.size(), 0);
     for (std::uint32_t base = 0; base < _layers[0].down; ++base) {
@@ -286,13 +295,18 @@ void Encoder_t::advance () noexcept
     }
 }
 
+bool Encoder_t::can_read_base () const noexcept
+{
+    if (_next_base >= _layers[0].down) return false;
+    // With no row in flight, no memory will be freed without this one: it is read whatever the
+    // budget, so an encode always progresses. The comparison is unsigned, so a budget of
+    // UINT64_MAX means no limit.
+    const std::uint64_t resident = std::uint64_t(std::max<std::int64_t>(0, _resident.load()));
+    return _rows_in_flight == 0 || resident + std::uint64_t{_layers[0].across} * TILE_BYTES + _reserve <= _budget;
+}
+
 bool Encoder_t::can_start (const Job& job) const noexcept
 {
-    if (job.depth == 0) {
-        if (_reading.load()) return false;           // a Source is read by one task at a time
-        const bool idle = _next_write == _next_job;  // nothing else holds memory that will free
-        return idle || _resident.load() + std::int64_t(_layers[0].across * TILE_BYTES) <= std::int64_t(_budget);
-    }
     const auto [first, last] = rows_read(job.row, _layers[job.depth - 1].down);
     for (std::uint32_t k = first; k <= last; ++k)
         if (_layers[job.depth - 1].rows[k].stage.load() < Row::Stage::DONE) return false;
@@ -301,43 +315,33 @@ bool Encoder_t::can_start (const Job& job) const noexcept
 
 void Encoder_t::step ()
 {
-    while (_next_job < _schedule.size() && can_start(_schedule[_next_job])) start(_schedule[_next_job++]);
-    while (_next_write < _next_job && _layers[_schedule[_next_write].depth].rows[_schedule[_next_write].row].stage.load() == Row::Stage::DONE)
+    while (can_read_base()) start_tiles(0, _next_base++);
+    // Derived rows start in schedule order as their inputs are made; base rows have their own cursor.
+    for (; _next_job < _schedule.size(); ++_next_job) {
+        const Job& job = _schedule[_next_job];
+        if (job.depth == 0) continue;
+        if (!can_start(job)) break;
+        start_tiles(job.depth, job.row);
+    }
+    while (_next_write < _schedule.size() &&
+           _layers[_schedule[_next_write].depth].rows[_schedule[_next_write].row].stage.load() == Row::Stage::DONE)
         write(_schedule[_next_write++]);
     if (_next_write == _schedule.size()) finish();
 }
 
-void Encoder_t::start (const Job& job)
+/// A row's tiles go to the pool as tasks, one per tile; the pool's lock-free queue hands each to
+/// one worker, which makes the whole tile on its own thread: a base tile is read, decoded,
+/// re-cut and compressed (work_tile), a derived tile reduced and compressed.
+void Encoder_t::start_tiles (std::uint32_t depth, std::uint32_t r)
 {
-    Row& row = _layers[job.depth].rows[job.row];
-    const std::uint32_t across = _layers[job.depth].across;
+    Row& row = _layers[depth].rows[r];
+    const std::uint32_t across = _layers[depth].across;
     row.remaining.store(across);
     row.stage.store(Row::Stage::WORKING);
+    ++_rows_in_flight;
     charge(std::int64_t(across * TILE_BYTES));
-    if (job.depth == 0) {
-        _reading.store(true);
-        issue([this, r = job.row] { read_row(r); });
-        return;
-    }
     for (std::uint32_t x = 0; x < across; ++x)
-        issue([this, d = job.depth, r = job.row, x] { work_tile(d, r, x); });
-}
-
-void Encoder_t::read_row (std::uint32_t r) noexcept
-{
-    try {
-        Row& row = _layers[0].rows[r];
-        for (std::uint32_t x = 0; x < _layers[0].across && _state.load() == EncoderState::ACTIVE; ++x) {
-            row.pixels[x].resize(TILE_BYTES);
-            _source->read_tile(x, r, row.pixels[x]);
-        }
-        _reading.store(false);
-        for (std::uint32_t x = 0; x < _layers[0].across; ++x)
-            issue([this, r, x] { work_tile(0, r, x); });
-    } catch (const std::exception& error) {
-        fail(error.what());
-    }
-    advance();
+        issue([this, depth, r, x] { work_tile(depth, r, x); });
 }
 
 void Encoder_t::work_tile (std::uint32_t depth, std::uint32_t r, std::uint32_t x) noexcept
@@ -345,7 +349,14 @@ void Encoder_t::work_tile (std::uint32_t depth, std::uint32_t r, std::uint32_t x
     try {
         if (_state.load() != EncoderState::ACTIVE) return;
         Row& row = _layers[depth].rows[r];
-        if (depth > 0) {
+        // The scratch this tile holds while it is made, charged for as long as it is held.
+        const std::int64_t scratch = std::int64_t(depth == 0 ? _source->read_scratch_bytes() : REDUCE_SCRATCH_BYTES);
+        charge(scratch);
+        struct Uncharge { Encoder_t* encoder; std::int64_t bytes; ~Uncharge() { encoder->charge(-bytes); } } uncharge {this, scratch};
+        if (depth == 0) {
+            row.pixels[x].resize(TILE_BYTES);
+            _source->read_tile(x, r, row.pixels[x]);
+        } else {
             // Gather this tile's region from the layer below, reduce it, and make what lies
             // beyond this layer's extent white.
             const Layer& below = _layers[depth - 1];
@@ -393,6 +404,7 @@ void Encoder_t::write (const Job& job)
     _tiles_written.fetch_add(layer.across);
     row.stage.store(Row::Stage::WRITTEN);
     if (row.readers == 0) release_pixels(row);
+    --_rows_in_flight;
     if (job.depth == 0) return;
     const auto [first, last] = rows_read(job.row, _layers[job.depth - 1].down);
     for (std::uint32_t k = first; k <= last; ++k) {
@@ -518,7 +530,12 @@ Result create_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source, 
             throw std::runtime_error("quality " + std::to_string(desc.quality) + " is outside 1-100");
         if (!std::filesystem::is_directory(desc.destination))
             throw std::runtime_error("the destination " + desc.destination.string() + " is not a folder");
-        std::uint64_t working_set = 0;
+        if (source->size().width == 0 || source->size().height == 0)
+            throw std::runtime_error("the source is " + std::to_string(source->size().width) + " x " +
+                                     std::to_string(source->size().height) + " pixels; an empty slide is not encoded");
+        // The smallest working set: 5 rows of every layer and every worker's scratch.
+        std::uint64_t working_set = std::uint64_t{std::max<std::uint32_t>(1, desc.concurrency)} *
+                                    std::max(source->read_scratch_bytes(), REDUCE_SCRATCH_BYTES);
         for (LayerSize size = source->size();; size = reduced(size)) {
             working_set += ROWS_HELD * tiles_across(size) * TILE_BYTES;
             if (tiles_across(size) == 1 && tiles_down(size) == 1) break;
