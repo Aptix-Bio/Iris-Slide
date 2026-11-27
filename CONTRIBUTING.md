@@ -13,6 +13,10 @@ file, and each of its findings names the rule it applies.
 - **One open pull request at a time** (decided 2026-11-27, in place of one branch per sprint).
   Further work is committed onto the open pull request's branch, because parallel branches of one
   repository conflict and then have to be reconciled.
+  One exception (decided 2026-11-27): a pull request that only moves the review bot's pin
+  (`GOVERNANCE_COMMIT` in `review.yml`) opens beside the open one and merges first, because a
+  review runs `main`'s workflow, so the open pull request is judged by the new bot only once the pin
+  is on `main`; it touches one line no other branch changes, so it conflicts with none.
   The branch is `feature/<SprintName>_<n>`, named before the first push, since renaming a pull
   request's head branch closes the pull request.
 - **The description follows `.github/pull_request_template.md`.** Its WBS and RTM sections name
