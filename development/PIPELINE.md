@@ -11,7 +11,7 @@ repository, numbered so a commit or a comment can cite one.
 flowchart LR
     M["vcpkg.json<br/>ports/ · triplets/"] --> T["cmake/toolchains/vcpkg.cmake"]
     B["scripts/bootstrap_vcpkg.cmake<br/>scripts/bootstrap_emsdk.cmake"] --> T
-    T -->|"restore or build"| S[("gs://iris-vcpkg-cache<br/>iris-slide/")]
+    T -->|"restore or build"| S[("the cache bucket<br/>iris-slide/")]
     P["CMakePresets.json"] --> T
     W["_build.yml<br/>one per platform"] --> P
     A[".github/actions/caches<br/>scripts/ci_caches.cmake"] --> S
@@ -58,8 +58,9 @@ flowchart LR
    installed on the system. OpenSlide (LGPL-2.1) stays a shared library; every
    other package is static and release-only (`triplets/`).
 6. **The store.** CI keeps vcpkg's packages and the compiler's objects (sccache)
-   in `gs://iris-vcpkg-cache`, under `iris-slide/` only: `iris-slide/vcpkg/`
-   and `iris-slide/sccache/` are main's, written only by `cache.yml` on main;
+   in the cache bucket (repository variable `IRIS_SLIDE_CACHE_BUCKET`), under
+   `iris-slide/` only: `iris-slide/vcpkg/` and `iris-slide/sccache/` are
+   main's, written only by `cache.yml` on main;
    `iris-slide/pr/...` is the pull requests' quarantine, which main and
    releases never read and which is deleted 7 days after it was written. Each
    package and object is uploaded as it is built, so a failed job still speeds
@@ -74,9 +75,15 @@ flowchart LR
    every run, the writer only for `cache.yml` on `refs/heads/main`. The pool
    may host other repositories' providers, so Iris-Slide's attribute names are
    prefixed `iris_slide_` and no other provider can map them. The workflows
-   read the provider and the project from the repository variables
-   `IRIS_SLIDE_GCP_PROVIDER` and `IRIS_SLIDE_GCP_PROJECT`, and fail naming them
-   while either is unset.
+   read the provider, the project, the bucket and the two accounts' addresses
+   from the repository variables `IRIS_SLIDE_GCP_PROVIDER`,
+   `IRIS_SLIDE_GCP_PROJECT`, `IRIS_SLIDE_CACHE_BUCKET`,
+   `IRIS_SLIDE_CACHE_READER` and `IRIS_SLIDE_CACHE_WRITER`, and fail naming
+   each one that is unset; a pull request from a fork needs none of them.
+   `tools/cloud_federation.sh` takes the last four from its environment and
+   prints all five for `gh variable set`. Since 2026-11-27 no tracked file
+   names the bucket or an account, since a public file names no internal
+   infrastructure (`tools/tests/test_review_configuration.py`, PublicNames).
 8. **A broken cache fails the job.** `scripts/cache_report.cmake` runs after
    every build, whatever its outcome: one line per cache on the run's summary
    page, and a failure on a binary-cache error, an empty install log, no

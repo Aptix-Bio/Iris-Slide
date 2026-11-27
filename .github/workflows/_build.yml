@@ -96,6 +96,9 @@ jobs:
           compiler-cache: ${{ inputs.source == '.' }}
           provider: ${{ vars.IRIS_SLIDE_GCP_PROVIDER }}
           project: ${{ vars.IRIS_SLIDE_GCP_PROJECT }}
+          bucket: ${{ vars.IRIS_SLIDE_CACHE_BUCKET }}
+          reader: ${{ vars.IRIS_SLIDE_CACHE_READER }}
+          writer: ${{ vars.IRIS_SLIDE_CACHE_WRITER }}
       - name: Configure
         run: cmake --preset ${{ inputs.preset }}
       - name: Save the pinned vcpkg and Emscripten SDK

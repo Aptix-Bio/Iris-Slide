@@ -7,7 +7,7 @@ those repositories share, holds its safety properties under `pull_request_target
 least privilege, base-only checkouts, the head as data, the confined token and key, forks
 skipped, SHA pins). The tests here hold what that check does not: Iris-Slide's rubric, its pull
 request template, the order of the steps in each job, and cmake/require_settings.cmake's
-behaviour. Since 2026-11-27 the rubric selects the shared items and names the family's general
+behaviour, and that no tracked file names the cache store's bucket or service accounts. Since 2026-11-27 the rubric selects the shared items and names the family's general
 rules and the plans, which are kept privately, by file name; none of them is in this repository. The workflow is read as text, as tools/workflow_lint.py reads every workflow, so no
 YAML parser joins the tools' dependencies.
 
@@ -79,6 +79,19 @@ TEMPLATE_SECTIONS = [
     "Failures fixed", "Clinical impact", "Consumer impact", "Security impact", "AI authorship",
     "Agent review", "Human verification",
 ]
+
+
+# Internal cloud infrastructure a public file must not name (decided 2026-11-27): a Cloud Storage
+# URL with a literal bucket name, and a service account's address, which is the account's name
+# joined to the project's. The cache store's bucket and accounts are the repository variables
+# IRIS_SLIDE_CACHE_BUCKET, IRIS_SLIDE_CACHE_READER and IRIS_SLIDE_CACHE_WRITER, read at run time,
+# so a file names the bucket as `gs://$BUCKET` and an account only through a variable.
+INFRASTRUCTURE_NAMES = re.compile(r"gs://[a-z0-9]|\.iam\.gserviceaccount\.com")
+
+
+def _infrastructure_names(text: str) -> list[str]:
+    """Each line of text that names a bucket or a service account literally."""
+    return [line.strip() for line in text.splitlines() if INFRASTRUCTURE_NAMES.search(line)]
 
 
 def _job(name: str) -> str:
@@ -175,6 +188,27 @@ class Rubric(unittest.TestCase):
     def test_the_plans_and_the_general_rules_are_not_in_this_repository(self) -> None:
         for name in REMOVED:
             self.assertFalse((REPOSITORY / name).exists(), name)
+
+
+class PublicNames(unittest.TestCase):
+    def test_the_pattern_finds_literal_names_and_passes_variables(self) -> None:
+        # Joined here, so this file holds no literal name for the repository test to find.
+        domain = ".iam." + "gserviceaccount.com"
+        literal = ["sources: gs:" + "//some-bucket/prefix/", "account: reader@some-project" + domain,
+                   "account: cache-${{ mode }}@${{ inputs.project }}" + domain]
+        variable = ['gcloud storage buckets describe "gs://$BUCKET"', "describe gs://<bucket>",
+                    "account: ${{ inputs.reader }}", 'gcloud iam service-accounts describe "$READER"']
+        self.assertEqual(_infrastructure_names("\n".join(literal + variable)), literal)
+
+    @unittest.skipIf(shutil.which("git") is None, "git is not on PATH")
+    def test_no_tracked_file_names_a_bucket_or_a_service_account(self) -> None:
+        listed = subprocess.run(["git", "ls-files", "-z"], cwd=REPOSITORY, capture_output=True, check=True)
+        found = []
+        for name in listed.stdout.decode().split("\0"):
+            path = REPOSITORY / name
+            if name and path.is_file():
+                found += [f"{name}: {line}" for line in _infrastructure_names(path.read_text(encoding="utf-8", errors="replace"))]
+        self.assertEqual(found, [], "use the repository variables IRIS_SLIDE_CACHE_BUCKET, _READER and _WRITER")
 
 
 class Template(unittest.TestCase):

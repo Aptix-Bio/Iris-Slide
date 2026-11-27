@@ -1,7 +1,8 @@
 # VcpkgCaching_2 (OneReusableBuild_2.5; RTM Build_06): what a CI job's caches read and write, in two
 # calls around the sign-in (.github/actions/caches).
 #
-# STEP=mode, before the sign-in: the access the job gets, written to GITHUB_OUTPUT as `mode`.
+# STEP=mode, before the sign-in: the access the job gets, written to GITHUB_OUTPUT as `mode`, and
+# the service account it signs in as, as `account` (the writer for `write`, else the reader).
 #   - A pull request from a fork gets `none`: GitHub gives it no OIDC token, so it cannot sign in,
 #     and it builds with an empty vcpkg folder and no compiler cache. A public bucket was the
 #     alternative; it was refused because anyone could then download from it at Aptix's expense.
@@ -9,17 +10,21 @@
 #     read main's store, write the pull requests' quarantine), `read` (releases: read main's
 #     store, write nothing), `write` (cache.yml on main only; Google refuses any other run).
 #   It fails, naming them, when the repository variables the sign-in needs are unset.
+#   A pull request from a fork needs none of them.
 # STEP=env, after the sign-in: the variables vcpkg and sccache read, appended to GITHUB_ENV.
 #
-# The store: gs://iris-vcpkg-cache, objects under iris-slide/ only (tools/cloud_federation.sh).
+# The store: the cache bucket (repository variable IRIS_SLIDE_CACHE_BUCKET), objects under
+# iris-slide/ only (tools/cloud_federation.sh). The bucket and the two service accounts are read
+# from repository variables at run time, since a public file names no internal infrastructure.
 #
-# Inputs (environment): MODE and COMPILER_CACHE (STEP=env), REQUESTED, EVENT, HEAD_REPOSITORY, REPOSITORY,
-# GCP_PROVIDER, GCP_PROJECT, GCS_TOKEN (STEP=env), RUNNER_TEMP, GITHUB_OUTPUT, GITHUB_ENV.
+# Inputs (environment): REQUESTED, EVENT, HEAD_REPOSITORY, REPOSITORY, GCP_PROVIDER, GCP_PROJECT,
+# CACHE_READER, CACHE_WRITER (STEP=mode); MODE, COMPILER_CACHE, GCS_TOKEN (STEP=env); CACHE_BUCKET
+# (both); RUNNER_TEMP, GITHUB_OUTPUT, GITHUB_ENV. Each GCP_ and CACHE_ input is the repository
+# variable of that name prefixed IRIS_SLIDE_.
 # Usage: cmake -DSTEP=mode|env -P scripts/ci_caches.cmake
 cmake_minimum_required(VERSION 3.27)
-set(bucket iris-vcpkg-cache)
 set(prefix iris-slide)
-set(variables_help "set them from tools/cloud_federation.sh's output: gh variable set IRIS_SLIDE_GCP_PROVIDER --body <provider>; gh variable set IRIS_SLIDE_GCP_PROJECT --body <project>")
+set(variables_help "set each from the line of that name tools/cloud_federation.sh prints: gh variable set <name> --body <value>")
 
 function(ci_caches_fail text)
     message(FATAL_ERROR "ci_caches: ${text}")
@@ -37,7 +42,7 @@ if(STEP STREQUAL "mode")
     endif()
     if(NOT mode STREQUAL "none")
         set(missing "")
-        foreach(variable GCP_PROVIDER GCP_PROJECT)
+        foreach(variable GCP_PROVIDER GCP_PROJECT CACHE_BUCKET CACHE_READER CACHE_WRITER)
             if("$ENV{${variable}}" STREQUAL "")
                 list(APPEND missing "IRIS_SLIDE_${variable}")
             endif()
@@ -47,7 +52,13 @@ if(STEP STREQUAL "mode")
             ci_caches_fail("the repository variables ${missing} are unset, so the job cannot sign in to the cache store; ${variables_help}")
         endif()
     endif()
-    file(APPEND "$ENV{GITHUB_OUTPUT}" "mode=${mode}\n")
+    set(account "")
+    if(mode STREQUAL "write")
+        set(account "$ENV{CACHE_WRITER}")
+    elseif(NOT mode STREQUAL "none")
+        set(account "$ENV{CACHE_READER}")
+    endif()
+    file(APPEND "$ENV{GITHUB_OUTPUT}" "mode=${mode}\naccount=${account}\n")
     message(STATUS "cache access: ${mode}")
 elseif(STEP STREQUAL "env")
     set(mode "$ENV{MODE}")
@@ -60,6 +71,10 @@ elseif(STEP STREQUAL "env")
     endif()
     if("$ENV{GCS_TOKEN}" STREQUAL "")
         ci_caches_fail("the sign-in returned no access token")
+    endif()
+    set(bucket "$ENV{CACHE_BUCKET}")
+    if(bucket STREQUAL "")
+        ci_caches_fail("the repository variable IRIS_SLIDE_CACHE_BUCKET is unset, so vcpkg and sccache have no store")
     endif()
     set(auth "Authorization: Bearer $ENV{GCS_TOKEN}")
     set(object "{triplet}/{name}-{version}-{sha}.zip")

@@ -5,8 +5,11 @@
 # applied by running it again. Every gcloud command names the project, since a machine's default
 # project may be another one.
 #
-# The store is one bucket the Iris repositories may share, gs://iris-vcpkg-cache, created by the
-# project's owner; this script fails, naming it, while it does not exist.
+# The store is one bucket the Iris repositories may share, the cache bucket (repository variable
+# IRIS_SLIDE_CACHE_BUCKET), created by the project's owner; this script fails, naming it, while it
+# does not exist. Iris-Slide is public, so no committed file names the bucket, the project or the
+# service accounts: each is a repository variable, given to this script in the environment and
+# printed again at the end for `gh variable set`.
 # Iris-Slide is public, so its identities reach only the objects under iris-slide/, by IAM
 # conditions on the object name; a public repository's CI never reads another repository's
 # compiled objects:
@@ -20,7 +23,8 @@
 #   can be reused. The pool itself is only read here. It may host other repositories' providers,
 #   and a principal set names a pool attribute any provider in the pool could map, so Iris-Slide's
 #   attribute names are prefixed iris_slide_ and no other provider can map them.
-# - Two service accounts. The reader goes to every run of the repository, pull requests from the
+# - Two service accounts, the reader (IRIS_SLIDE_CACHE_READER) and the writer
+#   (IRIS_SLIDE_CACHE_WRITER), each named by its full address in the project. The reader goes to every run of the repository, pull requests from the
 #   repository's own branches included: it reads all of iris-slide/ and writes only under
 #   iris-slide/pr/, so a pull request's job uploads each package and object as it builds them and a
 #   failed job still speeds up the next, while main and releases never read what it wrote. The
@@ -31,20 +35,23 @@
 # - A lifecycle rule deletes objects under iris-slide/pr/ 7 days after they were written, added to
 #   the bucket's rules without removing any.
 #
-# Usage: PROJECT=<project id> [POOL=<pool>] [BUCKET=<name>] tools/cloud_federation.sh
-#        PROJECT is the repository variable IRIS_SLIDE_GCP_PROJECT; there is no default.
+# Usage: PROJECT=<project id> BUCKET=<bucket> READER=<address> WRITER=<address> [POOL=<pool>] \
+#            tools/cloud_federation.sh
+#        PROJECT, BUCKET, READER and WRITER are the repository variables IRIS_SLIDE_GCP_PROJECT,
+#        IRIS_SLIDE_CACHE_BUCKET, IRIS_SLIDE_CACHE_READER and IRIS_SLIDE_CACHE_WRITER; none has a
+#        default. An account that does not exist is created in PROJECT from its address's name.
 set -euo pipefail
 
 PROJECT=${PROJECT:?cloud_federation: PROJECT is unset; name the Google Cloud project (the repository variable IRIS_SLIDE_GCP_PROJECT)}
+BUCKET=${BUCKET:?cloud_federation: BUCKET is unset; name the cache bucket (the repository variable IRIS_SLIDE_CACHE_BUCKET)}
+READER=${READER:?cloud_federation: READER is unset; give the address of the reader service account (the repository variable IRIS_SLIDE_CACHE_READER)}
+WRITER=${WRITER:?cloud_federation: WRITER is unset; give the address of the writer service account (the repository variable IRIS_SLIDE_CACHE_WRITER)}
 POOL=${POOL:-github}
-BUCKET=${BUCKET:-iris-vcpkg-cache}
 PREFIX=iris-slide
 PROVIDER=github-iris-slide
 REPOSITORY=Aptix-Bio/Iris-Slide
 REPOSITORY_ID=1470307364   # gh api repos/Aptix-Bio/Iris-Slide --jq .id, read 2026-11-24
 OWNER_ID=353521923         # Aptix-Bio, the same call's .owner.id
-READER=iris-slide-cache-reader
-WRITER=iris-slide-cache-writer
 WRITER_WORKFLOW="$REPOSITORY/.github/workflows/cache.yml@refs/heads/main"
 project=(--project="$PROJECT")
 
@@ -80,14 +87,19 @@ else
         --issuer-uri="https://token.actions.githubusercontent.com" --display-name="GitHub Actions OIDC"
 fi
 
+# An address in another project is refused by the second describe, after the create made the name in PROJECT.
 for account in "$READER" "$WRITER"; do
-    if ! gcloud iam service-accounts describe "$account@$PROJECT.iam.gserviceaccount.com" "${project[@]}" >/dev/null 2>&1; then
-        gcloud iam service-accounts create "$account" "${project[@]}" --display-name="$account ($REPOSITORY caches)"
+    if ! gcloud iam service-accounts describe "$account" "${project[@]}" >/dev/null 2>&1; then
+        gcloud iam service-accounts create "${account%@*}" "${project[@]}" --display-name="${account%@*} ($REPOSITORY caches)"
+    fi
+    if ! gcloud iam service-accounts describe "$account" "${project[@]}" >/dev/null 2>&1; then
+        echo "cloud_federation: no service account $account in $PROJECT; give an address in that project" >&2
+        exit 1
     fi
 done
 
 bind_identity() {   # service account, principal set
-    gcloud iam service-accounts add-iam-policy-binding "$1@$PROJECT.iam.gserviceaccount.com" "${project[@]}" \
+    gcloud iam service-accounts add-iam-policy-binding "$1" "${project[@]}" \
         --role=roles/iam.workloadIdentityUser --member="principalSet://iam.googleapis.com/$pool_path/$2" \
         --condition=None >/dev/null
 }
@@ -102,7 +114,7 @@ bind_bucket() {   # role, service account, object prefix, condition title
     local expression="resource.name.startsWith('projects/_/buckets/$BUCKET/objects/$3')"
     for attempt in 1 2 3 4 5 6; do
         if gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" "${project[@]}" --role="$1" \
-                --member="serviceAccount:$2@$PROJECT.iam.gserviceaccount.com" \
+                --member="serviceAccount:$2" \
                 --condition="expression=$expression,title=$4" >/dev/null; then
             return 0
         fi
@@ -136,3 +148,6 @@ esac
 
 echo "IRIS_SLIDE_GCP_PROVIDER=$pool_path/providers/$PROVIDER"
 echo "IRIS_SLIDE_GCP_PROJECT=$PROJECT"
+echo "IRIS_SLIDE_CACHE_BUCKET=$BUCKET"
+echo "IRIS_SLIDE_CACHE_READER=$READER"
+echo "IRIS_SLIDE_CACHE_WRITER=$WRITER"
