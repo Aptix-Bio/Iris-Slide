@@ -6,6 +6,7 @@
 //
 #include <sstream>
 #include "IrisSlidePriv.hpp"
+#include "IrisSlideJpegFrames.hpp"
 #include "IrisCoreVulkan.hpp"
 #include <png.h>
 #include <turbojpeg.h>
@@ -414,46 +415,24 @@ inline Buffer COMPRESS_JPEG (const Buffer &src,
         return Buffer();
     }   return Buffer();
 }
+/// A JPEG tile or associated image decoded by the library's one JPEG decoder (decode_jpeg), which
+/// refuses a stream whose header disagrees with width x height, a warning, or any precision but 8
+/// bits by throwing, so a corrupt tile is an error the caller sees.
 inline Buffer DECOMPRESS_JPEG (const Buffer &compressed,
                                Buffer dst_buffer,
                                Format desired_format,
                                uint32_t width,
                                uint32_t height)
 {
-    auto&       src_buffer  = compressed;
-    TJPF        format      = CONVERT_TO_TJPIXEL_FORMAT(desired_format);
-    tjhandle    tjhandle    = NULL;
-    size_t      buffer_size = width*height*BITS_PER_PIXEL(desired_format);
-
-    if (format == TJPF_UNKNOWN || !buffer_size) throw std::runtime_error
-        ("DECOMPRESS_JPEG failed due to undefined destination pixel format");
-    
+    const size_t buffer_size = size_t(width) * height * BITS_PER_PIXEL(desired_format);
+    if (!buffer_size) throw std::runtime_error
+        ("DECOMPRESS_JPEG failed due to undefined destination pixel format " + std::to_string(int(desired_format)));
     if (!dst_buffer || buffer_size > dst_buffer->capacity())
         dst_buffer = Create_strong_buffer(buffer_size);
-    
-    try {
-        tjhandle = tj3Init(TJINIT_DECOMPRESS);
-        tj3Set(tjhandle, TJPARAM_JPEGWIDTH,  width);
-        tj3Set(tjhandle, TJPARAM_JPEGHEIGHT, height);
-        int result = tj3Decompress8
-        (tjhandle, static_cast<const BYTE*>(src_buffer->data()),
-         src_buffer->size(),
-         static_cast<BYTE*>(dst_buffer->data()),
-         0, format);
-        
-        if (result) throw std::runtime_error
-            ("DECOMPRESS_JPEG failed with tj3error " +
-             std::string(tj3GetErrorStr(tjhandle)));
-        
-        dst_buffer->set_size(buffer_size);
-        
-    } catch (std::runtime_error& error) {
-        std::cerr   << "Failed to decompress JPEG tile: "
-                    << error.what() << "\n";
-        dst_buffer  = NULL;
-    }
-    
-    if (tjhandle) tj3Destroy (tjhandle);
+    decode_jpeg({static_cast<const std::uint8_t*>(compressed->data()), compressed->size()},
+                {.columns = width, .rows = height}, desired_format,
+                {static_cast<std::uint8_t*>(dst_buffer->data()), buffer_size});
+    dst_buffer->set_size(buffer_size);
     return dst_buffer;
 }
 inline Buffer COMPRESS_AVIF_CPU (const Buffer &src_buffer,

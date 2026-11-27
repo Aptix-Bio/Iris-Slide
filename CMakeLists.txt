@@ -133,6 +133,7 @@ set (
     ${SLIDE_SOURCE_DIR}/IrisSlideContext.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideCache.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlide.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideJpegFrames.cpp
 )
 set (
     IrisSlideEncoderSources
@@ -145,7 +146,6 @@ set (
     ${SLIDE_SOURCE_DIR}/IrisSlideDicomFrames.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideSource.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideReduce.cpp
-    ${SLIDE_SOURCE_DIR}/IrisSlideJpegFrames.cpp
 )
 set (
     IrisSlideInclude
