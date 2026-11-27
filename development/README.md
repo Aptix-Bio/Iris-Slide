@@ -1,72 +1,58 @@
 # development/
 
-How Iris-Slide is planned, tracked and verified before and after it becomes
-public. The design contract is [ARCHITECTURE.md](ARCHITECTURE.md): the
-governance and provenance of every block of the Iris File Extension that
-Iris-Slide reads or writes, and the decisions that follow from it. This folder
-breaks that contract down to sprints, tasks and requirements. Product
-documentation lives next to the code.
+How Iris-Slide is designed and built. The design contract is
+[ARCHITECTURE.md](ARCHITECTURE.md): the governance and provenance of every
+block of the Iris File Extension that Iris-Slide reads or writes, and the
+decisions that follow from it. The rules a pull request is held to are
+[../CONTRIBUTING.md](../CONTRIBUTING.md). Product documentation lives next to
+the code.
+
+The plans (the work items with their ticks and session log, the requirement
+rows with their status, and the analyses they were built from) and the family's
+general conventions are kept privately since 2026-11-27; the review bot reads
+them, and each of its findings names the rule it applies.
 
 | File | Use it to… |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | know who governs each IFE block, where its content comes from, whether it may identify a patient, and which code writes and reads it |
-| [WBS.md](WBS.md) | track the work sprint by sprint: each sprint's milestone and pull request, its tasks and their red-first steps, each tick with its evidence; the session log |
-| [RTM.md](RTM.md) | trace each requirement back to the goals and forward to code and tests, with status |
-| [style_guide.md](style_guide.md) | the binding conventions for code, plans and prose |
-| [ci_runners.md](ci_runners.md) | the rules every workflow follows: when a runner runs, reuse, caches, robustness |
 | [PIPELINE.md](PIPELINE.md) | the dependency pins, the vcpkg ports and triplets, the cache store and who may write it, and the numbered pipeline rules |
-| [analysis/](analysis/) | dated analyses the plan was built from, kept as written: the design audit of 2026-11-24 |
+| [../CONTRIBUTING.md](../CONTRIBUTING.md) | the rules a pull request is held to, as facts of this codebase |
 
 ```mermaid
 flowchart LR
-    ARCH["ARCHITECTURE.md<br/>block governance · decisions"] --> WBS["WBS<br/>sprint → task → step"]
-    AUD["analysis/<br/>design audit"] --> WBS
-    ARCH --> RTM["RTM<br/>goals → requirements → code → tests"]
-    WBS -->|"evidence"| RTM
-    WBS -->|"one sprint, one branch"| PR["pull request<br/>milestone shown, CI green"]
-    PR -->|"merged"| WBS
+    ARCH["ARCHITECTURE.md<br/>block governance · decisions"] -->|"decisions cited"| CODE["code and tests<br/>// RTM tags"]
+    CONTRIB["CONTRIBUTING.md<br/>the rules a pull request is held to"] --> PR["pull request<br/>names its work items and rows"]
+    PIPE["PIPELINE.md<br/>pins · caches · CI rules"] --> CI["workflows"]
+    CODE --> PR
+    CI -->|"green"| PR
+    BOT["review bot<br/>reads these from the default branch"] -->|"verdict"| PR
+    ARCH --> BOT
+    CONTRIB --> BOT
+    PIPE --> BOT
 ```
 
-## How a sprint runs
+## Pull request description
 
-A sprint is one work package of the WBS: a few days of work that ends in a
-milestone someone can see working, and one pull request.
-
-1. The branch is named after the sprint (`feature/DecodeSafety_3`), chosen
-   before the first push, since renaming a pull request's head branch closes
-   the pull request.
-2. Each task starts with a test shown red, recorded with its failure; then the
-   code that turns it green, with the evidence (test counts, the command run).
-3. The milestone is demonstrated: the sprint's **Shown by** command, which
-   anyone can run, and its output pasted into the pull request.
-4. The sprint ends with a **VERIFY** step for the maintainer and a **Gate** step: CI
-   green on the pull request. Nothing from the next sprint is started on the
-   same branch.
-5. A sprint that changes the public headers has a paired branch of the same
-   name in Iris-Headers, merged first. A task that waits on one of the maintainer's
-   answers is marked `blocked` and does not hold its sprint.
-
-Sprints that touch different files run in parallel; [WBS.md](WBS.md) draws
-the order and names the lanes.
-
-The pull request's description has these sections, in this order: Summary ·
-WBS (the sprint's tasks, ticked, with evidence and commit links) · RTM (rows
-changed, with evidence) · Decisions (dated, each stated as a plain requirement) · Measurements
-(when any were taken) · Test results (per cell, local and CI) · Red first ·
-Failures fixed (symptom, root cause, fix, commit) · Clinical impact (what a
-pathologist would see differently) · Consumer impact (what Iris-Slide's
-consumers must change for a moved pin or a public API or Python change, and
-the merge order of a coordinated change) · Security impact (new input parsed? new
-dependency? patient data in the diff, logs or fixtures?) · AI authorship (which
-parts an AI agent wrote, with which tool, and what the maintainer did).
+The sections, in this order: Summary · WBS (the work items it completes or
+advances, by ID) · RTM (the requirement rows it touches, by ID) · Decisions
+(dated, each stated as a plain requirement) · Measurements (when any were
+taken) · Test results (per cell, local and CI) · Red first · Failures fixed
+(symptom, root cause, fix, commit) · Clinical impact (what a pathologist would
+see differently) · Consumer impact (what Iris-Slide's consumers must change for
+a moved pin or a public API or Python change, and the merge order of a
+coordinated change) · Security impact (new input parsed? new dependency?
+patient data in the diff, logs or fixtures?) · AI authorship (which parts an AI
+agent wrote, with which tool, and what the maintainer did).
 `.github/pull_request_template.md` holds these sections, then the "Agent review"
 boxes the review bot ticks against `.github/review/rubric.toml`
 ([PIPELINE.md](PIPELINE.md), rule 10).
 
-**Naming:** every ID says what it is. A WBS item is `PascalCaseName_<number>`
-(`DecodeSafety_3`, `JpegSizedFromHeader_3.1`); an RTM row is
-`PascalCaseArea_<nn>` (`Decode_01`); a goal is `Goal_<nn>`. No abbreviations.
+## Identifiers
 
-**Update rule:** a commit that changes code updates the WBS steps it completes
-and the RTM rows it touches, in the same commit, and the step names the
-commit once it exists. Commits are staged by explicit path.
+Every ID says what it is. A work item is `PascalCaseName_<number>`
+(`DecodeSafety_3`, `JpegSizedFromHeader_3.1`); a requirement row is
+`PascalCaseArea_<nn>` (`Decode_01`); a goal is `Goal_<nn>`. No abbreviations.
+An ID is never renumbered or reused, because commits, pull requests and code
+tags refer to it. ARCHITECTURE.md numbers its own decisions (D*n*), defects
+(E*n*), open questions (Q*n*) and external dependencies (X*n*); a finding of the
+design audit of 2026-11-24 is cited with the prefix *audit* (audit C3).

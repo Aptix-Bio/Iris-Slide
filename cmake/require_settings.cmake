@@ -1,5 +1,5 @@
 # RTM Review_01
-# ReviewBot_17.8 (development/WBS.md; development/PIPELINE.md, rule 10): a job that needs repository
+# ReviewBot_17.8 (development/PIPELINE.md, rule 10): a job that needs repository
 # or organization variables or secrets fails first, naming each one that is missing, instead of
 # failing later inside an action whose message does not say which setting to create.
 #

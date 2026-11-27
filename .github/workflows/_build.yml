@@ -58,7 +58,7 @@ jobs:
     env:
       CC: ${{ inputs.cc }}
       CXX: ${{ inputs.cxx }}
-      VCPKG_MAX_CONCURRENCY: "4"   # the 4-vCPU runners (ci_runners.md: bound everything)
+      VCPKG_MAX_CONCURRENCY: "4"   # the 4-vCPU runners: a parallel build's job count fits the runner's memory
       # vcpkg downloads no CMake or Ninja for arm64 Linux and uses the runner's (measured: "unable
       # to detect the active compiler's information" without it, PR #2's first run).
       VCPKG_FORCE_SYSTEM_BINARIES: ${{ endsWith(inputs.runner, '-arm') && '1' || '' }}

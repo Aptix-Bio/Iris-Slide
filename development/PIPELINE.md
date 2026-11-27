@@ -2,8 +2,9 @@
 
 How Iris-Slide's dependencies are pinned and built, how CI caches them, and
 how pull requests are reviewed. Set by VcpkgCaching_2 (2026-11-24); rule 10 by
-ReviewBot_17.8 (2026-11-24). The general CI rules are
-[ci_runners.md](ci_runners.md); these are the rules specific to this
+ReviewBot_17.8 (2026-11-24), amended by DevelopmentSplit_21 (2026-11-27). The
+family's general CI-runner rules are kept privately, and the review bot's
+findings name the rule they apply; these are the rules specific to this
 repository, numbered so a commit or a comment can cite one.
 
 ```mermaid
@@ -96,7 +97,10 @@ flowchart LR
     `code-review` check on a failed blocking item. The trigger is
     `pull_request_target`, so GitHub runs the workflow, and the bot reads the
     rubric, its reference files and `.github/CODEOWNERS`, as the default branch
-    holds them: a pull request cannot change the rules it is judged by. Since
+    holds them, and the shared items, the family's general rules and the plans,
+    which are kept privately, from its own checkout: a pull request cannot
+    change the rules it is judged by. The rubric names those by file name alone
+    (`cmake/check_review_configuration.cmake` holds this). Since
     that trigger gives the run the repository's secrets and a token that can
     write, each job checks out only the default branch's commit and the bot's
     pinned commit, and the bot reads the pull request's diff through the API as

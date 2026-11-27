@@ -1,4 +1,4 @@
-"""The rules of development/ci_runners.md and PIPELINE.md that a file can be checked against.
+"""The CI rules a file can be checked against: development/PIPELINE.md's and the family's CI-runner rules.
 
 VcpkgCaching_2 (WorkflowLint_2.4; RTM Build_02, Build_05). Reads every workflow and composite
 action under .github/, and the CMake files, line by line (the standard library has no YAML
@@ -20,7 +20,8 @@ Rules:
 - pr-branches: a `pull_request` trigger has no `branches:` filter, so every branch's pull requests
   run (decided 2026-11-24).
 - external-project: no third-party library is built by ExternalProject_Add; vcpkg provides them
-  prebuilt from its binary cache (ci_runners.md, "Prebuilt over built").
+  prebuilt from its binary cache, since a library built from source on a runner spends billed
+  minutes on every cache miss (PIPELINE.md rule 5).
 - global-build-state: no directory-scope `include_directories(` or `add_compile_definitions(`
   in Iris-Slide's own CMake files (B7); settings are target-scoped.
 - run-length: a `run:` step is at most MAX_RUN_LINES lines (decided 2026-11-24: little shell in

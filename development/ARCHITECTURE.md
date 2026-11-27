@@ -1,7 +1,7 @@
 # ARCHITECTURE.md — Iris-Slide: governance and provenance of every IFE block
 
 **Status:** draft contract. D1–D8 record the maintainer's decisions of
-2026-11-24 and D9 and D10 those of 2026-11-25; Q1 is resolved by D7 and Q12 by D10's amendment of 2026-11-25; Q2–Q11 wait on the maintainer's answers, and each has a task in [WBS.md](WBS.md). A change is an owner amendment, dated, in
+2026-11-24 and D9 and D10 those of 2026-11-25; Q1 is resolved by D7 and Q12 by D10's amendment of 2026-11-25; Q2–Q11 wait on the maintainer's answers, and each has a work item in the plans, which are kept privately. A change is an owner amendment, dated, in
 the row it changes. · **Date:** 2026-11-24 · **Owner:** the maintainer
 
 Iris-Slide (formerly named Iris-Codec) is Aptix Bio's open-source (MIT) reader
@@ -34,9 +34,8 @@ code obeys the rules below, and what has to change.
 (branch `feature/IrisSlideRename`); block definitions are cited as
 `ife_fields.json:<line>` and spec clauses by their AsciiDoc anchor
 (`ife_spec.adoc` `[[ife-…]]`). `Headers …` is Iris-Headers at commit `e1d6631`
-(branch `feature/IrisSlideRename`). Findings of the design audit
-([analysis/design_audit_2026-11-24.md](analysis/design_audit_2026-11-24.md))
-are cited with the prefix *audit* (audit C3), because the audit's
+(branch `feature/IrisSlideRename`). Findings of the design audit of
+2026-11-24, kept with the plans, are cited with the prefix *audit* (audit C3), because the audit's
 documentation findings are also numbered D1–D3; a bare **Dn** is a decision of
 this document.
 

@@ -7,6 +7,9 @@
 *                       @ryanlandvater
 
 # The rules a pull request is judged by and the workflows that judge it: named explicitly so that a
-# later, narrower owner line cannot take them from the maintainer.
+# later, narrower owner line cannot take them from the maintainer. The bot sends CONTRIBUTING.md and
+# development/ whole with every review (DevelopmentSplit_21).
 /.github/review/        @ryanlandvater
 /.github/workflows/     @ryanlandvater
+/CONTRIBUTING.md        @ryanlandvater
+/development/           @ryanlandvater
