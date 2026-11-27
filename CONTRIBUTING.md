@@ -1,7 +1,8 @@
 # Contributing to Iris-Slide
 
 The rules a pull request to Iris-Slide is held to, stated as facts of this codebase (written
-2026-11-27). The design contract is [development/ARCHITECTURE.md](development/ARCHITECTURE.md),
+2026-11-27); a rule the code does not yet meet everywhere names the planned item that brings it
+there. The design contract is [development/ARCHITECTURE.md](development/ARCHITECTURE.md),
 whose decisions (D1, D2, …) the code cites; the build and CI rules are the numbered rules of
 [development/PIPELINE.md](development/PIPELINE.md). The family's general conventions (style, CI
 runners, planning) and Iris-Slide's plans are kept privately; the review bot reads them with this
@@ -9,8 +10,9 @@ file, and each of its findings names the rule it applies.
 
 ## Pull requests
 
-- **One open pull request at a time.** Further work is committed onto the open pull request's
-  branch, because parallel branches of one repository conflict and then have to be reconciled.
+- **One open pull request at a time** (decided 2026-11-27, in place of one branch per sprint).
+  Further work is committed onto the open pull request's branch, because parallel branches of one
+  repository conflict and then have to be reconciled.
   The branch is `feature/<SprintName>_<n>`, named before the first push, since renaming a pull
   request's head branch closes the pull request.
 - **The description follows `.github/pull_request_template.md`.** Its WBS and RTM sections name
@@ -42,7 +44,10 @@ file, and each of its findings names the rule it applies.
   `Result`: `get_slide_info(const Slide&, SlideInfo&)`.
 - **Expected outcomes are values.** An empty tile in a sparse layer, and a tile a phantom does
   not yet hold (D13), are states the caller handles.
-- **Nothing is printed** to `std::cout` or `std::cerr` in place of returning the failure.
+- **Nothing is printed** to `std::cout` or `std::cerr` in place of returning the failure
+  (planned: ResultBoundaries_12, and EncoderRewrite_24 for the encoder; the codec context's
+  helpers in `src/IrisSlideContext.cpp` and the earlier encoder's associated images, printed and
+  skipped (ARCHITECTURE.md §3 row 9), still print).
 
 ## Types and ownership
 
