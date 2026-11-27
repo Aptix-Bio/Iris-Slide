@@ -160,19 +160,18 @@ inline std::vector<std::filesystem::path> FIND_DICOM_FILE_WITH_STUDY_UID
 // which refuses an unknown syntax naming its UID. This encoder passes DICOM frames through
 // unchanged, so only 8-bit baseline JPEG frames (1.2.840.10008.1.2.4.50) have a tile encoding to
 // pass through as: an IFE JPEG tile is decoded as 8-bit baseline, where 12-bit extended (.51) and
-// lossless (.70) frames are not. The rebuilt encoder decodes the others (EncoderRewrite_24).
+// lossless (.70) frames are not. Every other syntax is refused naming its UID until the rebuilt
+// encoder decodes it (EncoderRewrite_24).
 constexpr std::string_view DICOM_JPEG_BASELINE = "1.2.840.10008.1.2.4.50";
 inline Encoding PARSE_DICOM_ENCODING (DcmFilehandle* handle)
 {
     const char* TS_UID = dcm_filehandle_get_transfer_syntax_uid(handle);
     if (!TS_UID) throw std::runtime_error("the DICOM file declares no transfer syntax");
-    switch (source_codec(TS_UID)) {
-        case SourceCodec::JPEG:         return TS_UID == DICOM_JPEG_BASELINE ? TILE_ENCODING_JPEG
-                                                                              : TILE_ENCODING_UNDEFINED;
-        case SourceCodec::JPEG_2000:
-        case SourceCodec::HTJ2K:        return TILE_ENCODING_UNDEFINED;
-    }
-    return TILE_ENCODING_UNDEFINED;
+    source_codec(TS_UID);   // refuses a syntax outside the table, naming it
+    if (TS_UID != DICOM_JPEG_BASELINE) throw std::runtime_error
+        (std::string("DICOM transfer syntax ") + TS_UID + " is not passed through: this encoder "
+         "passes only baseline JPEG (" + std::string(DICOM_JPEG_BASELINE) + ") frames through as IFE JPEG tiles");
+    return TILE_ENCODING_JPEG;
 }
 
 // I know this is recursive and therefore potentially unsafe but it's DICOM and

@@ -88,7 +88,7 @@ struct Instance {
         if (!frame) {
             const std::string message = error ? dcm_error_get_message(error) : "";
             dcm_error_clear(&error);
-            throw std::runtime_error(path.string() + " frame " + std::to_string(frame_number) + ": " + message);
+            throw std::runtime_error(path.filename().string() + " frame " + std::to_string(frame_number) + ": " + message);
         }
         const auto* bytes = static_cast<const std::uint8_t*>(static_cast<const void*>(dcm_frame_get_value(frame.get())));
         std::vector<std::uint8_t> rgb(std::size_t{shape.columns} * shape.rows * RGB_CHANNELS);
@@ -110,13 +110,19 @@ std::vector<Instance> jpeg2000_instances(const std::filesystem::path& folder)
         }
         if (!entry->is_regular_file() || entry->path().extension() != ".dcm") continue;
         Instance instance {.path = entry->path()};
-        instance.handle.reset(dcm_filehandle_create_from_file(nullptr, entry->path().string().c_str()));
-        if (!instance.handle) continue;
+        // A .dcm that does not open, or has no metadata or transfer syntax, fails the test naming
+        // its file, since the test claims every slide in the folder.
+        DcmError* error = nullptr;
+        instance.handle.reset(dcm_filehandle_create_from_file(&error, entry->path().string().c_str()));
         // libdicom reads the transfer syntax with the metadata, so the metadata is read first.
-        const DcmDataSet* data = dcm_filehandle_get_metadata_subset(nullptr, instance.handle.get());
-        if (!data) continue;
-        const char* syntax = dcm_filehandle_get_transfer_syntax_uid(instance.handle.get());
-        if (!syntax) continue;
+        const DcmDataSet* data = instance.handle ? dcm_filehandle_get_metadata_subset(&error, instance.handle.get()) : nullptr;
+        const char* syntax = data ? dcm_filehandle_get_transfer_syntax_uid(instance.handle.get()) : nullptr;
+        if (!syntax) {
+            const std::string message = error && dcm_error_get_message(error) ? dcm_error_get_message(error) : "no transfer syntax";
+            dcm_error_clear(&error);
+            FAIL_CHECK(entry->path().filename() << " is unreadable: " << message);
+            continue;
+        }
         instance.syntax = syntax;
         try {
             if (IrisSlide::source_codec(instance.syntax) == IrisSlide::SourceCodec::JPEG) continue;
@@ -150,7 +156,7 @@ TEST_CASE("Every JPEG 2000 and HTJ2K slide in the local folder decodes at its de
     const auto instances = jpeg2000_instances(slide_folder());
     REQUIRE_FALSE(instances.empty());
     for (const auto& instance : instances) {
-        INFO(instance.path << " (" << instance.syntax << ", " << instance.frames << " frames)");
+        INFO(instance.path.filename() << " (" << instance.syntax << ", " << instance.frames << " frames)");
         for (const auto number : sampled_frames(instance.frames))
             CHECK_NOTHROW(instance.decode(number));
     }
@@ -169,7 +175,7 @@ TEST_CASE("An HTJ2K copy of a lossless JPEG 2000 slide decodes to the same pixel
         const auto original = lossless_by_uid.find(copy.sop_uid);
         if (original == lossless_by_uid.end()) continue;
         ++pairs;
-        INFO(copy.path << " against " << original->second->path);
+        INFO(copy.path.filename() << " against " << original->second->path.filename());
         REQUIRE(copy.frames == original->second->frames);
         for (const auto number : sampled_frames(copy.frames))
             CHECK(copy.decode(number) == original->second->decode(number));
