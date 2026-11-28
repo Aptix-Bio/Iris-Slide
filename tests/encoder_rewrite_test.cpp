@@ -22,15 +22,16 @@
 #include "IrisSlideEncoder.hpp"
 #include "IrisSlideEncoderOptions.hpp"
 #include "IrisSlideReduce.hpp"
+#include "encoder_test_support.hpp"
 
 using Catch::Matchers::ContainsSubstring;
+using encoder_test::ScratchFolder;
+using encoder_test::wait_for;
 
 namespace {
 constexpr std::size_t RGBA = IrisSlide::RGBA_BYTES;
 constexpr std::uint8_t WHITE = 0xFF;
 constexpr double JPEG_PSNR_FLOOR_DB = 35.0;   // quality 90, 4:2:2 on a smooth pattern
-constexpr auto POLL = std::chrono::milliseconds(20);
-constexpr std::size_t TILE_BYTES = std::size_t{IrisSlide::RECUT_TILE} * IrisSlide::RECUT_TILE * RGBA;
 
 /// A smooth synthetic slide with fine texture, white beyond its extent.
 class PatternSource final : public IrisSlide::Source {
@@ -58,17 +59,6 @@ private:
     IrisSlide::SourceMeasurements _measurements {.microns_per_pixel = 0.25, .magnification = 40.0};
 };
 
-struct ScratchFolder {
-    std::filesystem::path path;
-    ScratchFolder()
-    {
-        path = std::filesystem::temp_directory_path() / ("IrisSlideTest_rewrite_" + std::to_string(std::random_device{}()));
-        std::filesystem::create_directories(path);
-    }
-    ScratchFolder(const ScratchFolder&) = delete;
-    ScratchFolder& operator=(const ScratchFolder&) = delete;
-    ~ScratchFolder() { std::error_code ignored; std::filesystem::remove_all(path, ignored); }
-};
 
 /// A PatternSource whose tile (2, 3) cannot be read.
 class FailingSource final : public IrisSlide::Source {
@@ -93,17 +83,6 @@ std::size_t files_in(const std::filesystem::path& folder)
     return static_cast<std::size_t>(std::distance(std::filesystem::directory_iterator(folder), std::filesystem::directory_iterator()));
 }
 
-/// Waits for @p encoder to leave ACTIVE and returns its last progress.
-IrisSlide::EncoderProgress wait_for(const IrisSlide::Encoder& encoder)
-{
-    IrisSlide::EncoderProgress progress;
-    do {
-        std::this_thread::sleep_for(POLL);
-        REQUIRE(IrisSlide::encoder_progress(encoder, progress).succeeded());
-    } while (progress.state == IrisSlide::EncoderState::ACTIVE);
-    return progress;
-}
-
 /// Encodes a PatternSource of @p size into @p folder and waits for it to end.
 IrisSlide::EncoderProgress encode(IrisSlide::LayerSize size, const std::filesystem::path& folder,
                                 std::uint64_t budget = 0, std::uint32_t concurrency = std::thread::hardware_concurrency(),
@@ -120,11 +99,7 @@ IrisSlide::EncoderProgress encode(IrisSlide::LayerSize size, const std::filesyst
     const auto started = IrisSlide::dispatch_encoder(encoder);
     INFO(started.message);
     REQUIRE(started.succeeded());
-    IrisSlide::EncoderProgress progress;
-    do {
-        std::this_thread::sleep_for(POLL);
-        REQUIRE(IrisSlide::encoder_progress(encoder, progress).succeeded());
-    } while (progress.state == IrisSlide::EncoderState::ACTIVE);
+    const IrisSlide::EncoderProgress progress = wait_for(encoder);
     INFO(progress.error);
     REQUIRE(progress.state == IrisSlide::EncoderState::DONE);
     return progress;
@@ -189,11 +164,7 @@ TEST_CASE("An encoder dispatched twice refuses the second dispatch by name", "[E
     const auto again = IrisSlide::dispatch_encoder(encoder);
     CHECK(again.failed());
     CHECK_THAT(again.message, ContainsSubstring("dispatched"));
-    IrisSlide::EncoderProgress progress;
-    do {
-        std::this_thread::sleep_for(POLL);
-        REQUIRE(IrisSlide::encoder_progress(encoder, progress).succeeded());
-    } while (progress.state == IrisSlide::EncoderState::ACTIVE);
+    const IrisSlide::EncoderProgress progress = wait_for(encoder);
     CHECK(progress.state == IrisSlide::EncoderState::DONE);
 }
 
@@ -215,7 +186,7 @@ TEST_CASE("A 9-tile-wide slide gets 4 derived layers, the last one tile, its bas
     }
     CHECK(info.metadata.micronsPerPixel > 0.f);
     PatternSource source(size);
-    std::vector<std::uint8_t> expected(TILE_BYTES);
+    std::vector<std::uint8_t> expected(IrisSlide::TILE_BYTES);
     source.read_tile(4, 4, expected);
     const auto decoded = IrisSlide::read_slide_tile({.slide = slide, .layerIndex = 4, .tileIndex = 4 * 9 + 4,
                                                      .desiredFormat = Iris::FORMAT_R8G8B8A8});
@@ -251,20 +222,20 @@ TEST_CASE("An AV1 slide is written, and the same source gives the same bytes at 
     CHECK(bytes_a == bytes_b);
 }
 
-TEST_CASE("An effort above EFFORT_MAX, or a JPEG encode at any effort above EFFORT_MIN, is refused naming it", "[Encode_09][Encode_13]")
+TEST_CASE("An effort above EFFORT_MAX, or a JPEG encode at any effort above EFFORT_MIN, is refused naming it", "[Encode_09][Encode_16]")
 {
-    // Av1TileEncode_27 (decided 2026-11-27): effort is AV1's speed setting; JPEG has none.
+    // RTM Encode_16: effort is AV1's speed setting (D25); the JPEG path spends none.
     const ScratchFolder folder;
     IrisSlide::Encoder encoder;
     const auto source = [] { return std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 600, .height = 600}); };
     IrisSlide::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path};
     desc.encoding = IrisSlide::TILE_ENCODING_AV1;
     desc.subsampling = IrisSlide::SUBSAMPLE_420;
-    desc.effort = IrisSlide::EFFORT_MAX + 1;
+    desc.effort = static_cast<IrisSlide::Effort>(IrisSlide::EFFORT_MAX + 1);
     CHECK_THAT(IrisSlide::create_encoder(desc, source(), encoder).message, ContainsSubstring("effort 7"));
     desc.encoding = IrisSlide::TILE_ENCODING_JPEG;
     desc.subsampling = IrisSlide::SUBSAMPLE_DEFAULT;
-    desc.effort = 1;
+    desc.effort = static_cast<IrisSlide::Effort>(IrisSlide::EFFORT_MIN + 1);
     CHECK_THAT(IrisSlide::create_encoder(desc, source(), encoder).message, ContainsSubstring("effort 1") && ContainsSubstring("JPEG"));
 }
 
@@ -288,7 +259,7 @@ TEST_CASE("A slide whose decoded size is over 4x the budget encodes within the b
     const IrisSlide::LayerSize size {.width = 2300, .height = 20400};   // 9 x 80 tiles, 189 MB decoded
     constexpr std::uint64_t BUDGET = 40ull << 20;
     constexpr std::uint32_t WORKERS = 2;
-    STATIC_CHECK(std::uint64_t{9} * 80 * TILE_BYTES > 4 * BUDGET);
+    STATIC_CHECK(std::uint64_t{9} * 80 * IrisSlide::TILE_BYTES > 4 * BUDGET);
     const auto done = encode(size, folder.path, BUDGET, WORKERS);
     INFO("peak " << done.peak_resident_bytes << " of " << BUDGET);
     CHECK(done.peak_resident_bytes <= BUDGET);
@@ -395,10 +366,10 @@ TEST_CASE("A derived tile is the reference reduction of the source, within JPEG'
     const IrisSlide::LayerSize size {.width = 2300, .height = 2100};
     const auto done = encode(size, folder.path);
     PatternSource source(size);
-    std::vector<std::vector<std::uint8_t>> tiles(9 * 9, std::vector<std::uint8_t>(TILE_BYTES));
+    std::vector<std::vector<std::uint8_t>> tiles(9 * 9, std::vector<std::uint8_t>(IrisSlide::TILE_BYTES));
     for (std::uint32_t y = 0; y < 9; ++y)
         for (std::uint32_t x = 0; x < 9; ++x) source.read_tile(x, y, tiles[y * 9 + x]);
-    std::vector<std::uint8_t> region(std::size_t{IrisSlide::REDUCE_REGION} * IrisSlide::REDUCE_REGION * RGBA), expected(TILE_BYTES);
+    std::vector<std::uint8_t> region(std::size_t{IrisSlide::REDUCE_REGION} * IrisSlide::REDUCE_REGION * RGBA), expected(IrisSlide::TILE_BYTES);
     IrisSlide::gather_region(size, 2, 1, [&tiles](std::uint32_t x, std::uint32_t y) {
         return std::span<const std::uint8_t>(tiles[y * 9 + x]); }, region);
     IrisSlide::reduce_2x_reference(region, expected);

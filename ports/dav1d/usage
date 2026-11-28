@@ -1,0 +1,4 @@
+dav1d provides a CMake config (added by Iris-Slide's overlay):
+
+    find_package(unofficial-dav1d CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE unofficial::dav1d::dav1d)

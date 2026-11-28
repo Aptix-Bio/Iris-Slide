@@ -118,6 +118,24 @@ TEST_CASE("A Z-stacked instance is read as every focal plane of each tile, in Z 
     }
 }
 
+// RTM Encode_13
+TEST_CASE("An instance declaring 0 focal planes, or a Z-stack whose planes are not a positive distance apart, is refused naming it",
+          "[Encode_10][Encode_13]")
+{
+    dicom_builder::WholeSlide none = slide();
+    none.focal_planes = 0;
+    const auto none_path = dicom_builder::write_instance(dicom_builder::whole_slide(none), "source_no_planes");
+    CHECK_THROWS_WITH(IrisSlide::open_dicom_source(none_path), ContainsSubstring("TotalPixelMatrixFocalPlanes") && ContainsSubstring("is 0"));
+    dicom_builder::WholeSlide backward {.width = WIDTH, .height = HEIGHT, .frame_columns = FRAME, .frame_rows = FRAME};
+    backward.focal_planes = 2;
+    backward.plane_spacing_mm = -0.001f;
+    for (std::uint32_t p = 0; p < backward.focal_planes; ++p)
+        for (std::uint32_t fy = 0; fy < FRAMES_DOWN; ++fy)
+            for (std::uint32_t fx = 0; fx < FRAMES_ACROSS; ++fx) backward.frames.push_back(jpeg_frame(fx, fy));
+    const auto backward_path = dicom_builder::write_instance(dicom_builder::whole_slide(backward), "source_negative_spacing");
+    CHECK_THROWS_WITH(IrisSlide::open_dicom_source(backward_path), ContainsSubstring("DistanceBetweenFocalPlanes") && ContainsSubstring("-0.001"));
+}
+
 TEST_CASE("A synthetic JPEG whole-slide instance is read as 256-pixel tiles from its 240-pixel frames",
           "[Encode_10][Dicom_05]")
 {

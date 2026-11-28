@@ -51,7 +51,7 @@ _grid           {.width = instance.total_columns, .height = instance.total_rows,
                  .frame = {.columns = instance.columns, .rows = instance.rows}},
 _measurements   {.microns_per_pixel = instance.spacing ? instance.spacing->column_mm * MICRONS_PER_MILLIMETRE : 0.0,
                  .magnification     = instance.objective_power,
-                 .microns_between_planes = instance.plane_spacing_mm * MICRONS_PER_MILLIMETRE,
+                 .microns_between_planes = instance.focal_planes > 1 ? instance.plane_spacing_mm * MICRONS_PER_MILLIMETRE : 0.0,
                  .icc_profile       = instance.icc_profile},
 _index          (instance.path, instance.frames)
 {
@@ -89,7 +89,6 @@ std::uint64_t DicomSource::read_scratch_bytes () const noexcept
 void DicomSource::read_tile (std::uint32_t x, std::uint32_t y, std::span<std::uint8_t> rgba)
 {
     // RTM Encode_13: one plane after another, each from its own run of frames, into its own slice.
-    constexpr std::size_t TILE_BYTES = std::size_t{RECUT_TILE} * RECUT_TILE * RGBA_BYTES;
     if (rgba.size() != std::size_t{_planes} * TILE_BYTES)
         throw std::invalid_argument("a tile of " + std::to_string(_planes) + " plane(s) takes " +
                                     std::to_string(std::size_t{_planes} * TILE_BYTES) + " bytes; " + std::to_string(rgba.size()) + " were given");

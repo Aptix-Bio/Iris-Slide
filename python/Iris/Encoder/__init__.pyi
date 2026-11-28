@@ -7,9 +7,7 @@ from .encoder import (Encoder as Encoder, EncoderProgress as EncoderProgress, En
 __all__ = ["encode_slide_file", "EncoderState", "EncoderProgress", "Encoder", "create_encoder",
            "dispatch_encoder", "encoder_progress", "interrupt_encoder", "encoder_output_name"]
 
-def encode_slide_file(source: str, outdir: str = ..., encoding: str = ..., quality: int | None = ...,
-                      subsampling: str | None = ...,
-                      layer_step: int | None = ..., effort: int | None = ..., memory_budget: int | None = ...,
-                      concurrency: int | None = ...,
+def encode_slide_file(source: str, outdir: str = ..., quality: int | None = ..., subsampling: str | None = ...,
+                      layer_step: int | None = ..., memory_budget: int | None = ..., concurrency: int | None = ...,
                       i2s_attributes: dict[str, str] | None = ..., i2s_version: int = ...,
-                      show_progress: bool = ...) -> str: ...
+                      show_progress: bool = ..., encoding: str | None = ..., effort: int | None = ...) -> str: ...

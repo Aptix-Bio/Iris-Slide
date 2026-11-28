@@ -110,7 +110,7 @@ inline Bytes whole_slide(const WholeSlide& slide)
     us(b, 0x0028, 0x0100, 8); us(b, 0x0028, 0x0101, 8); us(b, 0x0028, 0x0102, 7); us(b, 0x0028, 0x0103, 0);
     ul(b, 0x0048, 0x0006, slide.width);
     ul(b, 0x0048, 0x0007, slide.height);
-    if (slide.focal_planes > 1) {
+    if (slide.focal_planes != 1) {   // 0 too, so a test can declare it
         fl(b, 0x0048, 0x0014, slide.plane_spacing_mm);   // DistanceBetweenFocalPlanes
         ul(b, 0x0048, 0x0303, slide.focal_planes);       // TotalPixelMatrixFocalPlanes
     }

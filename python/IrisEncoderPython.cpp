@@ -33,11 +33,10 @@ void raise_if_failed (const Iris::Result& result)
 /// The encoder's own defaults, so Python's keyword defaults are the core's and are written once.
 const IrisSlide::EncoderDesc DEFAULTS;
 
-EncoderHandle create (const std::string& source, const std::string& destination, const std::string& encoding,
-                      std::uint64_t quality, const std::optional<std::string>& subsampling,
-                      std::uint64_t memory_budget, std::uint64_t concurrency,
-                      std::uint64_t layer_step, std::uint64_t effort, const std::map<std::string, std::string>& i2s_attributes,
-                      std::uint64_t i2s_version)
+EncoderHandle create (const std::string& source, const std::string& destination, std::uint64_t quality,
+                      const std::optional<std::string>& subsampling, std::uint64_t memory_budget, std::uint64_t concurrency,
+                      std::uint64_t layer_step, const std::map<std::string, std::string>& i2s_attributes,
+                      std::uint64_t i2s_version, const std::string& encoding, std::uint64_t effort)
 {
     // Python's int is unbounded: each is range-checked before it narrows (raised as ValueError),
     // so a large number is refused instead of wrapped.
@@ -87,15 +86,16 @@ PYBIND11_MODULE(encoder, m)
           "An encoder for one slide (a DICOM whole-slide instance: JPEG, JPEG 2000 or HTJ2K frames), writing "
           "<source stem>.<encoding>.iris into destination, its tiles 'jpeg' or 'av1'; subsampling left as None "
           "takes the encoding's default ('422' for jpeg; av1 is '420' alone); effort is how hard to work on each tile, 0 (fastest) to 6 (smallest), av1 only; raises RuntimeError naming what it refuses",
-          py::arg("source"), py::arg("destination"), py::arg("encoding") = std::string("jpeg"),
-          py::arg("quality") = std::uint64_t{DEFAULTS.quality},
+          py::arg("source"), py::arg("destination"), py::arg("quality") = std::uint64_t{DEFAULTS.quality},
           py::arg("subsampling") = std::optional<std::string>(),
           py::arg("memory_budget") = DEFAULTS.memory_budget,
           // Shown as "..." in signatures and stubs: the default is this machine's hardware threads.
           py::arg_v("concurrency", std::uint64_t{DEFAULTS.concurrency}, "..."),
           py::arg("layer_step") = std::uint64_t{DEFAULTS.layer_step},
-          py::arg("effort") = std::uint64_t{DEFAULTS.effort},
-          py::arg("i2s_attributes") = std::map<std::string, std::string>(), py::arg("i2s_version") = std::uint64_t{0});
+          py::arg("i2s_attributes") = std::map<std::string, std::string>(), py::arg("i2s_version") = std::uint64_t{0},
+          // RTM Encode_16: appended, so a caller passing the earlier arguments by position is unchanged.
+          py::arg("encoding") = std::string(IrisSlide::encoding_word(DEFAULTS.encoding)),
+          py::arg("effort") = std::uint64_t{DEFAULTS.effort});
     m.def("dispatch_encoder", [](const EncoderHandle& e) { raise_if_failed(IrisSlide::dispatch_encoder(e.encoder)); },
           "Starts the encode and returns; raises when the encoder was already dispatched", py::arg("encoder"));
     m.def("encoder_progress", [](const EncoderHandle& e) {
@@ -110,5 +110,5 @@ PYBIND11_MODULE(encoder, m)
               raise_if_failed(IrisSlide::encoder_output_name(source, IrisSlide::encoding_of(encoding), name));
               return name;
           }, "The file name an encode of source writes in encoding ('jpeg' or 'av1')", py::arg("source"),
-          py::arg("encoding") = std::string("jpeg"));
+          py::arg("encoding") = std::string(IrisSlide::encoding_word(DEFAULTS.encoding)));
 }

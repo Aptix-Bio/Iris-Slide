@@ -19,12 +19,18 @@ namespace IrisSlide {
 // RTM Encode_13
 /// The bytes of one plane of a tile in 8-bit 4:2:0: Y, then U, then V.
 constexpr std::size_t I420_TILE_BYTES = std::size_t{RECUT_TILE} * RECUT_TILE * 3 / 2;
+/// The AV1 sequence profile the tiles are coded in: Main, 8- or 10-bit 4:2:0 (AV1 specification
+/// 6.4.1, seq_profile 0), and the bit depth they are coded at (D22).
+constexpr unsigned AV1_PROFILE_MAIN = 0;
+constexpr unsigned AV1_BIT_DEPTH    = 8;
 /// The quality scale callers pass (QUALITY_MIN to QUALITY_MAX) and libaom's quantiser range
 /// (0, the finest, to 63), between which encode_av1_tile maps linearly.
 constexpr std::uint32_t AV1_QUANTISER_MAX = 63;
+// RTM Encode_16
 /// libaom's fastest speed setting in good-quality mode (0 is its slowest). An encode's effort
 /// counts down from it, so EFFORT_MIN is libaom's 6 and EFFORT_MAX its 0 (decided 2026-11-27):
-/// one five-plane tissue tile at quality 90 took 87 ms and 37.4 KB at 6, about 1 s and 35.6 KB at 1.
+/// one five-plane tissue tile at quality 90 took 87 ms and 37.4 KB at 6, about 1 s and 35.6 KB at 1
+/// (macOS arm64, 2026-11-27).
 constexpr int AV1_FASTEST_CPU_USED = 6;
 static_assert(AV1_FASTEST_CPU_USED == EFFORT_MAX, "each effort is one of libaom's good-quality speeds");
 

@@ -103,7 +103,7 @@ IrisSlide::EncoderDesc desc_of (int argc, char const* argv[])
         else if (flag == "--memory-budget") desc.memory_budget = gib_of(value);
         else if (flag == "-q" || flag == "--quality")
             desc.quality = IrisSlide::narrowed<IrisSlide::Quality>(number_of(flag, value), "quality");
-        else if (flag == "--effort")
+        else if (flag == "--effort")   // RTM Encode_16
             desc.effort = IrisSlide::narrowed<IrisSlide::Effort>(number_of(flag, value), "effort");
         else if (flag == "--layer-step")
             desc.layer_step = IrisSlide::narrowed<std::uint32_t>(number_of(flag, value), "layer step");

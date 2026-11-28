@@ -46,7 +46,6 @@
 
 namespace IrisSlide {
 namespace {
-constexpr std::uint64_t TILE_BYTES = std::uint64_t{RECUT_TILE} * RECUT_TILE * RGBA_BYTES;
 /// The default budget is this fraction of physical memory (Q20, decided 2026-11-27).
 constexpr std::uint64_t BUDGET_DIVISOR = 4;
 /// A derived row reads up to 4 rows of the layer below; with the row being made, 5 rows of each
@@ -84,13 +83,6 @@ bool is_written_encoding (Encoding encoding) noexcept
 {
     return std::any_of(ENCODING_NAMES.begin(), ENCODING_NAMES.end(),
                        [encoding](const EncodingName& row) { return row.encoding == encoding; });
-}
-/// The file-name word of an encoding this encoder writes; throws for any other.
-std::string_view encoding_word (Encoding encoding)
-{
-    for (const auto& row : ENCODING_NAMES)
-        if (row.encoding == encoding) return row.name;
-    throw std::runtime_error("tile encoding " + std::to_string(int(encoding)) + " has no file-name word here");
 }
 /// The encoding's name as IFE's specification spells it (IFE's generated member_name).
 std::string encoding_name (Encoding encoding)
@@ -368,7 +360,7 @@ _scratch    (desc.destination / ("." + file_name(desc.source, desc.encoding) + "
 _source     (std::move(source)),
 _context    (create_context(ContextCreateInfo {})),
 _planes     (_source->planes()),
-_tile_bytes (TILE_BYTES * _planes),
+_tile_bytes (std::uint64_t{TILE_BYTES} * _planes),
 _budget     (budget),
 _pool       (std::make_unique<Iris::Async::Pool>(desc.concurrency))
 {
@@ -446,6 +438,8 @@ void Encoder_t::dispatch ()
             // A compressed tile never outgrows its raw pixels; only written pages cost disk.
             .capacity    = Iris::File::BuilderCreateInfo{}.capacity + _tiles_total * _tile_bytes,
             .filepath    = _scratch,
+            // A single-plane layer's streams go unframed; a Z-stacked layer's are framed by the Builder
+            // whatever this says, since the frame is where IFE records a tile's plane count (RTM Encode_13).
             .tile_frames = false,
         });
         // RTM Encode_13: a Z-stack's every layer carries every plane; one plane leaves the layers single-plane.
@@ -766,16 +760,16 @@ void check_desc (const EncoderDesc& desc)
         throw std::runtime_error(std::string("the encoder does not write ") + encoding_name(desc.encoding));
     if (desc.quality < QUALITY_MIN || desc.quality > QUALITY_MAX)
         throw std::runtime_error("quality " + std::to_string(desc.quality) + " is outside 1-100");
-    // RTM Encode_13: AV1 tiles are 4:2:0 alone (D22), so another chroma is refused before it could
-    // be written as something else.
-    // RTM Encode_13: effort is AV1's speed setting (decided 2026-11-27); JPEG has none to spend
-    // more on, so it takes EFFORT_MIN alone.
+    // RTM Encode_16: effort is AV1's speed setting (D25); the JPEG path spends none, so it takes
+    // EFFORT_MIN alone.
     if (desc.effort > EFFORT_MAX)
         throw std::runtime_error("effort " + std::to_string(int(desc.effort)) + " is outside " + std::to_string(int(EFFORT_MIN)) +
                                  "-" + std::to_string(int(EFFORT_MAX)));
     if (desc.effort != EFFORT_MIN && desc.encoding != TILE_ENCODING_AV1)
         throw std::runtime_error("effort " + std::to_string(int(desc.effort)) + " is refused for " + encoding_name(desc.encoding) +
                                  ", which has no speed setting; only AV1 tiles take an effort above " + std::to_string(int(EFFORT_MIN)));
+    // RTM Encode_13: AV1 tiles are 4:2:0 alone (D22), so another chroma is refused before it could
+    // be written as something else.
     if (desc.encoding == TILE_ENCODING_AV1 && desc.subsampling != SUBSAMPLE_420)
         throw std::runtime_error("AV1 tiles are 4:2:0 (subsampling 420); subsampling " +
                                  std::string(subsampling_name(desc.subsampling)) + " is refused");
@@ -805,7 +799,7 @@ Encoder make_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source)
                                 std::max(source->read_scratch_bytes(), REDUCE_SCRATCH_BYTES);
     LayerSize size = source->size();
     for (std::uint32_t depth = 0;; ++depth, size = reduced(size)) {
-        working_set += ROWS_HELD * tiles_across(size) * TILE_BYTES * planes;
+        working_set += ROWS_HELD * tiles_across(size) * std::uint64_t{TILE_BYTES} * planes;
         if (is_last_layer(size, depth, per_step)) break;
     }
     const std::uint64_t budget = desc.memory_budget ? desc.memory_budget : physical_memory() / BUDGET_DIVISOR;

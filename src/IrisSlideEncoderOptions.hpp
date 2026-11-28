@@ -73,6 +73,15 @@ inline std::string_view subsampling_name (Subsampling subsampling)
     throw std::invalid_argument("subsampling " + std::to_string(int(subsampling)) + " has no name");
 }
 
+/// The word callers type for an encoding the encoder writes, which names it in the file name;
+/// throws std::invalid_argument for any other.
+inline std::string_view encoding_word (Encoding encoding)
+{
+    for (const auto& row : ENCODING_NAMES)
+        if (row.encoding == encoding) return row.name;
+    throw std::invalid_argument("tile encoding " + std::to_string(int(encoding)) + " is not one the encoder writes");
+}
+
 /// The subsampling an encode of @p encoding takes when the caller names none: the encoder's
 /// default for JPEG, and 4:2:0 for AV1, the only chroma its tiles carry (D22).
 inline Subsampling default_subsampling (Encoding encoding) noexcept

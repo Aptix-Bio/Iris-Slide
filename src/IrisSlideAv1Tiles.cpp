@@ -37,7 +37,7 @@ struct EncoderContext {
 };
 
 /// Throws naming @p what and libaom's error when @p status is not AOM_CODEC_OK.
-void check (aom_codec_ctx_t& codec, aom_codec_err_t status, const char* what)
+void check (const aom_codec_ctx_t& codec, aom_codec_err_t status, const char* what)
 {
     if (status == AOM_CODEC_OK) return;
     const char* detail = aom_codec_error_detail(&codec);
@@ -95,9 +95,9 @@ std::vector<std::uint8_t> encode_av1_tile (std::span<const std::span<const std::
     check(context.codec, aom_codec_enc_config_default(av1, &config, AOM_USAGE_GOOD_QUALITY), "aom_codec_enc_config_default");
     config.g_w = RECUT_TILE;
     config.g_h = RECUT_TILE;
-    config.g_profile = 0;                    // Main: 8- or 10-bit 4:2:0
+    config.g_profile = AV1_PROFILE_MAIN;
     config.g_bit_depth = AOM_BITS_8;
-    config.g_input_bit_depth = 8;
+    config.g_input_bit_depth = AV1_BIT_DEPTH;
     config.g_threads = 1;                    // one thread per tile: the same bytes at any concurrency (D24)
     config.g_lag_in_frames = 0;              // no look-ahead: each plane is emitted as it is given
     config.g_limit = static_cast<unsigned int>(planes.size());   // one plane makes a still picture's header
@@ -106,16 +106,17 @@ std::vector<std::uint8_t> encode_av1_tile (std::span<const std::span<const std::
     config.g_timebase = {1, TIMEBASE_DENOMINATOR};
     config.rc_end_usage = AOM_Q;             // constant quantiser: quality alone sets the size
     // Quality 100 is the finest quantiser (0) and quality 1 the coarsest (AV1_QUANTISER_MAX).
-    const auto quantiser = (QUALITY_MAX - quality) * AV1_QUANTISER_MAX / (QUALITY_MAX - QUALITY_MIN);
+    const std::uint32_t quantiser = (std::uint32_t(QUALITY_MAX) - quality) * AV1_QUANTISER_MAX / std::uint32_t(QUALITY_MAX - QUALITY_MIN);
     // Every plane at that quantiser, the key frame included: without the range pinned, libaom's
-    // rate control gives a key frame that later planes reference a finer one (a five-plane tile at
-    // quality 90 had its key frame at q-index 1 and the rest at 24, found 2026-11-27).
+    // rate control gives a key frame that later planes reference a finer one (found 2026-11-27: a
+    // five-plane tissue tile at quality 90 had its key frame at q-index 2 and the rest at 24, 2.63
+    // times the in-focus plane's bytes alone).
     config.rc_min_quantizer = quantiser;
     config.rc_max_quantizer = quantiser;
     check(context.codec, aom_codec_enc_init(&context.codec, av1, &config, 0), "aom_codec_enc_init");
     context.is_initialised = true;
 
-    check(context.codec, aom_codec_control(&context.codec, AOME_SET_CQ_LEVEL, int(quantiser)), "AOME_SET_CQ_LEVEL");
+    check(context.codec, aom_codec_control(&context.codec, AOME_SET_CQ_LEVEL, static_cast<int>(quantiser)), "AOME_SET_CQ_LEVEL");
     check(context.codec, aom_codec_control(&context.codec, AOME_SET_CPUUSED, AV1_FASTEST_CPU_USED - int(effort)), "AOME_SET_CPUUSED");
     check(context.codec, aom_codec_control(&context.codec, AV1E_SET_ROW_MT, 0), "AV1E_SET_ROW_MT");
     check(context.codec, aom_codec_control(&context.codec, AV1E_SET_COLOR_RANGE, AOM_CR_FULL_RANGE), "AV1E_SET_COLOR_RANGE");

@@ -24,6 +24,7 @@ class EncoderBindingTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '"webp"'):
                 create_encoder(str(Path(folder) / "absent.dcm"), folder, encoding="webp")
 
+    # RTM Encode_16
     def test_effort_above_six_and_jpeg_effort_are_refused_by_the_core(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             with self.assertRaisesRegex(RuntimeError, "effort 7"):
@@ -31,6 +32,14 @@ class EncoderBindingTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "effort 2 is refused for TILE_ENCODING_JPEG"):
                 create_encoder(str(Path(folder) / "absent.dcm"), folder, effort=2)
 
+    # RTM Encode_13
+    def test_av1_without_a_named_subsampling_takes_420(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            # The source is absent, so the refusal names it: every option, 4:2:0 included, passed.
+            with self.assertRaisesRegex(RuntimeError, "absent.dcm"):
+                create_encoder(str(Path(folder) / "absent.dcm"), folder, encoding="av1")
+
+    # RTM Encode_13
     def test_av1_with_chroma_other_than_420_is_refused_by_the_core(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             with self.assertRaisesRegex(RuntimeError, "4:2:0"):
