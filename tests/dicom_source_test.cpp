@@ -19,6 +19,7 @@
 
 #include "IrisSlideCore.hpp"
 #include "IrisSlideDicomSource.hpp"
+#include "IrisSlideGeometry.hpp"
 #include "dicom_builder.hpp"
 
 using Catch::Matchers::ContainsSubstring;
@@ -106,7 +107,7 @@ TEST_CASE("A Z-stacked instance is read as every focal plane of each tile, in Z 
     auto source = IrisSlide::open_dicom_source(path);
     REQUIRE(source->planes() == STACK_PLANES);
     CHECK(std::abs(source->measurements().microns_between_planes - 1.0) < 1e-6);
-    constexpr std::size_t TILE_BYTES = std::size_t{IrisSlide::RECUT_TILE} * IrisSlide::RECUT_TILE * RGBA;
+    using IrisSlide::TILE_BYTES;
     std::vector<std::uint8_t> planes(STACK_PLANES * TILE_BYTES);
     source->read_tile(1, 1, planes);
     for (std::uint32_t p = 0; p < STACK_PLANES; ++p) {

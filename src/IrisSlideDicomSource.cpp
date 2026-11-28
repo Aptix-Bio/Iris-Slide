@@ -12,6 +12,7 @@
 #include <array>
 #include <format>
 #include <fstream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -72,7 +73,10 @@ _index          (instance.path, instance.frames)
     if (instance.focal_planes == 0) refuse(instance, "declares 0 focal planes (TotalPixelMatrixFocalPlanes)");
     _planes = instance.focal_planes;
     _frames_per_plane = std::uint64_t{_frames_across} * frames_down;
-    if (std::uint64_t{instance.frames} != _frames_per_plane * _planes)
+    // NumberOfFrames is 32 bits, so a plane count whose frames would pass it cannot match; testing
+    // it first keeps the product below from wrapping (frames per plane and planes each reach 2^32 - 1).
+    if (_frames_per_plane > std::numeric_limits<std::uint32_t>::max() / _planes ||
+        std::uint64_t{instance.frames} != _frames_per_plane * _planes)
         refuse(instance, "holds " + std::to_string(instance.frames) + " frames where " + std::to_string(_planes) +
                          " focal plane(s) of " + std::to_string(_frames_across) + " x " + std::to_string(frames_down) + " are read");
 }

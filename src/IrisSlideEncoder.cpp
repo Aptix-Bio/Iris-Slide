@@ -785,14 +785,14 @@ void check_desc (const EncoderDesc& desc)
         throw std::runtime_error(std::string("the encoder does not write ") + encoding_name(desc.encoding));
     if (desc.quality < QUALITY_MIN || desc.quality > QUALITY_MAX)
         throw std::runtime_error("quality " + std::to_string(desc.quality) + " is outside 1-100");
-    // RTM Encode_16: effort is AV1's speed setting (D25); the JPEG path spends none, so it takes
-    // EFFORT_MIN alone.
+    // RTM Encode_16: effort is AV1's speed setting (D25); the JPEG path sets nothing an effort could
+    // change today (libjpeg-turbo's optimised Huffman tables are not set), so it takes EFFORT_MIN alone.
     if (desc.effort > EFFORT_MAX)
         throw std::runtime_error("effort " + std::to_string(int(desc.effort)) + " is outside " + std::to_string(int(EFFORT_MIN)) +
                                  "-" + std::to_string(int(EFFORT_MAX)));
     if (desc.effort != EFFORT_MIN && desc.encoding != TILE_ENCODING_AV1)
         throw std::runtime_error("effort " + std::to_string(int(desc.effort)) + " is refused for " + encoding_name(desc.encoding) +
-                                 ", which has no speed setting; only AV1 tiles take an effort above " + std::to_string(int(EFFORT_MIN)));
+                                 ", whose encode sets nothing an effort changes today; only AV1 tiles take an effort above " + std::to_string(int(EFFORT_MIN)));
     // RTM Encode_13: AV1 tiles are 4:2:0 alone (D22), so another chroma is refused before it could
     // be written as something else.
     if (desc.encoding == TILE_ENCODING_AV1 && desc.subsampling != SUBSAMPLE_420)

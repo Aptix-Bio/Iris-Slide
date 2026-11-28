@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <string_view>
 
 namespace IrisSlide {
 // RTM Encode_11
@@ -44,5 +45,18 @@ constexpr std::uint64_t pressured_budget (std::uint64_t budget, std::uint64_t sm
     }
     return smallest;   // unreachable: the switch names every enumerator
 }
+
+// Each system's reading turned into a level, apart from where it is read, so every system's rule
+// is tested on every system. Each reads NORMAL from a signal it cannot parse.
+
+/// macOS: kern.memorystatus_vm_pressure_level, 2 or more WARNING and 4 or more CRITICAL.
+MemoryPressure pressure_of_macos_level (int level) noexcept;
+/// Windows: GlobalMemoryStatusEx's dwMemoryLoad, the percentage of physical memory in use.
+MemoryPressure pressure_of_windows_load (unsigned long load) noexcept;
+/// Linux: the text of /proc/pressure/memory, its `full` and `some` lines' avg10.
+MemoryPressure pressure_of_linux_psi (std::string_view psi) noexcept;
+/// Linux without pressure stall information: the text of /proc/meminfo, MemAvailable as a share
+/// of MemTotal; NORMAL when either field is absent or unreadable.
+MemoryPressure pressure_of_linux_meminfo (std::string_view meminfo) noexcept;
 } // namespace IrisSlide
 #endif /* IrisSlideMemoryPressure_hpp */

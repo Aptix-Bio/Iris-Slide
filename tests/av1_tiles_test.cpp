@@ -14,6 +14,8 @@
 #include <cstring>
 #include <span>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -180,7 +182,9 @@ std::vector<DecodedPlane> decode(std::span<const std::uint8_t> stream)
     Dav1dDecoder decoder;
     REQUIRE(dav1d_open(&decoder.context, &settings) == 0);
     Dav1dBytes bytes;
-    std::memcpy(dav1d_data_create(&bytes.data, stream.size()), stream.data(), stream.size());
+    std::uint8_t* const buffer = dav1d_data_create(&bytes.data, stream.size());
+    REQUIRE(buffer != nullptr);   // dav1d_data_create returns null when it cannot allocate
+    std::memcpy(buffer, stream.data(), stream.size());
     std::vector<DecodedPlane> planes;
     const auto take_pictures = [&decoder, &planes] {
         for (;;) {
@@ -260,6 +264,20 @@ Iris::Result encode_stack(const ScratchFolder& folder, std::uint32_t planes, Iri
     progress = wait_for(encoder);
     return created;
 }
+/// A system under memory pressure the whole encode long.
+IrisSlide::MemoryPressure always_critical() noexcept { return IrisSlide::MemoryPressure::CRITICAL; }
+
+/// The smallest budget create_encoder accepts for a Z-stack of @p planes and @p size at
+/// @p concurrency, read from its refusal of a 1-byte budget, so no test copies the encoder's arithmetic.
+std::uint64_t smallest_budget(const ScratchFolder& folder, std::uint32_t planes, IrisSlide::LayerSize size, std::uint32_t concurrency)
+{
+    IrisSlide::EncoderProgress progress;
+    const auto refused = encode_stack(folder, planes, IrisSlide::TILE_ENCODING_AV1, progress, IrisSlide::EFFORT_DEFAULT, size, 1, concurrency);
+    constexpr std::string_view BELOW = "below the ";
+    const auto from = refused.message.find(BELOW);
+    REQUIRE(from != std::string::npos);
+    return std::stoull(refused.message.substr(from + BELOW.size()));
+}
 } // namespace
 
 TEST_CASE("Every tile of an AV1 slide the encoder writes is one plane dav1d decodes, BT.601 full range", "[Encode_13]")
@@ -296,7 +314,6 @@ TEST_CASE("A Z-stacked slide is written with every focal plane of every tile, in
     // ZStackSource_27.9, Q24 (resolved 2026-11-27): five planes, written in Z order, the first plane
     // the key frame and each later plane an inter frame.
     constexpr std::uint32_t STACK_PLANES = 5;
-    constexpr std::array<std::uint32_t, STACK_PLANES> STREAM_ORDER {0, 1, 2, 3, 4};
     const ScratchFolder folder;
     IrisSlide::EncoderProgress progress;
     const auto created = encode_stack(folder, STACK_PLANES, IrisSlide::TILE_ENCODING_AV1, progress);
@@ -323,7 +340,7 @@ TEST_CASE("A Z-stacked slide is written with every focal plane of every tile, in
             for (std::size_t p = 1; p < STACK_PLANES; ++p) CHECK(decoded[p].frame_type == DAV1D_FRAME_TYPE_INTER);
         }
     // At full resolution, tile (0, 0) is the source's own tile: each decoded plane matches the
-    // plane its stream position names: frame k is plane k.
+    // plane of its position: frame k is plane k.
     StackSource source(SLIDE, STACK_PLANES);
     std::vector<std::uint8_t> planes(STACK_PLANES * SIDE * SIDE * RGBA);
     source.read_tile(0, 0, planes);
@@ -332,36 +349,29 @@ TEST_CASE("A Z-stacked slide is written with every focal plane of every tile, in
     REQUIRE(parser.tile(full, 0, stream).succeeded());
     const auto decoded = decode(stream);
     REQUIRE(decoded.size() == STACK_PLANES);
-    for (std::size_t position = 0; position < STACK_PLANES; ++position) {
-        INFO("stream position " << position);
-        const auto plane = std::span<const std::uint8_t>(planes).subspan(STREAM_ORDER[position] * SIDE * SIDE * RGBA, SIDE * SIDE * RGBA);
+    for (std::size_t k = 0; k < STACK_PLANES; ++k) {
+        INFO("frame and plane " << k);
+        const auto plane = std::span<const std::uint8_t>(planes).subspan(k * SIDE * SIDE * RGBA, SIDE * SIDE * RGBA);
         const auto source_luma = IrisSlide::tile_to_i420(plane);
-        CHECK(luma_psnr(decoded[position].luma, std::span(source_luma).first(SIDE * SIDE)) > LUMA_PSNR_FLOOR_DB);
+        CHECK(luma_psnr(decoded[k].luma, std::span(source_luma).first(SIDE * SIDE)) > LUMA_PSNR_FLOOR_DB);
     }
 }
 
 TEST_CASE("A Z-stacked encode at the smallest budget it accepts stays within it", "[Encode_11][Encode_13]")
 {
     // ZStackBudget_27.10: a five-plane encode of the maintainer's emulated Z-stack peaked at 6289 MiB
-    // of a 6.0 GiB budget. The smallest budget create_encoder accepts is read from its refusal of a
-    // 1-byte budget, so the test needs no copy of the encoder's arithmetic.
+    // of a 6.0 GiB budget.
     constexpr std::uint32_t STACK_PLANES = 5, WORKERS = 4;
     constexpr IrisSlide::LayerSize WIDE {.width = 2000, .height = 2000};   // 8 x 8 tiles
     const ScratchFolder folder;
     IrisSlide::EncoderProgress progress;
-    const auto refused = encode_stack(folder, STACK_PLANES, IrisSlide::TILE_ENCODING_AV1, progress, IrisSlide::EFFORT_DEFAULT, WIDE, 1, WORKERS);
-    const auto from = refused.message.find("below the ");
-    REQUIRE(from != std::string::npos);
-    const std::uint64_t smallest = std::stoull(refused.message.substr(from + std::string("below the ").size()));
+    const std::uint64_t smallest = smallest_budget(folder, STACK_PLANES, WIDE, WORKERS);
     const auto created = encode_stack(folder, STACK_PLANES, IrisSlide::TILE_ENCODING_AV1, progress, IrisSlide::EFFORT_DEFAULT, WIDE, smallest, WORKERS);
     INFO(created.message << progress.error);
     REQUIRE(progress.state == IrisSlide::EncoderState::DONE);
     INFO("peak " << progress.peak_resident_bytes << " of " << smallest);
     CHECK(progress.peak_resident_bytes <= smallest);
 }
-
-/// A system under memory pressure the whole encode long.
-IrisSlide::MemoryPressure always_critical() noexcept { return IrisSlide::MemoryPressure::CRITICAL; }
 
 TEST_CASE("Under critical memory pressure an encode keeps to the least the slide needs, whatever its budget", "[Encode_11]")
 {
@@ -372,10 +382,7 @@ TEST_CASE("Under critical memory pressure an encode keeps to the least the slide
     constexpr std::uint64_t ROOMY = 1ull << 30;
     const ScratchFolder folder;
     IrisSlide::EncoderProgress progress;
-    const auto refused = encode_stack(folder, STACK_PLANES, IrisSlide::TILE_ENCODING_AV1, progress, IrisSlide::EFFORT_DEFAULT, WIDE, 1, WORKERS);
-    const auto from = refused.message.find("below the ");
-    REQUIRE(from != std::string::npos);
-    const std::uint64_t smallest = std::stoull(refused.message.substr(from + std::string("below the ").size()));
+    const std::uint64_t smallest = smallest_budget(folder, STACK_PLANES, WIDE, WORKERS);
     REQUIRE(smallest < ROOMY);
     const auto created = encode_stack(folder, STACK_PLANES, IrisSlide::TILE_ENCODING_AV1, progress, IrisSlide::EFFORT_DEFAULT, WIDE,
                                       ROOMY, WORKERS, always_critical);
