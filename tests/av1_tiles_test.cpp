@@ -297,7 +297,7 @@ TEST_CASE("An AV1 tile with no planes, a wrong-sized plane or a quality outside 
     CHECK_THROWS_WITH(IrisSlide::encode_av1_tile({}, QUALITY), ContainsSubstring("at least one focal plane"));
     const std::vector<std::uint8_t> short_tile(100);
     const std::vector<std::span<const std::uint8_t>> wrong {short_tile};
-    CHECK_THROWS_WITH(IrisSlide::encode_av1_tile(wrong, QUALITY), ContainsSubstring("not 100"));
+    CHECK_THROWS_WITH(IrisSlide::encode_av1_tile(wrong, QUALITY), ContainsSubstring("this one has 100"));
     CHECK_THROWS_WITH(IrisSlide::encode_av1_tile(one, 0), ContainsSubstring("quality 0"));
     CHECK_THROWS_WITH(IrisSlide::encode_av1_tile(one, 101), ContainsSubstring("quality 101"));
 }

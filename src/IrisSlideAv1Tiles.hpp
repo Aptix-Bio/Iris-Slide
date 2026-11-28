@@ -34,8 +34,8 @@ std::vector<std::uint8_t> tile_to_i420 (std::span<const std::uint8_t> rgba);
 /// in-focus plane first, then the others outward from it (+1, -1, +2, -2, ...), as the caller
 /// orders them; a tile of one plane is a stack of one. Each plane is one temporal unit: a temporal
 /// delimiter, then, in the first unit only, the sequence header (profile Main, 8-bit 4:2:0,
-/// BT.601 matrix coefficients at full range; for one plane the full header rather than the
-/// reduced still-picture one), then the frame, each OBU with its size field. The first plane is
+/// BT.601 matrix coefficients at full range; for one plane the full still-picture header, which
+/// every decoder reads), then the frame, each OBU with its size field. The first plane is
 /// the key frame and every later plane an inter frame predicted from the ones before it. @p
 /// quality is QUALITY_MIN to QUALITY_MAX, mapped onto libaom's quantiser range. Throws
 /// std::invalid_argument for no planes, a wrong-sized plane or a quality outside its range, and

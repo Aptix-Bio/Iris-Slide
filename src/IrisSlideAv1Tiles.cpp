@@ -62,7 +62,7 @@ void drain (aom_codec_ctx_t& codec, std::vector<std::uint8_t>& stream)
 std::vector<std::uint8_t> tile_to_i420 (std::span<const std::uint8_t> rgba)
 {
     if (rgba.size() != TILE_PIXELS * RGBA_BYTES)
-        throw std::invalid_argument("an AV1 tile takes " + std::to_string(TILE_PIXELS * RGBA_BYTES) + " RGBA bytes, not " +
+        throw std::invalid_argument("an AV1 tile takes " + std::to_string(TILE_PIXELS * RGBA_BYTES) + " RGBA bytes; this one has " +
                                     std::to_string(rgba.size()));
     std::vector<std::uint8_t> i420(I420_TILE_BYTES);
     std::uint8_t* y = i420.data();
