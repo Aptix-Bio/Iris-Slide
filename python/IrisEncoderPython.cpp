@@ -33,17 +33,22 @@ void raise_if_failed (const Iris::Result& result)
 /// The encoder's own defaults, so Python's keyword defaults are the core's and are written once.
 const IrisSlide::EncoderDesc DEFAULTS;
 
-EncoderHandle create (const std::string& source, const std::string& destination, std::uint64_t quality,
-                      const std::string& subsampling, std::uint64_t memory_budget, std::uint64_t concurrency,
+EncoderHandle create (const std::string& source, const std::string& destination, const std::string& encoding,
+                      std::uint64_t quality, const std::optional<std::string>& subsampling,
+                      std::uint64_t memory_budget, std::uint64_t concurrency,
                       std::uint64_t layer_step, const std::map<std::string, std::string>& i2s_attributes,
                       std::uint64_t i2s_version)
 {
     // Python's int is unbounded: each is range-checked before it narrows (raised as ValueError),
     // so a large number is refused instead of wrapped.
+    const IrisSlide::Encoding tiles = IrisSlide::encoding_of(encoding);
     IrisSlide::EncoderDesc desc {.source        = source,
                                  .destination   = destination,
+                                 .encoding      = tiles,
                                  .quality       = IrisSlide::narrowed<IrisSlide::Quality>(quality, "quality"),
-                                 .subsampling   = IrisSlide::subsampling_of(subsampling),
+                                 // The encoding's default unless named: 4:2:0 alone for AV1 (D22).
+                                 .subsampling   = subsampling ? IrisSlide::subsampling_of(*subsampling)
+                                                              : IrisSlide::default_subsampling(tiles),
                                  .memory_budget = memory_budget,
                                  .concurrency   = IrisSlide::narrowed<std::uint32_t>(concurrency, "concurrency"),
                                  .layer_step    = IrisSlide::narrowed<std::uint32_t>(layer_step, "layer step")};
@@ -79,9 +84,11 @@ PYBIND11_MODULE(encoder, m)
     py::class_<EncoderHandle>(m, "Encoder", "An encoder for one slide; it encodes once");
     m.def("create_encoder", &create,
           "An encoder for one slide (a DICOM whole-slide instance: JPEG, JPEG 2000 or HTJ2K frames), writing "
-          "<source stem>.jpeg.iris into destination; raises RuntimeError naming what it refuses",
-          py::arg("source"), py::arg("destination"), py::arg("quality") = std::uint64_t{DEFAULTS.quality},
-          py::arg("subsampling") = std::string(IrisSlide::subsampling_name(DEFAULTS.subsampling)),
+          "<source stem>.<encoding>.iris into destination, its tiles 'jpeg' or 'av1'; subsampling left as None "
+          "takes the encoding's default ('422' for jpeg; av1 is '420' alone); raises RuntimeError naming what it refuses",
+          py::arg("source"), py::arg("destination"), py::arg("encoding") = std::string("jpeg"),
+          py::arg("quality") = std::uint64_t{DEFAULTS.quality},
+          py::arg("subsampling") = std::optional<std::string>(),
           py::arg("memory_budget") = DEFAULTS.memory_budget,
           // Shown as "..." in signatures and stubs: the default is this machine's hardware threads.
           py::arg_v("concurrency", std::uint64_t{DEFAULTS.concurrency}, "..."),
@@ -96,9 +103,10 @@ PYBIND11_MODULE(encoder, m)
           }, "A snapshot of the encode", py::arg("encoder"));
     m.def("interrupt_encoder", [](const EncoderHandle& e) { raise_if_failed(IrisSlide::interrupt_encoder(e.encoder)); },
           "Stops an active encode; it leaves no file", py::arg("encoder"));
-    m.def("encoder_output_name", [](const std::string& source) {
+    m.def("encoder_output_name", [](const std::string& source, const std::string& encoding) {
               std::string name;
-              raise_if_failed(IrisSlide::encoder_output_name(source, IrisSlide::TILE_ENCODING_JPEG, name));
+              raise_if_failed(IrisSlide::encoder_output_name(source, IrisSlide::encoding_of(encoding), name));
               return name;
-          }, "The file name an encode of source writes", py::arg("source"));
+          }, "The file name an encode of source writes in encoding ('jpeg' or 'av1')", py::arg("source"),
+          py::arg("encoding") = std::string("jpeg"));
 }

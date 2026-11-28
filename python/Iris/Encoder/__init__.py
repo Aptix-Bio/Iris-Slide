@@ -20,11 +20,15 @@ __all__ = ["encode_slide_file", "EncoderState", "EncoderProgress", "Encoder", "c
 _POLL_SECONDS = 0.5
 
 
-def encode_slide_file(source: str, outdir: str = "", quality: int | None = None, subsampling: str | None = None,
+def encode_slide_file(source: str, outdir: str = "", encoding: str = "jpeg", quality: int | None = None,
+                      subsampling: str | None = None,
                       layer_step: int | None = None, memory_budget: int | None = None,
                       concurrency: int | None = None, i2s_attributes: dict[str, str] | None = None,
                       i2s_version: int = 0, show_progress: bool = True) -> str:
     """Encode source as an Iris slide in outdir (default: the source's folder); returns the file written.
+
+    encoding is the tile encoding, 'jpeg' or 'av1'; an AV1 slide's tiles are 4:2:0 alone, the
+    subsampling it takes when none is named.
 
     An option left as None takes the encoder's own default (create_encoder's), so the defaults are
     written once, in the core.
@@ -37,7 +41,7 @@ def encode_slide_file(source: str, outdir: str = "", quality: int | None = None,
     given = {"quality": quality, "subsampling": subsampling, "layer_step": layer_step,
              "memory_budget": memory_budget, "concurrency": concurrency}
     options = {name: value for name, value in given.items() if value is not None}
-    encoder = create_encoder(source, outdir or os.path.dirname(os.path.abspath(source)),
+    encoder = create_encoder(source, outdir or os.path.dirname(os.path.abspath(source)), encoding=encoding,
                              i2s_attributes=i2s_attributes or {}, i2s_version=i2s_version, **options)
     dispatch_encoder(encoder)
     try:

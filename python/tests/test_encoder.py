@@ -16,6 +16,18 @@ from Iris.Encoder import (EncoderState, create_encoder, encode_slide_file, encod
 class EncoderBindingTest(unittest.TestCase):
     def test_output_name_is_the_source_stem_and_encoding(self) -> None:
         self.assertEqual(encoder_output_name("slides/synthetic.dcm"), "synthetic.jpeg.iris")
+        self.assertEqual(encoder_output_name("slides/synthetic.dcm", "av1"), "synthetic.av1.iris")
+
+    # RTM Encode_13
+    def test_unknown_encoding_is_a_value_error_naming_it(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaisesRegex(ValueError, '"webp"'):
+                create_encoder(str(Path(folder) / "absent.dcm"), folder, encoding="webp")
+
+    def test_av1_with_chroma_other_than_420_is_refused_by_the_core(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaisesRegex(RuntimeError, "4:2:0"):
+                create_encoder(str(Path(folder) / "absent.dcm"), folder, encoding="av1", subsampling="444")
 
     def test_states_are_the_public_five(self) -> None:
         self.assertEqual([state.name for state in EncoderState.__members__.values()],
