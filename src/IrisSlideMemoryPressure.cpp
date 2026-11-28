@@ -15,6 +15,11 @@
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
 #elif defined(_WIN32)
+// <windows.h> defines min and max as macros unless NOMINMAX is set first, and they break
+// std::min. Iris-Headers' IrisTypes.hpp sets it, but this file includes no Iris header.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #elif defined(__linux__)
 #include <fcntl.h>
