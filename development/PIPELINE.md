@@ -55,7 +55,9 @@ flowchart LR
 5. **Prebuilt over built.** Every package is static and release-only (`triplets/`). On Windows,
    aom is compiled by Visual Studio's clang-cl and every other package by MSVC, since MSVC 19.44
    (Visual Studio 2022 17.14) miscompiles libaom's inter-frame mode search into an aligned SSE
-   load from a misaligned stack slot (ZStackWindowsCrash_27.19). The encoder
+   load from a misaligned stack slot (ZStackWindowsCrash_27.19). aom's compiler is named by a
+   chainloaded toolchain (`triplets/toolchains/x64-windows-clang-cl.cmake`), so vcpkg detects
+   clang-cl and aom's package hash follows the clang-cl binary (AomCompilerHash_27.20). The encoder
    read vendor slide files through OpenSlide until its rebuild (decided 2026-11-27, ARCHITECTURE
    D14); OpenSlide left the build with it, and a vendor source returns as a Source module.
 6. **The store.** CI keeps vcpkg's packages and the compiler's objects (sccache)

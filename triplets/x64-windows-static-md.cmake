@@ -3,23 +3,23 @@
 #   debug build of each package would be a second build nothing links.
 # - aom is compiled by Visual Studio's clang-cl (ZStackWindowsCrash_27.19). MSVC 19.44 (Visual
 #   Studio 2022 17.14, the windows-2025 runners' compiler) miscompiles libaom 3.15.3's
-#   motion_mode_rd (av1/encoder/rdopt.c): an SSE andps reads its sign mask from a stack slot 8
-#   bytes off the 16-byte alignment the instruction requires, so an inter-frame encode faults
-#   (found 2026-11-28 on CI at ca97e1e). On a Windows x64 machine with MSVC 14.44.35207 the two
-#   Z-stack budget tests fault as on CI (103/105) and pass with aom from clang-cl (105/105); five
-#   CPUs emulated by Intel SDE 10.13.1 pass, AVX-512 included, so the fault follows the compiler.
-#   MSVC 19.51 compiles the same source correctly, so a toolset outside the
-#   image would fix the runners but not a user building with Visual Studio 2022; clang-cl from
-#   the same Visual Studio install fixes both. vcpkg's Windows toolchain already handles clang-cl.
+#   motion_mode_rd (av1/encoder/rdopt.c), so an inter-frame encode faults (found 2026-11-28 on CI
+#   at ca97e1e). The faulting instruction, read at the crash, is an SSE andps whose memory operand
+#   is 8 bytes off the 16-byte alignment it requires. On a Windows x64 machine with MSVC
+#   14.44.35207 the two Z-stack budget tests fault as on CI (103/105) and pass with aom from
+#   clang-cl (105/105); five CPUs emulated by Intel SDE 10.13.1 pass, AVX-512 included, so the
+#   fault follows the compiler (the faulting instruction and its source line are in 880c7ba's
+#   message). clang-cl is a component of the same Visual Studio install (C++ Clang tools for
+#   Windows), so the runners and a user building with Visual Studio 2022 get the same fix; vcpkg's
+#   Windows toolchain already handles it (scripts/toolchains/windows.cmake leaves out /MP for it).
 set(VCPKG_TARGET_ARCHITECTURE x64)
 set(VCPKG_CRT_LINKAGE dynamic)
 set(VCPKG_LIBRARY_LINKAGE static)
 set(VCPKG_BUILD_TYPE release)
 if(PORT STREQUAL "aom")
-    set(clang_cl "$ENV{VCINSTALLDIR}Tools/Llvm/x64/bin/clang-cl.exe")
-    if(NOT EXISTS "${clang_cl}")
-        message(FATAL_ERROR "aom is compiled by clang-cl, and Visual Studio has none at \"${clang_cl}\" "
-                            "(VCINSTALLDIR is \"$ENV{VCINSTALLDIR}\"): install its C++ Clang tools for Windows")
-    endif()
-    set(VCPKG_CMAKE_CONFIGURE_OPTIONS "-DCMAKE_C_COMPILER=${clang_cl}" "-DCMAKE_CXX_COMPILER=${clang_cl}")
+    # aom's compiler, clang-cl, is named and checked in the chainloaded toolchain alone, so vcpkg
+    # detects it and aom's package hash follows its binary (AomCompilerHash_27.20); a toolchain
+    # file turns vcpkg's Visual Studio environment off by default, and clang-cl needs it.
+    set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE "${CMAKE_CURRENT_LIST_DIR}/toolchains/x64-windows-clang-cl.cmake")
+    set(VCPKG_LOAD_VCVARS_ENV ON)
 endif()
