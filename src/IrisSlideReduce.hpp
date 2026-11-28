@@ -23,13 +23,15 @@
 
 namespace IrisSlide {
 // RTM Pyramid_01
+/// The reduction's scale on each axis: output pixel i stands for the source pair (2i, 2i+1).
+constexpr std::uint32_t REDUCE_SCALE       = 2;
 /// Output pixel i of a reduced row reads source pixels 2i-3 to 2i+4: 3 before its pair (2i, 2i+1)
 /// and 3 after it.
 constexpr std::uint32_t REDUCE_HALO_BEFORE = 3;
 constexpr std::uint32_t REDUCE_HALO_AFTER  = 3;
-constexpr std::uint32_t REDUCE_TAPS        = 8;
+constexpr std::uint32_t REDUCE_TAPS        = REDUCE_HALO_BEFORE + REDUCE_SCALE + REDUCE_HALO_AFTER;   // the pair and its halo
 /// The side of the source region a 256-pixel reduced tile reads: 3 + 512 + 3 pixels.
-constexpr std::uint32_t REDUCE_REGION = 2 * RECUT_TILE + REDUCE_HALO_BEFORE + REDUCE_HALO_AFTER;
+constexpr std::uint32_t REDUCE_REGION = REDUCE_SCALE * RECUT_TILE + REDUCE_HALO_BEFORE + REDUCE_HALO_AFTER;
 /// The memory one reduce_2x call and its gathered region hold while they run: the region (RGBA8),
 /// the first pass and its transpose (int16), and the second pass (RGBA8).
 constexpr std::uint64_t REDUCE_SCRATCH_BYTES =
@@ -44,6 +46,11 @@ constexpr int REDUCE_SECOND_SHIFT = 2 * REDUCE_WEIGHT_BITS - REDUCE_FIRST_SHIFT;
 /// The Mitchell-Netravali family's parameters (Q16: B = C = 1/3 to start, decided 2026-11-27).
 constexpr double MITCHELL_B = 1.0 / 3.0;
 constexpr double MITCHELL_C = 1.0 / 3.0;
+
+/// A value one pass of the reduction reads or writes: the 8-bit pixels, or the signed 16-bit
+/// first pass the second reads.
+template <typename T>
+concept PassValue = std::same_as<T, std::uint8_t> || std::same_as<T, std::int16_t>;
 
 /// A callable giving the RGBA8 pixels of tile (x, y) of a layer (RECUT_TILE² × 4 bytes).
 template <typename TileOf>
@@ -88,15 +95,17 @@ constexpr std::int32_t round_to_int (double v)
 {
     return static_cast<std::int32_t>(v >= 0 ? v + 0.5 : v - 0.5);
 }
-/// Tap k reads the source pixel whose centre is k - 3.5 source pixels from the output pixel's
-/// centre; the kernel is widened by 2 for a 2x reduction. The rounded weights' shortfall from
-/// 2^REDUCE_WEIGHT_BITS goes to the two centre taps, so the sum is exact and the table symmetric.
+/// Tap k reads the source pixel whose centre is k - (REDUCE_HALO_BEFORE + 0.5) source pixels from
+/// the output pixel's centre, which lies between its pair; the kernel is widened by 2 for a 2x
+/// reduction. The rounded weights' shortfall from 2^REDUCE_WEIGHT_BITS goes to the two centre taps
+/// (the pair, REDUCE_HALO_BEFORE and REDUCE_HALO_BEFORE + 1), so the sum is exact and the table
+/// symmetric.
 consteval std::array<std::int32_t, REDUCE_TAPS> make_weights ()
 {
     std::array<double, REDUCE_TAPS> raw {};
     double sum = 0;
     for (std::uint32_t k = 0; k < REDUCE_TAPS; ++k) {
-        raw[k] = mitchell((double(k) - 3.5) / 2.0);
+        raw[k] = mitchell((double(k) - (REDUCE_HALO_BEFORE + 0.5)) / double(REDUCE_SCALE));
         sum += raw[k];
     }
     std::array<std::int32_t, REDUCE_TAPS> weights {};
@@ -106,8 +115,8 @@ consteval std::array<std::int32_t, REDUCE_TAPS> make_weights ()
         total += weights[k];
     }
     const std::int32_t shortfall = (1 << REDUCE_WEIGHT_BITS) - total;   // even: the table is symmetric
-    weights[3] += shortfall / 2;
-    weights[4] += shortfall / 2;
+    weights[REDUCE_HALO_BEFORE] += shortfall / std::int32_t{REDUCE_SCALE};
+    weights[REDUCE_HALO_BEFORE + REDUCE_SCALE - 1] += shortfall / std::int32_t{REDUCE_SCALE};
     return weights;
 }
 } // namespace detail
@@ -125,7 +134,7 @@ namespace detail {
 /// One output value of a pass: the weighted sum of the REDUCE_TAPS samples sample(k) gives,
 /// rounded, shifted right by Shift and saturated to Out, as Highway's DemoteTo saturates, so the
 /// vector kernels' scalar tails and the reference compute it the same way.
-template <typename Out, int Shift, typename Sample>
+template <PassValue Out, int Shift, typename Sample>
     requires std::invocable<Sample, std::uint32_t>
 Out tap_sum (Sample&& sample)
 {
@@ -148,8 +157,8 @@ void gather_region (LayerSize layer, std::uint32_t out_x, std::uint32_t out_y, T
     const auto clamp = [](std::int64_t v, std::uint64_t size) {
         return static_cast<std::uint64_t>(std::clamp<std::int64_t>(v, 0, std::int64_t(size) - 1));
     };
-    const std::int64_t left = std::int64_t{out_x} * 2 * RECUT_TILE - REDUCE_HALO_BEFORE;
-    const std::int64_t top  = std::int64_t{out_y} * 2 * RECUT_TILE - REDUCE_HALO_BEFORE;
+    const std::int64_t left = std::int64_t{out_x} * REDUCE_SCALE * RECUT_TILE - REDUCE_HALO_BEFORE;
+    const std::int64_t top  = std::int64_t{out_y} * REDUCE_SCALE * RECUT_TILE - REDUCE_HALO_BEFORE;
     for (std::uint32_t ry = 0; ry < REDUCE_REGION; ++ry) {
         const std::uint64_t sy = clamp(top + ry, layer.height);
         std::uint8_t* out = region.data() + std::size_t{ry} * REDUCE_REGION * RGBA_BYTES;

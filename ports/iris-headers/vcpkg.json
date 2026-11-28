@@ -1,6 +1,6 @@
 {
   "name": "iris-headers",
-  "version-date": "2026-11-24",
+  "version-date": "2026-11-27",
   "description": "Iris-Headers (Aptix-Bio): the shared Iris types and codec API, and the sources Iris-Slide compiles from it",
   "homepage": "https://github.com/Aptix-Bio/Iris-Headers",
   "license": "MIT",

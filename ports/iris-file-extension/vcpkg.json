@@ -1,6 +1,6 @@
 {
   "name": "iris-file-extension",
-  "version-date": "2026-11-24",
+  "version-date": "2026-11-27",
   "description": "Iris-File-Extension (Aptix-Bio): the Iris File Extension's Parser and Builder, a static library",
   "homepage": "https://github.com/Aptix-Bio/Iris-File-Extension",
   "license": "MIT",

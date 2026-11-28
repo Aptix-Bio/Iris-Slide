@@ -66,17 +66,23 @@ jobs:
       preset: wasm
       access: quarantine
 
+  # WindowsCompilers_17.9 (RTM Build_08): the open-source library is built by both Windows
+  # compilers its users have, MSVC's cl and Visual Studio's ClangCL (decided 2026-11-27, D21).
   windows:
     needs: linux
     permissions:
       contents: read
       id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [cl, clang-cl]
     uses: ./.github/workflows/_build.yml
     with:
       runner: blacksmith-4vcpu-windows-2025
       preset: ci
-      cc: cl
-      cxx: cl
+      cc: ${{ matrix.compiler }}
+      cxx: ${{ matrix.compiler }}
       access: quarantine
 
   macos:

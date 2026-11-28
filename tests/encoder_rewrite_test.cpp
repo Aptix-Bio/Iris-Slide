@@ -20,6 +20,7 @@
 
 #include "IrisSlidePriv.hpp"
 #include "IrisSlideEncoder.hpp"
+#include "IrisSlideEncoderOptions.hpp"
 #include "IrisSlideReduce.hpp"
 
 using Catch::Matchers::ContainsSubstring;
@@ -139,6 +140,15 @@ TEST_CASE("The output is named for its source and tile encoding", "[Encode_09]")
     CHECK(name == "synthetic.jpeg.iris");
     CHECK_THAT(IrisSlide::encoder_output_name("slides/synthetic.dcm", IrisSlide::TILE_ENCODING_AV1, name).message,
                ContainsSubstring("TILE_ENCODING_AV1"));
+}
+
+TEST_CASE("Each subsampling name reads as its enumerator and back", "[Encode_09]")
+{
+    CHECK(IrisSlide::subsampling_of("444") == IrisSlide::SUBSAMPLE_444);
+    CHECK(IrisSlide::subsampling_of("422") == IrisSlide::SUBSAMPLE_422);
+    CHECK(IrisSlide::subsampling_of("420") == IrisSlide::SUBSAMPLE_420);
+    for (const auto& row : IrisSlide::SUBSAMPLING_NAMES) CHECK(IrisSlide::subsampling_name(row.subsampling) == row.name);
+    CHECK_THROWS_WITH(IrisSlide::subsampling_of("411"), ContainsSubstring("\"411\""));
 }
 
 TEST_CASE("create_encoder refuses what it cannot encode, naming the value", "[Encode_09]")

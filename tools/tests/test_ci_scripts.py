@@ -1,4 +1,4 @@
-"""The CI's CMake scripts: scripts/ci_caches.cmake and scripts/cache_report.cmake.
+"""The CI's CMake scripts: scripts/ci_caches.cmake, scripts/cache_report.cmake and scripts/clang_cl_path.cmake.
 
 VcpkgCaching_2 (OneReusableBuild_2.5; RTM Build_06). Each case runs the script with `cmake -P` as a job
 would, with the environment GitHub Actions gives it, and reads the files it writes.
@@ -6,6 +6,7 @@ Run: python3 -m unittest discover -s tools/tests
 """
 
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -15,6 +16,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent.parent
 _CACHES = _ROOT / "scripts" / "ci_caches.cmake"
 _REPORT = _ROOT / "scripts" / "cache_report.cmake"
+_CLANG_CL = _ROOT / "scripts" / "clang_cl_path.cmake"
 _PROVIDER = "projects/1/locations/global/workloadIdentityPools/pool/providers/provider"
 # Placeholders for the repository variables that name the cache bucket and its two service
 # accounts: a public file names none of them (PublicNames in test_review_configuration.py).
@@ -35,11 +37,11 @@ class Run:
 
 def _run(script: Path, defines: dict[str, str], environment: dict[str, str]) -> Run:
     with tempfile.TemporaryDirectory() as folder:
-        files = {name: Path(folder) / name for name in ("GITHUB_OUTPUT", "GITHUB_ENV", "GITHUB_STEP_SUMMARY")}
+        files = {name: Path(folder) / name for name in ("GITHUB_OUTPUT", "GITHUB_ENV", "GITHUB_STEP_SUMMARY", "GITHUB_PATH")}
         for path in files.values():
             path.touch()
         env = {"PATH": os.environ["PATH"], "RUNNER_TEMP": folder, **{k: str(v) for k, v in files.items()}, **environment}
-        arguments = ["cmake", *[f"-D{key}={value}" for key, value in defines.items()], "-P", str(script)]
+        arguments = [shutil.which("cmake") or "cmake", *[f"-D{key}={value}" for key, value in defines.items()], "-P", str(script)]
         done = subprocess.run(arguments, env=env, capture_output=True, text=True, check=False)
         return Run(done.returncode, done.stdout + done.stderr, {name: path.read_text() for name, path in files.items()})
 
@@ -187,6 +189,27 @@ class CacheReport(unittest.TestCase):
                      dict(requests=100, hits=80, misses=20, errors=6, reads=0, writes=0)):
             with self.subTest(**case):
                 self.assertNotEqual(self._report(self._LOG, _STATS.format(**case)).code, 0)
+
+
+class ClangClPath(unittest.TestCase):
+    """WindowsCompilers_17.9 (RTM Build_08): the ClangCL cell's compiler on PATH."""
+
+    def test_visual_studios_clang_cl_is_added(self) -> None:
+        with tempfile.TemporaryDirectory() as install:
+            folder = Path(install) / "Tools" / "Llvm" / "x64" / "bin"
+            folder.mkdir(parents=True)
+            (folder / "clang-cl.exe").touch()
+            run = _run(_CLANG_CL, {}, {"VCINSTALLDIR": install})
+        self.assertEqual(run.code, 0, run.output)
+        self.assertEqual(Path(run.files["GITHUB_PATH"].strip()), folder)
+
+    def test_no_clang_cl_fails_naming_where_it_looked(self) -> None:
+        with tempfile.TemporaryDirectory() as install:
+            run = _run(_CLANG_CL, {}, {"VCINSTALLDIR": install, "PATH": str(Path(install))})
+        self.assertNotEqual(run.code, 0)
+        self.assertIn("Tools/Llvm/x64/bin", run.output)
+        self.assertIn("nor on PATH", run.output)
+        self.assertEqual(run.files["GITHUB_PATH"], "")
 
 
 if __name__ == "__main__":

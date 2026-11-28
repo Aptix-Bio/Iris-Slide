@@ -13,7 +13,7 @@ flowchart LR
     B["scripts/bootstrap_vcpkg.cmake<br/>scripts/bootstrap_emsdk.cmake"] --> T
     T -->|"restore or build"| S[("the cache bucket<br/>iris-slide/")]
     P["CMakePresets.json"] --> T
-    W["_build.yml<br/>one per platform"] --> P
+    W["_build.yml<br/>one per cell"] --> P
     A[".github/actions/caches<br/>scripts/ci_caches.cmake"] --> S
     W --> A
     W --> R["scripts/cache_report.cmake"]
@@ -88,8 +88,11 @@ flowchart LR
    compile through sccache, any sccache read or write error, or lookup errors
    with no hit or above one compile in twenty.
 9. **One reusable build, CMake does the work.** `_build.yml` configures, builds
-   and packages one cell and is called once per platform; Linux runs first,
-   Windows and macOS only after it passes. Each `run:` step is one command, at
+   and packages one cell and is called once per cell (a platform, and on
+   Windows a compiler); Linux runs first,
+   Windows and macOS only after it passes. Windows is two cells, one per compiler
+   (`cl` and `clang-cl`, D21); `scripts/clang_cl_path.cmake` puts Visual Studio's
+   clang-cl on the ClangCL cell's PATH. Each `run:` step is one command, at
    most `MAX_RUN_LINES` (2) lines (`tools/workflow_lint.py`): a preset, or
    `cmake -P scripts/<name>.cmake`, which is the same on every operating
    system's shell and is tested in `tools/tests`.
@@ -174,8 +177,8 @@ and from each upstream's release.
 | GLM | 1.0.3 (override) | 1.0.3 | vcpkg baseline |
 | pybind11 | 3.1.0 (overlay: vcpkg's port without its python3 dependency) | v3.1.0 | vcpkg baseline; the archive's SHA-512 is vcpkg's |
 | Catch2 | 3.15.1 (override, feature `tests`) | 3.15.1 | vcpkg `versions/c-/catch2.json` (baseline 3.16.0) |
-| Iris-Headers | `2cfb551c5d5a4a931c98a26ae1a377268dbe969a` (feature/EncoderRewrite_24, moved 2026-11-27 from `635afbb` on feature/TileEncodingAv1_1, now on main) | — | the paired branch of Aptix-Bio/Iris-Headers#13: the rebuilt encoder's public API (`EncoderDesc`, `EncoderState`, `EncoderProgress`, `create_encoder`, `dispatch_encoder`, `encoder_progress`, `interrupt_encoder`, `encoder_output_name`, `LAYER_STEP_DEFAULT`; ARCHITECTURE D14), https://github.com/Aptix-Bio/Iris-Headers/commit/2cfb551c5d5a4a931c98a26ae1a377268dbe969a, the archive's SHA-512 computed 2026-11-27, until it merges (PortsPinMain_17.6) |
-| Iris-File-Extension | `06ec6f28cd59ddf997e3dafc588054affc8f9da8` (feature/BoundaryResults_R-8, on main) | — | the paired branch: IFE's read calls return a `Result` and write their value through a reference (IFE R-8, decided 2026-11-25), https://github.com/Aptix-Bio/Iris-File-Extension/commit/06ec6f28cd59ddf997e3dafc588054affc8f9da8, the archive's SHA-512 computed 2026-11-26, until Aptix-Bio/Iris-File-Extension#11 merges; repinned then to its commit on main |
+| Iris-Headers | `4eecc967cd173529a941487513b67efdfb2a4332` (main, moved 2026-11-27 from `2cfb551` on feature/EncoderRewrite_24) | — | the merge of Aptix-Bio/Iris-Headers#13: the rebuilt encoder's public API (`EncoderDesc`, `EncoderState`, `EncoderProgress`, `create_encoder`, `dispatch_encoder`, `encoder_progress`, `interrupt_encoder`, `encoder_output_name`, `LAYER_STEP_DEFAULT`; ARCHITECTURE D14), https://github.com/Aptix-Bio/Iris-Headers/commit/4eecc967cd173529a941487513b67efdfb2a4332, the archive's SHA-512 computed 2026-11-27 (PortsPinMain_17.6) |
+| Iris-File-Extension | `b31a788dd29f74edfb827dbb3a20ac5887ca7676` (main, moved 2026-11-27 from `06ec6f2`) | — | IFE's read calls return a `Result` and write their value through a reference (IFE R-8, decided 2026-11-25), https://github.com/Aptix-Bio/Iris-File-Extension/commit/b31a788dd29f74edfb827dbb3a20ac5887ca7676, the archive's SHA-512 computed 2026-11-27 (PortsPinMain_17.6) |
 | Emscripten SDK | 6.0.13, `35659964bc2762fffec0d257997fb61475f765b7` | — | https://github.com/emscripten-core/emsdk/releases/tag/6.0.13 |
 | sccache | v0.19.0 | — | through mozilla-actions/sccache-action v0.0.11 |
 

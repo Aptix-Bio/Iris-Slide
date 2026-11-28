@@ -224,14 +224,13 @@ TEST_CASE("Each local slide's series yields its highest VOLUME instance, TILED_F
 }
 
 namespace {
-constexpr std::uint32_t RGBA_CHANNELS = 4;
 using IrisSlide::ALPHA_OPAQUE;
 constexpr double JPEG_PSNR_FLOOR_DB = 35.0;   // quality 90, 4:2:2 on stained tissue
 constexpr auto ENCODER_POLL = std::chrono::milliseconds(50);
 
 std::vector<std::uint8_t> tile_buffer()
 {
-    return std::vector<std::uint8_t>(std::size_t{IrisSlide::RECUT_TILE} * IrisSlide::RECUT_TILE * RGBA_CHANNELS);
+    return std::vector<std::uint8_t>(std::size_t{IrisSlide::RECUT_TILE} * IrisSlide::RECUT_TILE * IrisSlide::RGBA_BYTES);
 }
 
 double psnr_rgb(const std::vector<std::uint8_t>& a, const std::uint8_t* b)
@@ -239,7 +238,7 @@ double psnr_rgb(const std::vector<std::uint8_t>& a, const std::uint8_t* b)
     double squared = 0;
     std::size_t samples = 0;
     for (std::size_t i = 0; i < a.size(); ++i) {
-        if (i % RGBA_CHANNELS == 3) continue;
+        if (i % IrisSlide::RGBA_BYTES == IrisSlide::RGB_BYTES) continue;   // the alpha byte, after the colour bytes
         const double difference = double(a[i]) - double(b[i]);
         squared += difference * difference;
         ++samples;
@@ -302,7 +301,7 @@ TEST_CASE("A re-cut tile's pixels are the source frames' pixels at the same slid
                 gx / local.shape.columns + 1);
             const auto frame = local.decode(frame_number);
             const std::size_t at = ((gy % local.shape.rows) * local.shape.columns + gx % local.shape.columns) * RGB_CHANNELS;
-            const auto* px = &tile[(std::size_t{y} * IrisSlide::RECUT_TILE + x) * RGBA_CHANNELS];
+            const auto* px = &tile[(std::size_t{y} * IrisSlide::RECUT_TILE + x) * IrisSlide::RGBA_BYTES];
             CHECK((px[0] == frame[at] && px[1] == frame[at + 1] && px[2] == frame[at + 2] && px[3] == ALPHA_OPAQUE));
         }
     }

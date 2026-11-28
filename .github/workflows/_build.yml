@@ -90,6 +90,10 @@ jobs:
       - name: The compiler's environment (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+      # WindowsCompilers_17.9 (RTM Build_08): Visual Studio's clang-cl for the ClangCL cell.
+      - name: ClangCL on PATH (Windows)
+        if: runner.os == 'Windows' && inputs.cxx == 'clang-cl'
+        run: cmake -P scripts/clang_cl_path.cmake
       - uses: ./.github/actions/caches
         with:
           access: ${{ inputs.access }}
@@ -111,7 +115,7 @@ jobs:
           key: ${{ steps.tools.outputs.cache-primary-key }}
       - name: Build
         run: cmake --build --preset ${{ inputs.preset }}
-      # CiRunsTests_1.5 (RTM Testing_01): the suite on every native cell, a few seconds; the tests
+      # CiRunsTests_1.5 (RTM Testing_04): the suite on every native cell, a few seconds; the tests
       # on real slides are opt-in (label local) and run on a maintainer's machine. The JavaScript
       # module has no ctest suite, and only the `ci` configure preset has a test preset of its name
       # among the presets callers pass, so the step runs for it alone.
