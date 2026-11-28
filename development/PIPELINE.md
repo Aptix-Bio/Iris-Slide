@@ -52,7 +52,10 @@ flowchart LR
    uncommitted changes are written into the port, so a package built from
    other source is never restored for it. Iris-Headers' downstream cell builds
    Iris-Slide this way.
-5. **Prebuilt over built.** Every package is static and release-only (`triplets/`). The encoder
+5. **Prebuilt over built.** Every package is static and release-only (`triplets/`). On Windows,
+   aom is compiled by Visual Studio's clang-cl and every other package by MSVC, since MSVC 19.44
+   (Visual Studio 2022 17.14) miscompiles libaom's inter-frame mode search into an aligned SSE
+   load from a misaligned stack slot (ZStackWindowsCrash_27.19). The encoder
    read vendor slide files through OpenSlide until its rebuild (decided 2026-11-27, ARCHITECTURE
    D14); OpenSlide left the build with it, and a vendor source returns as a Source module.
 6. **The store.** CI keeps vcpkg's packages and the compiler's objects (sccache)
@@ -168,7 +171,7 @@ and from each upstream's release.
 | Highway | 1.2.0 (override; floor 1.2.0) | 1.2.0 (floor 1.2) | vcpkg `versions/h-/highway.json` |
 | libjpeg-turbo | 3.2.0#1 | 3.2.0 | vcpkg baseline |
 | libavif | 1.4.2#1, feature `aom` (aom from the overlay below, libyuv 1916 from the baseline) | v1.4.2 | vcpkg baseline; the source build used aom and libyuv too |
-| libaom | 3.15.3 (overlay `ports/aom`: vcpkg's own port at microsoft/vcpkg `dee3416740`, 2026-11-02, unchanged; feature `encoder`), its source pinned by git commit `b141d9c45db236335351c8a4b2a14b3ade27c937` (tag v3.15.3), a content-addressed pin, through `vcpkg_from_git`, since aomedia.googlesource.com serves no fixed archive to hash | — | D22; the baseline carries 3.15.2 and no vcpkg release carries 3.15.3 yet (latest 2026.10.16, read 2026-11-27); BSD-2-Clause AND BSD-3-Clause AND MIT AND ISC, as the port declares for libaom and the third-party code it bundles, with the AOM Patent License 1.0; the overlay goes once a release carries 3.15.3 |
+| libaom | 3.15.3 (overlay `ports/aom`: vcpkg's own port at microsoft/vcpkg `dee3416740`, 2026-11-02, unchanged; feature `encoder`), its source pinned by git commit `b141d9c45db236335351c8a4b2a14b3ade27c937` (tag v3.15.3), a content-addressed pin, through `vcpkg_from_git`, since aomedia.googlesource.com serves no fixed archive to hash; compiled on Windows by Visual Studio's clang-cl (`triplets/x64-windows-static-md.cmake`, rule 5) | — | D22; the baseline carries 3.15.2 and no vcpkg release carries 3.15.3 yet (latest 2026.10.16, read 2026-11-27); BSD-2-Clause AND BSD-3-Clause AND MIT AND ISC, as the port declares for libaom and the third-party code it bundles, with the AOM Patent License 1.0; the overlay goes once a release carries 3.15.3 |
 | libyuv | 1916 (override, feature `encoder`) | — | vcpkg baseline; converts AV1 tiles to 4:2:0 (D22) |
 | dav1d | 1.5.4 (override, feature `tests`; overlay `ports/dav1d`: vcpkg's port plus a CMake config, `unofficial::dav1d::dav1d`, as libdicom's) | — | vcpkg baseline; BSD-2-Clause and ISC; decodes the encoder's AV1 tiles back in the tests (D22) |
 | libpng | 1.6.50 (override) | v1.6.50 | vcpkg `versions/l-/libpng.json` (baseline 1.6.59) |
