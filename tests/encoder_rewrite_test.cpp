@@ -257,7 +257,7 @@ TEST_CASE("A slide whose decoded size is over 4x the budget encodes within the b
     // (decoding's scratch uncharged, Red first of 2a3488d).
     const ScratchFolder folder;
     const IrisSlide::LayerSize size {.width = 2300, .height = 20400};   // 9 x 80 tiles, 189 MB decoded
-    constexpr std::uint64_t BUDGET = 40ull << 20;
+    constexpr std::uint64_t BUDGET = 44ull << 20;   // above the slide's working set, its streams' room included (ZStackBudget_27.10)
     constexpr std::uint32_t WORKERS = 2;
     STATIC_CHECK(std::uint64_t{9} * 80 * IrisSlide::TILE_BYTES > 4 * BUDGET);
     const auto done = encode(size, folder.path, BUDGET, WORKERS);

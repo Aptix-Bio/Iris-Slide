@@ -321,6 +321,15 @@ private:
     std::uint16_t z_planes () const noexcept { return _planes > 1 ? static_cast<std::uint16_t>(_planes) : 0; }
     void fail (const std::string& why) noexcept;
     void charge (std::int64_t bytes) noexcept;
+    /// What a row of layer @p depth charges when it starts: its tiles' pixels and, for a written
+    /// layer, room for each tile's compressed stream, settled to the stream's size once it is made,
+    /// so a stream waiting its turn to be written is inside the budget (ZStackBudget_27.10). A
+    /// compressed tile is taken to be no larger than its pixels, which the Builder's capacity assumes too.
+    std::uint64_t row_charge (std::uint32_t depth) const noexcept
+    {
+        const std::uint64_t allowance = _layers[depth].written ? _tile_bytes : 0;
+        return std::uint64_t{_layers[depth].across} * (_tile_bytes + allowance);
+    }
     void issue (std::invocable auto&& body);
 
     EncoderDesc                  _desc;
@@ -384,9 +393,20 @@ _pool       (std::make_unique<Iris::Async::Pool>(desc.concurrency))
     }
     // A base row is read only with room left for one row of every derived layer and the scratch
     // of every worker, so the rows that free memory can always start.
-    for (std::size_t d = 1; d < _layers.size(); ++d) _reserve += std::uint64_t{_layers[d].across} * _tile_bytes;
+    for (std::uint32_t d = 1; d < _layers.size(); ++d) _reserve += row_charge(d);
     _reserve += std::uint64_t{_desc.concurrency} *
                 std::max(_source->read_scratch_bytes(), REDUCE_SCRATCH_BYTES);
+    // RTM Encode_11: the smallest budget this slide can keep to: the pixels of ROWS_HELD rows of
+    // every layer, one row's stream room per layer, and every worker's scratch; and at least one
+    // base row with the reserve beside it, since a base row is read with no row in flight whatever
+    // the budget.
+    std::uint64_t working_set = std::uint64_t{_desc.concurrency} * std::max(_source->read_scratch_bytes(), REDUCE_SCRATCH_BYTES);
+    for (std::uint32_t d = 0; d < _layers.size(); ++d)
+        working_set += (ROWS_HELD - 1) * std::uint64_t{_layers[d].across} * _tile_bytes + row_charge(d);
+    const std::uint64_t smallest = std::max(working_set, row_charge(0) + _reserve);
+    if (_budget < smallest)
+        throw std::runtime_error("a memory budget of " + std::to_string(_budget) + " bytes is below the " +
+                                 std::to_string(smallest) + " bytes this slide needs at once");
     // The schedule: each base row, then every derived row whose last input row is now made.
     std::vector<std::uint32_t> made(_layers.size(), 0);
     for (std::uint32_t base = 0; base < _layers[0].down; ++base) {
@@ -498,7 +518,7 @@ bool Encoder_t::is_base_row_admitted () const noexcept
     // budget, so an encode always progresses. The comparison is unsigned, so a budget of
     // UINT64_MAX means no limit.
     const std::uint64_t resident = std::uint64_t(std::max<std::int64_t>(0, _resident.load()));
-    return _rows_in_flight == 0 || resident + std::uint64_t{_layers[0].across} * _tile_bytes + _reserve <= _budget;
+    return _rows_in_flight == 0 || resident + row_charge(0) + _reserve <= _budget;
 }
 
 bool Encoder_t::is_startable (const Job& job) const noexcept
@@ -535,7 +555,7 @@ void Encoder_t::start_tiles (std::uint32_t depth, std::uint32_t r)
     row.remaining.store(across);
     row.stage.store(Row::Stage::WORKING);
     ++_rows_in_flight;
-    charge(std::int64_t(across * _tile_bytes));
+    charge(std::int64_t(row_charge(depth)));
     for (std::uint32_t x = 0; x < across; ++x)
         issue([this, depth, r, x] { work_tile(depth, r, x); });
 }
@@ -572,7 +592,7 @@ void Encoder_t::work_tile (std::uint32_t depth, std::uint32_t r, std::uint32_t x
         row.streams[x] = compress_tile(_context, _desc.encoding, row.pixels[x], _planes, _desc.quality, _desc.subsampling, _desc.effort);
         if (!row.streams[x]) throw std::runtime_error("tile (" + std::to_string(x) + ", " + std::to_string(r) +
                                                       ") of layer " + std::to_string(depth) + " did not compress");
-        charge(std::int64_t(row.streams[x]->size()));
+        charge(std::int64_t(row.streams[x]->size()) - std::int64_t(_tile_bytes));   // the allowance settled to the stream
     } catch (const std::exception& error) {
         fail(error.what());
         return;
@@ -790,23 +810,11 @@ Encoder make_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source)
     if (planes > 1 && desc.encoding != TILE_ENCODING_AV1)
         throw std::runtime_error("the source has " + std::to_string(planes) + " focal planes and " + encoding_name(desc.encoding) +
                                  " tiles carry one; a Z-stack is encoded as TILE_ENCODING_AV1 (JPEG holds a single plane)");
-    const std::uint32_t per_step = reductions_per_step(desc.layer_step);
     if (source->size().width == 0 || source->size().height == 0)
         throw std::runtime_error("the source is " + std::to_string(source->size().width) + " x " +
                                  std::to_string(source->size().height) + " pixels; an empty slide is not encoded");
-    // The smallest working set: 5 rows of every layer and every worker's scratch.
-    std::uint64_t working_set = std::uint64_t{desc.concurrency} *
-                                std::max(source->read_scratch_bytes(), REDUCE_SCRATCH_BYTES);
-    LayerSize size = source->size();
-    for (std::uint32_t depth = 0;; ++depth, size = reduced(size)) {
-        working_set += ROWS_HELD * tiles_across(size) * std::uint64_t{TILE_BYTES} * planes;
-        if (is_last_layer(size, depth, per_step)) break;
-    }
     const std::uint64_t budget = desc.memory_budget ? desc.memory_budget : physical_memory() / BUDGET_DIVISOR;
-    if (budget < working_set)
-        throw std::runtime_error("a memory budget of " + std::to_string(budget) + " bytes is below the " +
-                                 std::to_string(working_set) + " bytes this slide needs at once");
-    return std::make_shared<Encoder_t>(desc, std::move(source), budget);
+    return std::make_shared<Encoder_t>(desc, std::move(source), budget);   // refuses a budget below the slide's working set
 }
 
 /// The encoder a boundary was handed, or a throw naming @p call when it was given none.

@@ -243,14 +243,17 @@ constexpr IrisSlide::LayerSize SLIDE {.width = 600, .height = 520};   // 3 x 3 t
 /// Encodes a StackSource of @p planes into @p folder in @p encoding at @p effort, its subsampling
 /// the encoding's default; the created encoder's Result, and its last progress when created.
 Iris::Result encode_stack(const ScratchFolder& folder, std::uint32_t planes, IrisSlide::Encoding encoding,
-                          IrisSlide::EncoderProgress& progress, IrisSlide::Effort effort = IrisSlide::EFFORT_DEFAULT)
+                          IrisSlide::EncoderProgress& progress, IrisSlide::Effort effort = IrisSlide::EFFORT_DEFAULT,
+                          IrisSlide::LayerSize size = SLIDE, std::uint64_t budget = IrisSlide::MEMORY_BUDGET_DEFAULT,
+                          std::uint32_t concurrency = std::thread::hardware_concurrency())
 {
-    IrisSlide::EncoderDesc desc {.source = folder.path / "stack.dcm", .destination = folder.path};
+    IrisSlide::EncoderDesc desc {.source = folder.path / "stack.dcm", .destination = folder.path,
+                                 .memory_budget = budget, .concurrency = concurrency};
     desc.encoding = encoding;
     desc.subsampling = IrisSlide::default_subsampling(encoding);
     desc.effort = effort;
     IrisSlide::Encoder encoder;
-    const auto created = IrisSlide::create_encoder(desc, std::make_unique<StackSource>(SLIDE, planes), encoder);
+    const auto created = IrisSlide::create_encoder(desc, std::make_unique<StackSource>(size, planes), encoder);
     if (created.failed()) return created;
     REQUIRE(IrisSlide::dispatch_encoder(encoder).succeeded());
     progress = wait_for(encoder);
@@ -334,6 +337,26 @@ TEST_CASE("A Z-stacked slide is written with every focal plane of every tile, th
         CHECK(luma_psnr(decoded[position].luma, std::span(source_luma).first(SIDE * SIDE)) > LUMA_PSNR_FLOOR_DB);
     }
     CHECK(STREAM_ORDER.front() == IN_FOCUS);
+}
+
+TEST_CASE("A Z-stacked encode at the smallest budget it accepts stays within it", "[Encode_11][Encode_13]")
+{
+    // ZStackBudget_27.10: a five-plane encode of the maintainer's emulated Z-stack peaked at 6289 MiB
+    // of a 6.0 GiB budget. The smallest budget create_encoder accepts is read from its refusal of a
+    // 1-byte budget, so the test needs no copy of the encoder's arithmetic.
+    constexpr std::uint32_t STACK_PLANES = 5, WORKERS = 4;
+    constexpr IrisSlide::LayerSize WIDE {.width = 2000, .height = 2000};   // 8 x 8 tiles
+    const ScratchFolder folder;
+    IrisSlide::EncoderProgress progress;
+    const auto refused = encode_stack(folder, STACK_PLANES, IrisSlide::TILE_ENCODING_AV1, progress, IrisSlide::EFFORT_DEFAULT, WIDE, 1, WORKERS);
+    const auto from = refused.message.find("below the ");
+    REQUIRE(from != std::string::npos);
+    const std::uint64_t smallest = std::stoull(refused.message.substr(from + std::string("below the ").size()));
+    const auto created = encode_stack(folder, STACK_PLANES, IrisSlide::TILE_ENCODING_AV1, progress, IrisSlide::EFFORT_DEFAULT, WIDE, smallest, WORKERS);
+    INFO(created.message << progress.error);
+    REQUIRE(progress.state == IrisSlide::EncoderState::DONE);
+    INFO("peak " << progress.peak_resident_bytes << " of " << smallest);
+    CHECK(progress.peak_resident_bytes <= smallest);
 }
 
 TEST_CASE("A JPEG encode of a Z-stacked source is refused naming its planes", "[Encode_09][Encode_13]")
