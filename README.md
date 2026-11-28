@@ -35,7 +35,7 @@ The Iris Slide encoder reads a DICOM whole-slide image and writes it as an Iris 
 - **Tiles**: 256-pixel tiles re-cut from frames of any size, encoded as JPEG (quality and chroma subsampling set by the caller, 90 and 4:2:2 by default) or AV1 (libaom; BT.601 at full range, 8-bit 4:2:0, one bare stream per tile). Iris Slide does not yet decode AV1 tiles, nor encode or decode the UASTC and XUASTC tile encodings; reading a slide whose tiles declare one is refused with an error naming the encoding
 - **Layers**: each lower layer derived by a 2x Mitchell-Netravali reduction in fixed-point arithmetic, the same bytes on every CPU, down to the first that fits one tile; a layer step of any power of two from 2 between written layers (default 2)
 - **Deterministic and bounded**: the same source and options give a byte-identical file; memory held at once stays within a budget (half of physical memory by default), and while the operating system reports memory pressure the encoder holds less, down to the least the slide needs
-- **Identity**: from DICOM only the pixel spacing, magnification and ICC profile are carried; the caller's I2S attributes are the slide's only attributes
+- **Identity**: from DICOM only the pixel spacing, magnification, ICC profile and, for a Z-stack, the focal-plane spacing (DistanceBetweenFocalPlanes, written as MICRONS_PLANE) are carried; the caller's I2S attributes are the slide's only attributes
 
 ## How the codec sits on the Iris File Extension
 

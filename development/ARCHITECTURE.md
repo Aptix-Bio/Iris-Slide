@@ -325,7 +325,8 @@ The boundary is the rule of D2: identifying content may cross into the file
 only as the clinical stream. The allow-list (Q5) is the one gate attributes
 pass; the associated images that can show the label are the open case (Q2).
 The rebuilt encoder needs neither gate today: from its one source it carries only the pixels, the
-pixel spacing, the magnification and the ICC profile, and attributes only from its caller (D14, D10).
+pixel spacing, the magnification, the ICC profile and a Z-stack's focal-plane spacing, and attributes
+only from its caller (D14, D10).
 
 ```mermaid
 flowchart LR

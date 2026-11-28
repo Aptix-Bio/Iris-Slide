@@ -314,7 +314,7 @@ print(progress.state, progress.file, progress.error)
 
 **Tile encodings:** JPEG and AV1 (BT.601 at full range, 8-bit 4:2:0) are encoded. AV1 tiles are not yet decoded, and the UASTC and XUASTC tile encodings are neither encoded nor decoded; reading a slide whose tiles declare one fails with an error naming the encoding.
 
-**Identity:** from the DICOM source only the pixel spacing, magnification and ICC profile are carried. The caller's `i2s_attributes` (with `i2s_version`, `major << 8 | minor`) are the slide's only attributes.
+**Identity:** from the DICOM source only the pixel spacing, magnification, ICC profile and, for a Z-stack, the focal-plane spacing (DistanceBetweenFocalPlanes, written as MICRONS_PLANE) are carried. The caller's `i2s_attributes` (with `i2s_version`, `major << 8 | minor`) are the slide's only attributes.
 
 ## Integration Examples
 
