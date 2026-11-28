@@ -17,7 +17,7 @@ if (IRIS_BUILD_ENCODER)
                    source_codec_test.cpp openjpeg_frames_test.cpp jpeg_frames_test.cpp
                    local_slides_test.cpp dicom_series_test.cpp
                    retile_test.cpp reduce_test.cpp encoder_rewrite_test.cpp
-                   dicom_frames_test.cpp dicom_source_test.cpp av1_tiles_test.cpp)
+                   dicom_frames_test.cpp dicom_source_test.cpp av1_tiles_test.cpp memory_pressure_test.cpp)
     # RTM Encode_13: dav1d decodes the encoder's AV1 tiles back (ARCHITECTURE D22), through the
     # CMake config its overlay port adds (ports/dav1d).
     find_package(unofficial-dav1d CONFIG REQUIRED)

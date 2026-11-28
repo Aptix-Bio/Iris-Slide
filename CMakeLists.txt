@@ -162,6 +162,7 @@ set (
     ${SLIDE_SOURCE_DIR}/IrisSlideSource.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideReduce.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideAv1Tiles.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideMemoryPressure.cpp
 )
 set (
     IrisSlideInclude

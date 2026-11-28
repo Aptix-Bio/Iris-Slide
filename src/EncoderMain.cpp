@@ -47,7 +47,7 @@ std::string help ()
         "      --subsampling S      chroma subsampling: 444, 422 or 420 (default {} for jpeg; av1 is 420 alone)\n"
         "      --layer-step N       the scale between written layers, a power of two from 2 (default {})\n"
         "      --effort N           how hard to work on each tile, 0 (fastest) to 6 (smallest); av1 only (default {})\n"
-        "      --memory-budget GIB  memory held at once (default: a quarter of physical memory)\n"
+        "      --memory-budget GIB  memory held at once at most, less under memory pressure (default: half of physical memory)\n"
         "  -c, --concurrency N      worker threads (default: every core, {} here)\n"
         "  -h, --help               this text\n",
         defaults.quality, IrisSlide::subsampling_name(defaults.subsampling), defaults.layer_step, int(defaults.effort),

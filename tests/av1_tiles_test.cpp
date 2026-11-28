@@ -245,7 +245,8 @@ constexpr IrisSlide::LayerSize SLIDE {.width = 600, .height = 520};   // 3 x 3 t
 Iris::Result encode_stack(const ScratchFolder& folder, std::uint32_t planes, IrisSlide::Encoding encoding,
                           IrisSlide::EncoderProgress& progress, IrisSlide::Effort effort = IrisSlide::EFFORT_DEFAULT,
                           IrisSlide::LayerSize size = SLIDE, std::uint64_t budget = IrisSlide::MEMORY_BUDGET_DEFAULT,
-                          std::uint32_t concurrency = std::thread::hardware_concurrency())
+                          std::uint32_t concurrency = std::thread::hardware_concurrency(),
+                          IrisSlide::PressureProbe probe = IrisSlide::memory_pressure)
 {
     IrisSlide::EncoderDesc desc {.source = folder.path / "stack.dcm", .destination = folder.path,
                                  .memory_budget = budget, .concurrency = concurrency};
@@ -253,7 +254,7 @@ Iris::Result encode_stack(const ScratchFolder& folder, std::uint32_t planes, Iri
     desc.subsampling = IrisSlide::default_subsampling(encoding);
     desc.effort = effort;
     IrisSlide::Encoder encoder;
-    const auto created = IrisSlide::create_encoder(desc, std::make_unique<StackSource>(size, planes), encoder);
+    const auto created = IrisSlide::create_encoder(desc, std::make_unique<StackSource>(size, planes), encoder, probe);
     if (created.failed()) return created;
     REQUIRE(IrisSlide::dispatch_encoder(encoder).succeeded());
     progress = wait_for(encoder);
@@ -356,6 +357,31 @@ TEST_CASE("A Z-stacked encode at the smallest budget it accepts stays within it"
     INFO(created.message << progress.error);
     REQUIRE(progress.state == IrisSlide::EncoderState::DONE);
     INFO("peak " << progress.peak_resident_bytes << " of " << smallest);
+    CHECK(progress.peak_resident_bytes <= smallest);
+}
+
+/// A system under memory pressure the whole encode long.
+IrisSlide::MemoryPressure always_critical() noexcept { return IrisSlide::MemoryPressure::CRITICAL; }
+
+TEST_CASE("Under critical memory pressure an encode keeps to the least the slide needs, whatever its budget", "[Encode_11]")
+{
+    // RTM Encode_11 (D26): the budget is the ceiling, and under pressure new rows are admitted
+    // against the slide's smallest budget.
+    constexpr std::uint32_t STACK_PLANES = 5, WORKERS = 4;
+    constexpr IrisSlide::LayerSize WIDE {.width = 2000, .height = 2000};   // 8 x 8 tiles
+    constexpr std::uint64_t ROOMY = 1ull << 30;
+    const ScratchFolder folder;
+    IrisSlide::EncoderProgress progress;
+    const auto refused = encode_stack(folder, STACK_PLANES, IrisSlide::TILE_ENCODING_AV1, progress, IrisSlide::EFFORT_DEFAULT, WIDE, 1, WORKERS);
+    const auto from = refused.message.find("below the ");
+    REQUIRE(from != std::string::npos);
+    const std::uint64_t smallest = std::stoull(refused.message.substr(from + std::string("below the ").size()));
+    REQUIRE(smallest < ROOMY);
+    const auto created = encode_stack(folder, STACK_PLANES, IrisSlide::TILE_ENCODING_AV1, progress, IrisSlide::EFFORT_DEFAULT, WIDE,
+                                      ROOMY, WORKERS, always_critical);
+    INFO(created.message << progress.error);
+    REQUIRE(progress.state == IrisSlide::EncoderState::DONE);
+    INFO("peak " << progress.peak_resident_bytes << " of the smallest budget " << smallest);
     CHECK(progress.peak_resident_bytes <= smallest);
 }
 

@@ -1,0 +1,48 @@
+//
+//  IrisSlideMemoryPressure.hpp
+//  Iris
+//
+//  The operating system's memory pressure, read so an encode holds less while other programs need
+//  memory (D26): the budget is the ceiling, and under pressure the encoder admits new rows against
+//  a lower limit, down to the smallest the slide can keep to. One probe per operating system,
+//  side by side in one function (IrisSlideMemoryPressure.cpp).
+//
+#ifndef IrisSlideMemoryPressure_hpp
+#define IrisSlideMemoryPressure_hpp
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
+
+namespace IrisSlide {
+// RTM Encode_11
+/// How hard the system is pressed for memory, from the operating system's own signal.
+enum class MemoryPressure : std::uint8_t {
+    NORMAL,     ///< no pressure, or no signal on this system
+    WARNING,    ///< memory is short: hold less
+    CRITICAL,   ///< memory is very short: hold the least an encode can
+};
+/// How long one reading of the pressure stands before the encoder reads it again.
+constexpr auto MEMORY_PRESSURE_INTERVAL = std::chrono::milliseconds(250);
+/// The share of the budget an encode keeps to under WARNING: one half.
+constexpr std::uint64_t WARNING_BUDGET_DIVISOR = 2;
+
+/// The operating system's memory pressure now: macOS's kern.memorystatus_vm_pressure_level,
+/// Linux's pressure stall information (/proc/pressure/memory, or MemAvailable in /proc/meminfo
+/// where the kernel has none), Windows' memory load (GlobalMemoryStatusEx). NORMAL where the
+/// system gives no signal or it cannot be read, since pressure only lowers what an encode holds.
+MemoryPressure memory_pressure () noexcept;
+
+/// The limit an encode admits new rows against under @p pressure: @p budget when NORMAL, half of
+/// it when WARNING, and @p smallest when CRITICAL; @p smallest, the least the slide can keep to, is
+/// the floor in every case, so an encode always progresses.
+constexpr std::uint64_t pressured_budget (std::uint64_t budget, std::uint64_t smallest, MemoryPressure pressure) noexcept
+{
+    switch (pressure) {
+        case MemoryPressure::NORMAL:   return std::max(budget, smallest);
+        case MemoryPressure::WARNING:  return std::max(budget / WARNING_BUDGET_DIVISOR, smallest);
+        case MemoryPressure::CRITICAL: return smallest;
+    }
+    return smallest;   // unreachable: the switch names every enumerator
+}
+} // namespace IrisSlide
+#endif /* IrisSlideMemoryPressure_hpp */

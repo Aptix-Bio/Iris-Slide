@@ -21,6 +21,7 @@
 #include <array>
 #include <span>
 #include <bit>
+#include <chrono>
 #include <cmath>
 #include <concepts>
 #include <atomic>
@@ -46,8 +47,8 @@
 
 namespace IrisSlide {
 namespace {
-/// The default budget is this fraction of physical memory (Q20, decided 2026-11-27).
-constexpr std::uint64_t BUDGET_DIVISOR = 4;
+/// The default budget is this fraction of physical memory: a half (D26, amending Q20's quarter, 2026-11-27).
+constexpr std::uint64_t BUDGET_DIVISOR = 2;
 /// A derived row reads up to 4 rows of the layer below; with the row being made, 5 rows of each
 /// layer is the smallest working set an encode can progress in.
 constexpr std::uint64_t ROWS_HELD = 5;
@@ -294,7 +295,7 @@ std::pair<std::uint32_t, std::uint32_t> rows_read (std::uint32_t row, std::uint3
 // RTM Encode_09, Encode_10, Encode_11, Encode_12, Concurrency_04
 class Encoder_t {
 public:
-    Encoder_t (const EncoderDesc& desc, std::unique_ptr<Source> source, std::uint64_t budget);
+    Encoder_t (const EncoderDesc& desc, std::unique_ptr<Source> source, std::uint64_t budget, PressureProbe probe);
     Encoder_t (const Encoder_t&) = delete;
     Encoder_t& operator= (const Encoder_t&) = delete;
     ~Encoder_t ();
@@ -306,6 +307,8 @@ public:
 private:
     void advance () noexcept;
     void step ();
+    /// The system's memory pressure, read again once MEMORY_PRESSURE_INTERVAL has passed (D26).
+    void read_pressure () noexcept;
     bool is_base_row_admitted () const noexcept;
     bool is_startable (const Job& job) const noexcept;
     void start_tiles (std::uint32_t depth, std::uint32_t row);
@@ -348,6 +351,11 @@ private:
     std::uint64_t                _tiles_total = 0;
     std::atomic<std::uint64_t>   _tiles_written {0};
     std::uint64_t                _budget;
+    std::uint64_t                _smallest = 0;   // the least this slide can keep to; the floor under pressure
+    PressureProbe                _probe;
+    // advance()'s, under its claim: the last pressure read and when.
+    MemoryPressure               _pressure = MemoryPressure::NORMAL;
+    std::chrono::steady_clock::time_point _pressure_read {};
     std::uint64_t                _reserve = 0;   // kept free for derived rows and every worker's scratch
     std::atomic<std::int64_t>    _resident {0};
     std::atomic<std::int64_t>    _peak {0};
@@ -362,7 +370,7 @@ private:
     std::unique_ptr<Iris::Async::Pool> _pool;
 };
 
-Encoder_t::Encoder_t (const EncoderDesc& desc, std::unique_ptr<Source> source, std::uint64_t budget) :
+Encoder_t::Encoder_t (const EncoderDesc& desc, std::unique_ptr<Source> source, std::uint64_t budget, PressureProbe probe) :
 _desc       (desc),
 _file       (desc.destination / file_name(desc.source, desc.encoding)),
 _scratch    (desc.destination / ("." + file_name(desc.source, desc.encoding) + ".partial")),
@@ -371,6 +379,7 @@ _context    (create_context(ContextCreateInfo {})),
 _planes     (_source->planes()),
 _tile_bytes (std::uint64_t{TILE_BYTES} * _planes),
 _budget     (budget),
+_probe      (probe),
 _pool       (std::make_unique<Iris::Async::Pool>(desc.concurrency))
 {
     // The layers, the source's first, each the 2x reduction of the one before, every
@@ -403,10 +412,10 @@ _pool       (std::make_unique<Iris::Async::Pool>(desc.concurrency))
     std::uint64_t working_set = std::uint64_t{_desc.concurrency} * std::max(_source->read_scratch_bytes(), REDUCE_SCRATCH_BYTES);
     for (std::uint32_t d = 0; d < _layers.size(); ++d)
         working_set += (ROWS_HELD - 1) * std::uint64_t{_layers[d].across} * _tile_bytes + row_charge(d);
-    const std::uint64_t smallest = std::max(working_set, row_charge(0) + _reserve);
-    if (_budget < smallest)
+    _smallest = std::max(working_set, row_charge(0) + _reserve);
+    if (_budget < _smallest)
         throw std::runtime_error("a memory budget of " + std::to_string(_budget) + " bytes is below the " +
-                                 std::to_string(smallest) + " bytes this slide needs at once");
+                                 std::to_string(_smallest) + " bytes this slide needs at once");
     // The schedule: each base row, then every derived row whose last input row is now made.
     std::vector<std::uint32_t> made(_layers.size(), 0);
     for (std::uint32_t base = 0; base < _layers[0].down; ++base) {
@@ -518,7 +527,8 @@ bool Encoder_t::is_base_row_admitted () const noexcept
     // budget, so an encode always progresses. The comparison is unsigned, so a budget of
     // UINT64_MAX means no limit.
     const std::uint64_t resident = std::uint64_t(std::max<std::int64_t>(0, _resident.load()));
-    return _rows_in_flight == 0 || resident + row_charge(0) + _reserve <= _budget;
+    // RTM Encode_11: under memory pressure the limit falls toward the slide's least (D26).
+    return _rows_in_flight == 0 || resident + row_charge(0) + _reserve <= pressured_budget(_budget, _smallest, _pressure);
 }
 
 bool Encoder_t::is_startable (const Job& job) const noexcept
@@ -529,8 +539,17 @@ bool Encoder_t::is_startable (const Job& job) const noexcept
     return true;
 }
 
+void Encoder_t::read_pressure () noexcept
+{
+    const auto now = std::chrono::steady_clock::now();
+    if (now - _pressure_read < MEMORY_PRESSURE_INTERVAL) return;
+    _pressure = _probe();
+    _pressure_read = now;
+}
+
 void Encoder_t::step ()
 {
+    read_pressure();
     while (is_base_row_admitted()) start_tiles(0, _next_base++);
     // Derived rows start in schedule order as their inputs are made; base rows have their own cursor.
     for (; _next_job < _schedule.size(); ++_next_job) {
@@ -799,7 +818,7 @@ void check_desc (const EncoderDesc& desc)
 }
 
 /// The encoder for @p source, after the descriptor's checks and the source's; throws naming the value refused.
-Encoder make_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source)
+Encoder make_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source, PressureProbe probe)
 {
     if (!source) throw std::runtime_error("create_encoder was given no source");
     check_desc(desc);
@@ -814,7 +833,7 @@ Encoder make_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source)
         throw std::runtime_error("the source is " + std::to_string(source->size().width) + " x " +
                                  std::to_string(source->size().height) + " pixels; an empty slide is not encoded");
     const std::uint64_t budget = desc.memory_budget ? desc.memory_budget : physical_memory() / BUDGET_DIVISOR;
-    return std::make_shared<Encoder_t>(desc, std::move(source), budget);   // refuses a budget below the slide's working set
+    return std::make_shared<Encoder_t>(desc, std::move(source), budget, probe);   // refuses a budget below the slide's working set
 }
 
 /// The encoder a boundary was handed, or a throw naming @p call when it was given none.
@@ -834,13 +853,13 @@ Result create_encoder (const EncoderDesc& desc, Encoder& encoder) noexcept
 {
     return at_boundary("create_encoder", [&desc, &encoder] {
         check_desc(desc);   // refused before the source is opened
-        encoder = make_encoder(desc, open_source(desc.source));
+        encoder = make_encoder(desc, open_source(desc.source), memory_pressure);
     });
 }
 
-Result create_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source, Encoder& encoder) noexcept
+Result create_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source, Encoder& encoder, PressureProbe probe) noexcept
 {
-    return at_boundary("create_encoder", [&desc, &source, &encoder] { encoder = make_encoder(desc, std::move(source)); });
+    return at_boundary("create_encoder", [&desc, &source, &encoder, probe] { encoder = make_encoder(desc, std::move(source), probe); });
 }
 
 Result dispatch_encoder (const Encoder& encoder) noexcept

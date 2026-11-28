@@ -288,7 +288,7 @@ written = Encoder.encode_slide_file(
     quality=90,           # JPEG quality, 1-100
     subsampling='422',    # '444', '422' or '420'
     layer_step=4,         # a written layer every 4x
-    memory_budget=0,      # bytes held at once; 0 is a quarter of physical memory
+    memory_budget=0,      # bytes held at once at most; 0 is half of physical memory, less under memory pressure
     concurrency=8,
 )
 ```
