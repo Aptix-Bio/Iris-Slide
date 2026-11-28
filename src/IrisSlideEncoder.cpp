@@ -105,11 +105,26 @@ std::string file_name (const std::filesystem::path& source, Encoding encoding)
     return source.stem().string() + "." + std::string(encoding_word(encoding)) + ".iris";
 }
 
-/// The encoder's one way out for pixels: a 256-pixel RGBA8 tile compressed in the IFE tile
-/// encoding the file declares. An encoding is one case here (JPEG: libjpeg-turbo through the
-/// codec context; AV1: libaom, one focal plane, IrisSlideAv1Tiles.hpp).
+/// The focal planes of a Z-stack of @p planes in the order a stream carries them (D9): the
+/// in-focus plane, which is the middle of the Z order, then the others outward from it, the one
+/// above before the one below (2, 3, 1, 4, 0 for five planes).
+std::vector<std::uint32_t> stream_order (std::uint32_t planes)
+{
+    const std::uint32_t in_focus = planes / 2;
+    std::vector<std::uint32_t> order {in_focus};
+    for (std::uint32_t step = 1; order.size() < planes; ++step) {
+        if (in_focus + step < planes) order.push_back(in_focus + step);
+        if (step <= in_focus) order.push_back(in_focus - step);
+    }
+    return order;
+}
+
+/// The encoder's one way out for pixels: a 256-pixel RGBA8 tile, its @p planes focal planes back
+/// to back in Z order, compressed in the IFE tile encoding the file declares. An encoding is one
+/// case here (JPEG: libjpeg-turbo through the codec context, one plane; AV1: libaom, every plane
+/// in stream order, IrisSlideAv1Tiles.hpp).
 Buffer compress_tile (const Context& context, Encoding encoding, const std::vector<std::uint8_t>& rgba,
-                      Quality quality, Subsampling subsampling)
+                      std::uint32_t planes, Quality quality, Subsampling subsampling)
 {
     switch (encoding) {
         case TILE_ENCODING_JPEG:
@@ -120,9 +135,11 @@ Buffer compress_tile (const Context& context, Encoding encoding, const std::vect
                                            .quality     = quality,
                                            .subsampling = subsampling});
         case TILE_ENCODING_AV1: {
-            // RTM Encode_13: one focal plane, a stack of one (D9).
-            const std::array<std::span<const std::uint8_t>, 1> planes {std::span<const std::uint8_t>(rgba)};
-            const std::vector<std::uint8_t> stream = encode_av1_tile(planes, quality);
+            // RTM Encode_13: the planes in stream order, the in-focus plane first (D9).
+            std::vector<std::span<const std::uint8_t>> ordered;
+            for (const std::uint32_t plane : stream_order(planes))
+                ordered.push_back(std::span<const std::uint8_t>(rgba).subspan(plane * TILE_BYTES, TILE_BYTES));
+            const std::vector<std::uint8_t> stream = encode_av1_tile(ordered, quality);
             return Iris::Copy_strong_buffer_from_data(stream.data(), stream.size());
         }
         case TILE_ENCODING_UNDEFINED:
@@ -307,6 +324,9 @@ private:
     void finish ();
     /// The layers as IFE numbers them: from the lowest resolution, whose scale is 1.
     Iris::Extent ife_extent () const;
+    /// The plane count IFE records for a layer and a stream: 0, which IFE reads as one plane, for
+    /// a single plane, and the Z-stack's count otherwise.
+    std::uint16_t z_planes () const noexcept { return _planes > 1 ? static_cast<std::uint16_t>(_planes) : 0; }
     void fail (const std::string& why) noexcept;
     void charge (std::int64_t bytes) noexcept;
     void issue (std::invocable auto&& body);
@@ -315,6 +335,8 @@ private:
     std::filesystem::path        _file, _scratch;
     std::unique_ptr<Source>      _source;
     Context                      _context;
+    std::uint32_t                _planes;        // every tile's focal planes (RTM Encode_13)
+    std::uint64_t                _tile_bytes;    // a tile's pixels: _planes × TILE_BYTES
     std::vector<Layer>           _layers;
     std::vector<Job>             _schedule;
     // advance()'s cursors, under its claim: base rows started in row order, derived rows started
@@ -345,6 +367,8 @@ _file       (desc.destination / file_name(desc.source, desc.encoding)),
 _scratch    (desc.destination / ("." + file_name(desc.source, desc.encoding) + ".partial")),
 _source     (std::move(source)),
 _context    (create_context(ContextCreateInfo {})),
+_planes     (_source->planes()),
+_tile_bytes (TILE_BYTES * _planes),
 _budget     (budget),
 _pool       (std::make_unique<Iris::Async::Pool>(desc.concurrency))
 {
@@ -368,7 +392,7 @@ _pool       (std::make_unique<Iris::Async::Pool>(desc.concurrency))
     }
     // A base row is read only with room left for one row of every derived layer and the scratch
     // of every worker, so the rows that free memory can always start.
-    for (std::size_t d = 1; d < _layers.size(); ++d) _reserve += std::uint64_t{_layers[d].across} * TILE_BYTES;
+    for (std::size_t d = 1; d < _layers.size(); ++d) _reserve += std::uint64_t{_layers[d].across} * _tile_bytes;
     _reserve += std::uint64_t{_desc.concurrency} *
                 std::max(_source->read_scratch_bytes(), REDUCE_SCRATCH_BYTES);
     // The schedule: each base row, then every derived row whose last input row is now made.
@@ -420,11 +444,14 @@ void Encoder_t::dispatch ()
         std::filesystem::remove(_scratch);
         _builder = Iris::File::Builder::create({
             // A compressed tile never outgrows its raw pixels; only written pages cost disk.
-            .capacity    = Iris::File::BuilderCreateInfo{}.capacity + _tiles_total * TILE_BYTES,
+            .capacity    = Iris::File::BuilderCreateInfo{}.capacity + _tiles_total * _tile_bytes,
             .filepath    = _scratch,
             .tile_frames = false,
         });
-        _builder.set_tile_table({.encoding = _desc.encoding, .format = Iris::FORMAT_R8G8B8A8, .extent = ife_extent()});
+        // RTM Encode_13: a Z-stack's every layer carries every plane; one plane leaves the layers single-plane.
+        const Iris::Extent extent = ife_extent();
+        _builder.set_tile_table({.encoding = _desc.encoding, .format = Iris::FORMAT_R8G8B8A8, .extent = extent,
+                                 .planes = std::vector<std::uint16_t>(extent.layers.size(), z_planes())});
     } catch (const std::exception& error) {
         fail(error.what());
         throw;
@@ -477,7 +504,7 @@ bool Encoder_t::is_base_row_admitted () const noexcept
     // budget, so an encode always progresses. The comparison is unsigned, so a budget of
     // UINT64_MAX means no limit.
     const std::uint64_t resident = std::uint64_t(std::max<std::int64_t>(0, _resident.load()));
-    return _rows_in_flight == 0 || resident + std::uint64_t{_layers[0].across} * TILE_BYTES + _reserve <= _budget;
+    return _rows_in_flight == 0 || resident + std::uint64_t{_layers[0].across} * _tile_bytes + _reserve <= _budget;
 }
 
 bool Encoder_t::is_startable (const Job& job) const noexcept
@@ -514,7 +541,7 @@ void Encoder_t::start_tiles (std::uint32_t depth, std::uint32_t r)
     row.remaining.store(across);
     row.stage.store(Row::Stage::WORKING);
     ++_rows_in_flight;
-    charge(std::int64_t(across * TILE_BYTES));
+    charge(std::int64_t(across * _tile_bytes));
     for (std::uint32_t x = 0; x < across; ++x)
         issue([this, depth, r, x] { work_tile(depth, r, x); });
 }
@@ -528,25 +555,27 @@ void Encoder_t::work_tile (std::uint32_t depth, std::uint32_t r, std::uint32_t x
         const std::int64_t scratch = std::int64_t(depth == 0 ? _source->read_scratch_bytes() : REDUCE_SCRATCH_BYTES);
         charge(scratch);
         struct Uncharge { Encoder_t* encoder; std::int64_t bytes; ~Uncharge() { encoder->charge(-bytes); } } uncharge {this, scratch};
+        row.pixels[x].resize(_tile_bytes);
         if (depth == 0) {
-            row.pixels[x].resize(TILE_BYTES);
             _source->read_tile(x, r, row.pixels[x]);
         } else {
-            // Gather this tile's region from the layer below, reduce it, and make what lies
-            // beyond this layer's extent white.
+            // Each plane on its own: gather its region from the same plane of the layer below,
+            // reduce it, and make what lies beyond this layer's extent white.
             const Layer& below = _layers[depth - 1];
             std::vector<std::uint8_t> region(std::size_t{REDUCE_REGION} * REDUCE_REGION * RGBA_BYTES);
-            gather_region(below.size, x, r,
-                          [&below](std::uint32_t tx, std::uint32_t ty) {
-                              return std::span<const std::uint8_t>(below.rows[ty].pixels[tx]);
-                          },
-                          region);
-            row.pixels[x].resize(TILE_BYTES);
-            reduce_2x(region, row.pixels[x]);
-            whiten_beyond(_layers[depth].size, x, r, row.pixels[x]);
+            for (std::uint32_t plane = 0; plane < _planes; ++plane) {
+                gather_region(below.size, x, r,
+                              [&below, plane](std::uint32_t tx, std::uint32_t ty) {
+                                  return std::span<const std::uint8_t>(below.rows[ty].pixels[tx]).subspan(plane * TILE_BYTES, TILE_BYTES);
+                              },
+                              region);
+                const auto out = std::span<std::uint8_t>(row.pixels[x]).subspan(plane * TILE_BYTES, TILE_BYTES);
+                reduce_2x(region, out);
+                whiten_beyond(_layers[depth].size, x, r, out);
+            }
         }
         if (!_layers[depth].written) { tile_done(depth, r); return; }   // only reduced from, never stored
-        row.streams[x] = compress_tile(_context, _desc.encoding, row.pixels[x], _desc.quality, _desc.subsampling);
+        row.streams[x] = compress_tile(_context, _desc.encoding, row.pixels[x], _planes, _desc.quality, _desc.subsampling);
         if (!row.streams[x]) throw std::runtime_error("tile (" + std::to_string(x) + ", " + std::to_string(r) +
                                                       ") of layer " + std::to_string(depth) + " did not compress");
         charge(std::int64_t(row.streams[x]->size()));
@@ -577,7 +606,7 @@ void Encoder_t::write (const Job& job)
         for (std::uint32_t x = 0; x < layer.across; ++x) {
             Buffer& stream = row.streams[x];
             _builder.append_tile(ife_layer, job.row * layer.across + x,
-                                 static_cast<const BYTE*>(stream->data()), stream->size(), 0);
+                                 static_cast<const BYTE*>(stream->data()), stream->size(), z_planes());
             charge(-std::int64_t(stream->size()));
             stream = nullptr;
         }
@@ -599,7 +628,7 @@ void Encoder_t::release_pixels (Row& row) noexcept
 {
     std::int64_t freed = 0;
     for (auto& pixels : row.pixels) {
-        freed += std::int64_t(pixels.capacity() ? TILE_BYTES : 0);
+        freed += std::int64_t(pixels.capacity() ? _tile_bytes : 0);
         std::vector<std::uint8_t>().swap(pixels);
     }
     charge(-freed);
@@ -617,7 +646,7 @@ void Encoder_t::finish ()
     const float to_lowest = float(1u << (_layers.size() - 1));   // the lowest layer's downsample
     std::vector<LayerExtentEntry> extents;
     for (const auto& layer : ife_extent().layers)
-        extents.push_back({.X_TILES = layer.xTiles, .Y_TILES = layer.yTiles, .SCALE = layer.scale, .Z_PLANES = 0});
+        extents.push_back({.X_TILES = layer.xTiles, .Y_TILES = layer.yTiles, .SCALE = layer.scale, .Z_PLANES = z_planes()});
     const Offset offsets_at = _builder->append(TileOffsetsCreateInfo{.entries = _builder.tile_offsets()});
     const Offset extents_at = _builder->append(LayerExtentsCreateInfo{.entries = extents});
     const Offset table_at   = _builder->append(TileTableCreateInfo{
@@ -657,6 +686,7 @@ void Encoder_t::finish ()
         // IFE normalises both to layer scale 1, the lowest resolution.
         .MICRONS_PIXEL     = float(measured.microns_per_pixel) * to_lowest,
         .MAGNIFICATION     = float(measured.magnification) / to_lowest,
+        .MICRONS_PLANE     = float(measured.microns_between_planes),   // RTM Encode_13; 0 for one plane
     });
     _builder.finalize({.tileTable = table_at, .metadata = metadata_at});
     _builder = Iris::File::Builder();   // the mapping is released before the rename
@@ -751,6 +781,13 @@ Encoder make_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source)
 {
     if (!source) throw std::runtime_error("create_encoder was given no source");
     check_desc(desc);
+    // RTM Encode_13: AV1 alone carries a Z-stack (D9); IFE's plane count is 16-bit.
+    const std::uint32_t planes = source->planes();
+    if (planes == 0 || planes > std::numeric_limits<std::uint16_t>::max())
+        throw std::runtime_error("the source has " + std::to_string(planes) + " focal planes; 1 to 65535 are encoded");
+    if (planes > 1 && desc.encoding != TILE_ENCODING_AV1)
+        throw std::runtime_error("the source has " + std::to_string(planes) + " focal planes and " + encoding_name(desc.encoding) +
+                                 " tiles carry one; a Z-stack is encoded as TILE_ENCODING_AV1 (JPEG holds a single plane)");
     const std::uint32_t per_step = reductions_per_step(desc.layer_step);
     if (source->size().width == 0 || source->size().height == 0)
         throw std::runtime_error("the source is " + std::to_string(source->size().width) + " x " +
@@ -760,7 +797,7 @@ Encoder make_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source)
                                 std::max(source->read_scratch_bytes(), REDUCE_SCRATCH_BYTES);
     LayerSize size = source->size();
     for (std::uint32_t depth = 0;; ++depth, size = reduced(size)) {
-        working_set += ROWS_HELD * tiles_across(size) * TILE_BYTES;
+        working_set += ROWS_HELD * tiles_across(size) * TILE_BYTES * planes;
         if (is_last_layer(size, depth, per_step)) break;
     }
     const std::uint64_t budget = desc.memory_budget ? desc.memory_budget : physical_memory() / BUDGET_DIVISOR;

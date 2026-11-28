@@ -402,6 +402,7 @@ lines; none was reproduced.
 | Q21 | Is the output byte-identical for the same input? | Fixed order makes finished tiles wait their turn in memory | **Resolved 2026-11-27:** yes; tiles reach the Builder in a fixed order | JpegTiles_24.4 |
 | Q22 | What do the encoder's tests read? | No slide file enters the repository (RTM Testing_03); OpenJPEG decodes HTJ2K and cannot write it | **Resolved 2026-11-27:** while the encoder is developed, the tests that need a real slide read the maintainer's own slides from a folder named by a CMake cache variable, locally; hosted test slides for CI follow | LocalSlideInputs_22.6 |
 | Q23 | Which sources does the first rebuilt encoder read? | D18 covers DICOM; the earlier encoder also read OpenSlide vendor files and `.iris` files | **Resolved 2026-11-27:** DICOM instances whose frames are JPEG, JPEG 2000 or HTJ2K; OpenSlide and `.iris` sources return as Source modules in a later sprint | EncoderRewrite_24 |
+| Q24 | Which focal plane of a Z-stack is in focus, and so leads its AV1 stream (D9)? | A TILED_FULL instance records its planes' count (TotalPixelMatrixFocalPlanes) and spacing (DistanceBetweenFocalPlanes) and marks no plane as in focus (PS3.3 C.8.12.4, read 2026-11-27); the planes run in Z order, lowest first | Proposed, and what the encoder does since ZStackSource_27.9: the middle plane of the Z order (index planes / 2), then the others outward from it, the one above before the one below; to confirm, or to replace by a sharpness measure or a source's own record | ZStackSource_27.9 |
 
 ---
 

@@ -35,6 +35,8 @@ constexpr std::uint32_t TAG_PIXEL_SPACING              = 0x00280030;
 constexpr std::uint32_t TAG_PIXEL_MEASURES_SEQUENCE    = 0x00289110;
 constexpr std::uint32_t TAG_TOTAL_PIXEL_MATRIX_COLUMNS = 0x00480006;
 constexpr std::uint32_t TAG_TOTAL_PIXEL_MATRIX_ROWS    = 0x00480007;
+constexpr std::uint32_t TAG_DISTANCE_BETWEEN_PLANES   = 0x00480014;
+constexpr std::uint32_t TAG_TOTAL_PIXEL_MATRIX_PLANES  = 0x00480303;
 constexpr std::uint32_t TAG_SHARED_FUNCTIONAL_GROUPS   = 0x52009229;
 constexpr std::uint32_t TAG_ICC_PROFILE                = 0x00282000;
 constexpr std::uint32_t TAG_OPTICAL_PATH_SEQUENCE      = 0x00480105;
@@ -93,6 +95,17 @@ std::uint64_t integer_of (const std::filesystem::path& path, const DcmDataSet* d
     if (!is_read) refuse(path, tag, "is unreadable: " + take_error(error, "no detail"));
     if (value < 0) refuse(path, tag, "is negative: " + std::to_string(value));
     return static_cast<std::uint64_t>(value);
+}
+/// A floating-point attribute (FL, FD) as a double; refused naming the attribute when absent or unreadable.
+double real_of (const std::filesystem::path& path, const DcmDataSet* data, std::uint32_t tag)
+{
+    DcmElement* element = element_of(data, tag);
+    if (!element) refuse(path, tag, "is absent");
+    DcmError* error = nullptr;
+    double value = 0;
+    const bool is_read = dcm_element_get_value_decimal(&error, element, 0, &value);
+    if (!is_read) refuse(path, tag, "is unreadable: " + take_error(error, "no detail"));
+    return value;
 }
 /// The data set at the end of @p path_of_sequences: the first item of each sequence in turn.
 const DcmDataSet* nested_item (const std::filesystem::path& path, const DcmDataSet* data,
@@ -254,6 +267,12 @@ DicomInstance read_dicom_instance (const std::filesystem::path& path)
         instance.spacing = parse_pixel_spacing(text_of(path, measures, TAG_PIXEL_SPACING, 0) + VALUE_SEPARATOR +
                                                text_of(path, measures, TAG_PIXEL_SPACING, 1));
     instance.photometric = text_of(path, data, TAG_PHOTOMETRIC);
+    // RTM Encode_13: a Z-stack's planes (PS3.3 C.8.12.4: TILED_FULL frames run through every
+    // position of one plane, then the next); absent, the instance has one plane.
+    if (element_of(data, TAG_TOTAL_PIXEL_MATRIX_PLANES))
+        instance.focal_planes = static_cast<std::uint32_t>(integer_of(path, data, TAG_TOTAL_PIXEL_MATRIX_PLANES));
+    if (element_of(data, TAG_DISTANCE_BETWEEN_PLANES))
+        instance.plane_spacing_mm = real_of(path, data, TAG_DISTANCE_BETWEEN_PLANES);
     read_optical_path(path, data, instance);
     return instance;
 }

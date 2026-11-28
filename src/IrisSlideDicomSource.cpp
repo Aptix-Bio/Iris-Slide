@@ -51,6 +51,7 @@ _grid           {.width = instance.total_columns, .height = instance.total_rows,
                  .frame = {.columns = instance.columns, .rows = instance.rows}},
 _measurements   {.microns_per_pixel = instance.spacing ? instance.spacing->column_mm * MICRONS_PER_MILLIMETRE : 0.0,
                  .magnification     = instance.objective_power,
+                 .microns_between_planes = instance.plane_spacing_mm * MICRONS_PER_MILLIMETRE,
                  .icc_profile       = instance.icc_profile},
 _index          (instance.path, instance.frames)
 {
@@ -68,9 +69,12 @@ _index          (instance.path, instance.frames)
                          std::to_string(instance.rows) + " pixels");
     _frames_across = static_cast<std::uint32_t>((instance.total_columns + instance.columns - 1) / instance.columns);
     const auto frames_down = static_cast<std::uint32_t>((instance.total_rows + instance.rows - 1) / instance.rows);
-    if (std::uint64_t{instance.frames} != std::uint64_t{_frames_across} * frames_down)
-        refuse(instance, "holds " + std::to_string(instance.frames) + " frames where one focal plane of " +
-                         std::to_string(_frames_across) + " x " + std::to_string(frames_down) + " is read");
+    if (instance.focal_planes == 0) refuse(instance, "declares 0 focal planes (TotalPixelMatrixFocalPlanes)");
+    _planes = instance.focal_planes;
+    _frames_per_plane = std::uint64_t{_frames_across} * frames_down;
+    if (std::uint64_t{instance.frames} != _frames_per_plane * _planes)
+        refuse(instance, "holds " + std::to_string(instance.frames) + " frames where " + std::to_string(_planes) +
+                         " focal plane(s) of " + std::to_string(_frames_across) + " x " + std::to_string(frames_down) + " are read");
 }
 
 std::uint64_t DicomSource::read_scratch_bytes () const noexcept
@@ -83,6 +87,17 @@ std::uint64_t DicomSource::read_scratch_bytes () const noexcept
 }
 
 void DicomSource::read_tile (std::uint32_t x, std::uint32_t y, std::span<std::uint8_t> rgba)
+{
+    // RTM Encode_13: one plane after another, each from its own run of frames, into its own slice.
+    constexpr std::size_t TILE_BYTES = std::size_t{RECUT_TILE} * RECUT_TILE * RGBA_BYTES;
+    if (rgba.size() != std::size_t{_planes} * TILE_BYTES)
+        throw std::invalid_argument("a tile of " + std::to_string(_planes) + " plane(s) takes " +
+                                    std::to_string(std::size_t{_planes} * TILE_BYTES) + " bytes; " + std::to_string(rgba.size()) + " were given");
+    for (std::uint32_t plane = 0; plane < _planes; ++plane)
+        read_plane(x, y, plane, rgba.subspan(std::size_t{plane} * TILE_BYTES, TILE_BYTES));
+}
+
+void DicomSource::read_plane (std::uint32_t x, std::uint32_t y, std::uint32_t plane, std::span<std::uint8_t> rgba)
 {
     // The frames under the tile: from its first pixel to its last within the slide.
     const std::uint64_t left = std::uint64_t{x} * RECUT_TILE, top = std::uint64_t{y} * RECUT_TILE;
@@ -99,7 +114,8 @@ void DicomSource::read_tile (std::uint32_t x, std::uint32_t y, std::span<std::ui
         for (std::uint32_t column = first_column; column <= last_column; ++column) {
             auto& pixels = frames[(row - first_row) * columns + (column - first_column)];
             pixels.resize(std::size_t{_grid.frame.columns} * _grid.frame.rows * RGB_BYTES);
-            decode_frame(_codec, _color, _index.frame(row * _frames_across + column, joined), _grid.frame, pixels);
+            decode_frame(_codec, _color, _index.frame(static_cast<std::uint32_t>(plane * _frames_per_plane + row * _frames_across + column), joined),
+                         _grid.frame, pixels);
         }
     recut_tile(_grid, x, y,
                [&frames, first_row, first_column, columns](std::uint32_t column, std::uint32_t row) {

@@ -3,6 +3,7 @@
 // read back by dav1d. A Z-stack is emulated in the test: an in-focus plane and blurred planes
 // either side of it, in the stream order D9 gives (in focus, +1, -1, +2, -2, +3, -3), as a
 // multi-plane source will hand them to the encoder.
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -21,6 +22,7 @@
 
 #include "IrisSlideAv1Tiles.hpp"
 #include "IrisSlideEncoder.hpp"
+#include "IrisSlideEncoderOptions.hpp"
 #include "IrisFileExtension.hpp"
 
 using Catch::Matchers::ContainsSubstring;
@@ -164,71 +166,149 @@ double luma_psnr(std::span<const std::uint8_t> a, std::span<const std::uint8_t> 
     return mse == 0 ? 99.0 : 10.0 * std::log10(255.0 * 255.0 / mse);
 }
 
-/// A slide whose every tile is the in-focus pattern shifted by its position, white past its extent.
+/// A slide whose every tile is the in-focus pattern shifted by its position, white past its
+/// extent; with several planes, plane p is that tile raised by p · PLANE_LIFT, so each plane is
+/// told apart, the middle one standing for the in-focus plane.
+constexpr std::uint8_t PLANE_LIFT = 12;
 class StackSource final : public IrisSlide::Source {
 public:
-    explicit StackSource(IrisSlide::LayerSize size) : _size(size) {}
+    StackSource(IrisSlide::LayerSize size, std::uint32_t planes) : _size(size), _planes(planes) {}
     IrisSlide::LayerSize size() const noexcept override { return _size; }
     const IrisSlide::SourceMeasurements& measurements() const noexcept override { return _measurements; }
+    std::uint32_t planes() const noexcept override { return _planes; }
     std::uint64_t read_scratch_bytes() const noexcept override { return 0; }
     void read_tile(std::uint32_t x, std::uint32_t y, std::span<std::uint8_t> rgba) override
     {
         const auto pattern = in_focus_tile();
-        for (std::size_t i = 0; i < pattern.size(); ++i) {
-            const std::size_t pixel = i / RGBA, gx = std::size_t{x} * SIDE + pixel % SIDE, gy = std::size_t{y} * SIDE + pixel / SIDE;
-            const bool inside = gx < _size.width && gy < _size.height;
-            rgba[i] = inside ? static_cast<std::uint8_t>(pattern[i] + x + y) : 0xFF;
-        }
+        if (rgba.size() != _planes * pattern.size())
+            throw std::invalid_argument("a tile of " + std::to_string(_planes) + " planes takes " +
+                                        std::to_string(_planes * pattern.size()) + " bytes; " + std::to_string(rgba.size()) + " were given");
+        for (std::uint32_t plane = 0; plane < _planes; ++plane)
+            for (std::size_t i = 0; i < pattern.size(); ++i) {
+                const std::size_t pixel = i / RGBA, gx = std::size_t{x} * SIDE + pixel % SIDE, gy = std::size_t{y} * SIDE + pixel / SIDE;
+                const bool inside = gx < _size.width && gy < _size.height;
+                rgba[plane * pattern.size() + i] = inside ? static_cast<std::uint8_t>(pattern[i] + x + y + plane * PLANE_LIFT) : 0xFF;
+            }
     }
 private:
     IrisSlide::LayerSize _size;
-    IrisSlide::SourceMeasurements _measurements {.microns_per_pixel = 0.25, .magnification = 40.0};
+    std::uint32_t _planes;
+    IrisSlide::SourceMeasurements _measurements {.microns_per_pixel = 0.25, .magnification = 40.0, .microns_between_planes = 1.0};
 };
-} // namespace
 
-TEST_CASE("Every tile of an AV1 slide the encoder writes is one plane dav1d decodes, BT.601 full range", "[Encode_13]")
+/// A folder of its own under the temporary directory, removed with everything in it.
+struct Folder {
+    std::filesystem::path path = std::filesystem::temp_directory_path() / ("IrisSlideTest_av1_" + std::to_string(std::random_device{}()));
+    Folder() { std::filesystem::create_directories(path); }
+    Folder(const Folder&) = delete;
+    Folder& operator=(const Folder&) = delete;
+    ~Folder() { std::error_code ignored; std::filesystem::remove_all(path, ignored); }
+};
+constexpr IrisSlide::LayerSize SLIDE {.width = 600, .height = 520};   // 3 x 3 tiles, then 2 x 2, then 1
+
+/// Encodes a StackSource of @p planes as AV1 into @p folder; the created encoder's Result, and
+/// its last progress when created.
+Iris::Result encode_stack(const Folder& folder, std::uint32_t planes, IrisSlide::Encoding encoding, IrisSlide::EncoderProgress& progress)
 {
-    const auto folder = std::filesystem::temp_directory_path() / ("IrisSlideTest_av1_" + std::to_string(std::random_device{}()));
-    std::filesystem::create_directories(folder);
-    IrisSlide::EncoderDesc desc {.source = folder / "stack.dcm", .destination = folder};
-    desc.encoding = IrisSlide::TILE_ENCODING_AV1;
-    desc.subsampling = IrisSlide::SUBSAMPLE_420;
+    IrisSlide::EncoderDesc desc {.source = folder.path / "stack.dcm", .destination = folder.path};
+    desc.encoding = encoding;
+    desc.subsampling = IrisSlide::default_subsampling(encoding);
     IrisSlide::Encoder encoder;
-    const auto created = IrisSlide::create_encoder(desc, std::make_unique<StackSource>(IrisSlide::LayerSize{.width = 600, .height = 520}), encoder);
-    INFO(created.message);
-    REQUIRE(created.succeeded());
+    const auto created = IrisSlide::create_encoder(desc, std::make_unique<StackSource>(SLIDE, planes), encoder);
+    if (created.failed()) return created;
     REQUIRE(IrisSlide::dispatch_encoder(encoder).succeeded());
-    IrisSlide::EncoderProgress progress;
     do {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         REQUIRE(IrisSlide::encoder_progress(encoder, progress).succeeded());
     } while (progress.state == IrisSlide::EncoderState::ACTIVE);
-    INFO(progress.error);
+    return created;
+}
+} // namespace
+
+TEST_CASE("Every tile of an AV1 slide the encoder writes is one plane dav1d decodes, BT.601 full range", "[Encode_13]")
+{
+    const Folder folder;
+    IrisSlide::EncoderProgress progress;
+    const auto created = encode_stack(folder, 1, IrisSlide::TILE_ENCODING_AV1, progress);
+    INFO(created.message << progress.error);
     REQUIRE(progress.state == IrisSlide::EncoderState::DONE);
-    {
-        Iris::File::Parser parser;
-        REQUIRE(Iris::File::create_parser({.filepath = progress.file}, parser).succeeded());
-        const Iris::File::Abstraction::File* file = nullptr;
-        REQUIRE(parser.abstraction(file).succeeded());
-        CHECK(file->tileTable.encoding == IrisSlide::TILE_ENCODING_AV1);
-        std::size_t tiles = 0;
-        for (std::uint32_t layer = 0; layer < file->tileTable.layers.size(); ++layer)
-            for (std::uint32_t tile = 0; tile < file->tileTable.layers[layer].size(); ++tile) {
-                INFO("layer " << layer << ", tile " << tile);
-                std::span<const std::uint8_t> stream;
-                REQUIRE(parser.tile(layer, tile, stream).succeeded());
-                const auto decoded = decode(stream);
-                REQUIRE(decoded.size() == 1);
-                CHECK(decoded.front().frame_type == DAV1D_FRAME_TYPE_KEY);
-                CHECK(decoded.front().sequence.mtrx == DAV1D_MC_BT601);
-                CHECK(decoded.front().sequence.color_range == 1);
-                ++tiles;
-            }
-        CHECK(tiles == 3 * 3 + 2 * 2 + 1);
+    Iris::File::Parser parser;
+    REQUIRE(Iris::File::create_parser({.filepath = progress.file}, parser).succeeded());
+    const Iris::File::Abstraction::File* file = nullptr;
+    REQUIRE(parser.abstraction(file).succeeded());
+    CHECK(file->tileTable.encoding == IrisSlide::TILE_ENCODING_AV1);
+    std::size_t tiles = 0;
+    for (std::uint32_t layer = 0; layer < file->tileTable.layers.size(); ++layer)
+        for (std::uint32_t tile = 0; tile < file->tileTable.layers[layer].size(); ++tile) {
+            INFO("layer " << layer << ", tile " << tile);
+            std::span<const std::uint8_t> stream;
+            REQUIRE(parser.tile(layer, tile, stream).succeeded());
+            const auto decoded = decode(stream);
+            REQUIRE(decoded.size() == 1);
+            CHECK(decoded.front().frame_type == DAV1D_FRAME_TYPE_KEY);
+            CHECK(decoded.front().sequence.mtrx == DAV1D_MC_BT601);
+            CHECK(decoded.front().sequence.color_range == 1);
+            ++tiles;
+        }
+    CHECK(tiles == 3 * 3 + 2 * 2 + 1);
+}
+
+// RTM Encode_13
+TEST_CASE("A Z-stacked slide is written with every focal plane of every tile, the in-focus plane first", "[Encode_13]")
+{
+    // ZStackSource_27.9: five planes, the middle one in focus; stream order 2, 3, 1, 4, 0 (D9).
+    constexpr std::uint32_t PLANES = 5, IN_FOCUS = PLANES / 2;
+    constexpr std::array<std::uint32_t, PLANES> STREAM_ORDER {2, 3, 1, 4, 0};
+    const Folder folder;
+    IrisSlide::EncoderProgress progress;
+    const auto created = encode_stack(folder, PLANES, IrisSlide::TILE_ENCODING_AV1, progress);
+    INFO(created.message << progress.error);
+    REQUIRE(progress.state == IrisSlide::EncoderState::DONE);
+    Iris::File::Parser parser;
+    REQUIRE(Iris::File::create_parser({.filepath = progress.file}, parser).succeeded());
+    const Iris::File::Abstraction::File* file = nullptr;
+    REQUIRE(parser.abstraction(file).succeeded());
+    CHECK(std::abs(file->micronsPerPlane - 1.f) < 1e-6f);
+    REQUIRE(file->tileTable.planes.size() == file->tileTable.layers.size());
+    for (const auto planes : file->tileTable.planes) CHECK(planes == PLANES);
+    for (std::uint32_t layer = 0; layer < file->tileTable.layers.size(); ++layer)
+        for (std::uint32_t tile = 0; tile < file->tileTable.layers[layer].size(); ++tile) {
+            INFO("layer " << layer << ", tile " << tile);
+            std::uint16_t planes = 0;
+            REQUIRE(parser.tile_planes(layer, tile, planes).succeeded());
+            CHECK(planes == PLANES);
+            std::span<const std::uint8_t> stream;
+            REQUIRE(parser.tile(layer, tile, stream).succeeded());
+            const auto decoded = decode(stream);
+            REQUIRE(decoded.size() == PLANES);
+            CHECK(decoded.front().frame_type == DAV1D_FRAME_TYPE_KEY);
+            for (std::size_t p = 1; p < PLANES; ++p) CHECK(decoded[p].frame_type == DAV1D_FRAME_TYPE_INTER);
+        }
+    // At full resolution, tile (0, 0) is the source's own tile: each decoded plane matches the
+    // plane its stream position names, so the in-focus plane leads.
+    StackSource source(SLIDE, PLANES);
+    std::vector<std::uint8_t> planes(PLANES * SIDE * SIDE * RGBA);
+    source.read_tile(0, 0, planes);
+    const auto full = static_cast<std::uint32_t>(file->tileTable.layers.size() - 1);
+    std::span<const std::uint8_t> stream;
+    REQUIRE(parser.tile(full, 0, stream).succeeded());
+    const auto decoded = decode(stream);
+    REQUIRE(decoded.size() == PLANES);
+    for (std::size_t position = 0; position < PLANES; ++position) {
+        INFO("stream position " << position);
+        const auto plane = std::span<const std::uint8_t>(planes).subspan(STREAM_ORDER[position] * SIDE * SIDE * RGBA, SIDE * SIDE * RGBA);
+        const auto source_luma = IrisSlide::tile_to_i420(plane);
+        CHECK(luma_psnr(decoded[position].luma, std::span(source_luma).first(SIDE * SIDE)) > LUMA_PSNR_FLOOR_DB);
     }
-    encoder.reset();
-    std::error_code ignored;
-    std::filesystem::remove_all(folder, ignored);
+    CHECK(STREAM_ORDER.front() == IN_FOCUS);
+}
+
+TEST_CASE("A JPEG encode of a Z-stacked source is refused naming its planes", "[Encode_09][Encode_13]")
+{
+    const Folder folder;
+    IrisSlide::EncoderProgress progress;
+    const auto created = encode_stack(folder, 5, IrisSlide::TILE_ENCODING_JPEG, progress);
+    CHECK_THAT(created.message, ContainsSubstring("5 focal planes") && ContainsSubstring("JPEG"));
 }
 
 TEST_CASE("One focal plane is a bare AV1 stream dav1d decodes: BT.601 full range, 8-bit 4:2:0, the full still-picture header", "[Encode_13]")

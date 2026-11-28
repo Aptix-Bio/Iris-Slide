@@ -38,6 +38,7 @@ public:
     explicit PatternSource(IrisSlide::LayerSize size) : _size(size) {}
     IrisSlide::LayerSize size() const noexcept override { return _size; }
     const IrisSlide::SourceMeasurements& measurements() const noexcept override { return _measurements; }
+    std::uint32_t planes() const noexcept override { return 1; }
     std::uint64_t read_scratch_bytes() const noexcept override { return 0; }
     void read_tile(std::uint32_t x, std::uint32_t y, std::span<std::uint8_t> rgba) override
     {
@@ -75,6 +76,7 @@ public:
     explicit FailingSource(IrisSlide::LayerSize size) : _pattern(size) {}
     IrisSlide::LayerSize size() const noexcept override { return _pattern.size(); }
     const IrisSlide::SourceMeasurements& measurements() const noexcept override { return _pattern.measurements(); }
+    std::uint32_t planes() const noexcept override { return 1; }
     std::uint64_t read_scratch_bytes() const noexcept override { return 0; }
     void read_tile(std::uint32_t x, std::uint32_t y, std::span<std::uint8_t> rgba) override
     {
