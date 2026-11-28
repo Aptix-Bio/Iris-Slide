@@ -98,24 +98,10 @@ std::string file_name (const std::filesystem::path& source, Encoding encoding)
     return source.stem().string() + "." + std::string(encoding_word(encoding)) + ".iris";
 }
 
-/// The focal planes of a Z-stack of @p planes in the order a stream carries them (D9): the
-/// in-focus plane, which is the middle of the Z order, then the others outward from it, the one
-/// above before the one below (2, 3, 1, 4, 0 for five planes).
-std::vector<std::uint32_t> stream_order (std::uint32_t planes)
-{
-    const std::uint32_t in_focus = planes / 2;
-    std::vector<std::uint32_t> order {in_focus};
-    for (std::uint32_t step = 1; order.size() < planes; ++step) {
-        if (in_focus + step < planes) order.push_back(in_focus + step);
-        if (step <= in_focus) order.push_back(in_focus - step);
-    }
-    return order;
-}
-
 /// The encoder's one way out for pixels: a 256-pixel RGBA8 tile, its @p planes focal planes back
 /// to back in Z order, compressed in the IFE tile encoding the file declares. An encoding is one
 /// case here (JPEG: libjpeg-turbo through the codec context, one plane; AV1: libaom, every plane
-/// in stream order, IrisSlideAv1Tiles.hpp).
+/// in Z order, IrisSlideAv1Tiles.hpp).
 Buffer compress_tile (const Context& context, Encoding encoding, const std::vector<std::uint8_t>& rgba,
                       std::uint32_t planes, Quality quality, Subsampling subsampling, Effort effort)
 {
@@ -128,9 +114,9 @@ Buffer compress_tile (const Context& context, Encoding encoding, const std::vect
                                            .quality     = quality,
                                            .subsampling = subsampling});
         case TILE_ENCODING_AV1: {
-            // RTM Encode_13: the planes in stream order, the in-focus plane first (D9).
+            // RTM Encode_13: the planes in Z order, the first plane the key frame (Q24, resolved 2026-11-27).
             std::vector<std::span<const std::uint8_t>> ordered;
-            for (const std::uint32_t plane : stream_order(planes))
+            for (std::uint32_t plane = 0; plane < planes; ++plane)
                 ordered.push_back(std::span<const std::uint8_t>(rgba).subspan(plane * TILE_BYTES, TILE_BYTES));
             const std::vector<std::uint8_t> stream = encode_av1_tile(ordered, quality, effort);
             return Iris::Copy_strong_buffer_from_data(stream.data(), stream.size());

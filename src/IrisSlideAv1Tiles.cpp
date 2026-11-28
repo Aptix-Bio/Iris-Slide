@@ -102,7 +102,7 @@ std::vector<std::uint8_t> encode_av1_tile (std::span<const std::span<const std::
     config.g_lag_in_frames = 0;              // no look-ahead: each plane is emitted as it is given
     config.g_limit = static_cast<unsigned int>(planes.size());   // one plane makes a still picture's header
     config.full_still_picture_hdr = 1;       // that header in full, which every decoder reads (D22)
-    config.kf_max_dist = config.g_limit;     // one key frame: the in-focus plane opens the stack
+    config.kf_max_dist = config.g_limit;     // one key frame: the first plane opens the stack
     config.g_timebase = {1, TIMEBASE_DENOMINATOR};
     config.rc_end_usage = AOM_Q;             // constant quantiser: quality alone sets the size
     // Quality 100 is the finest quantiser (0) and quality 1 the coarsest (AV1_QUANTISER_MAX).
@@ -110,7 +110,7 @@ std::vector<std::uint8_t> encode_av1_tile (std::span<const std::span<const std::
     // Every plane at that quantiser, the key frame included: without the range pinned, libaom's
     // rate control gives a key frame that later planes reference a finer one (found 2026-11-27: a
     // five-plane tissue tile at quality 90 had its key frame at q-index 2 and the rest at 24, 2.63
-    // times the in-focus plane's bytes alone).
+    // times that plane's bytes alone).
     config.rc_min_quantizer = quantiser;
     config.rc_max_quantizer = quantiser;
     check(context.codec, aom_codec_enc_init(&context.codec, av1, &config, 0), "aom_codec_enc_init");

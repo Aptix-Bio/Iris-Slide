@@ -39,9 +39,9 @@ static_assert(AV1_FASTEST_CPU_USED == EFFORT_MAX, "each effort is one of libaom'
 /// std::invalid_argument when @p rgba is not a tile's size.
 std::vector<std::uint8_t> tile_to_i420 (std::span<const std::uint8_t> rgba);
 
-/// A tile's focal planes as one bare AV1 stream (D9, D22), @p planes in stream order: the
-/// in-focus plane first, then the others outward from it (+1, -1, +2, -2, ...), as the caller
-/// orders them; a tile of one plane is a stack of one. Each plane is one temporal unit: a temporal
+/// A tile's focal planes as one bare AV1 stream (D9, D22), @p planes in the order they are coded:
+/// Z order, the first plane first (Q24, resolved 2026-11-27); a tile of one plane is a stack of
+/// one. Each plane is one temporal unit: a temporal
 /// delimiter, then, in the first unit only, the sequence header (profile Main, 8-bit 4:2:0,
 /// BT.601 matrix coefficients at full range; for one plane the full still-picture header, which
 /// every decoder reads), then the frame, each OBU with its size field. The first plane is

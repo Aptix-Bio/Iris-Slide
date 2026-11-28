@@ -1,7 +1,7 @@
 // RTM Encode_12, Encode_13
 // Av1TileEncode_27 (ARCHITECTURE D9, D22, D24): a tile's focal planes as one bare AV1 stream,
 // read back by dav1d. A Z-stack is emulated in the test: an in-focus plane and blurred planes
-// either side of it, in the stream order D9 gives (in focus, +1, -1, +2, -2, +3, -3), as a
+// either side of it, in Z order (-3, -2, -1, in focus, +1, +2, +3), the order Q24 gives, as a
 // multi-plane source will hand them to the encoder.
 #include <array>
 #include <chrono>
@@ -83,14 +83,14 @@ std::vector<std::uint8_t> defocused(const std::vector<std::uint8_t>& tile, std::
     }
     return out;
 }
-/// The emulated Z-stack in stream order: in focus, then +1, -1, +2, -2, +3, -3.
+/// The emulated Z-stack in Z order: -3, -2, -1 (blurred along y), in focus, +1, +2, +3 (along x).
 std::vector<std::vector<std::uint8_t>> z_stack()
 {
-    std::vector<std::vector<std::uint8_t>> planes {in_focus_tile()};
-    for (std::size_t step = 1; step <= Z_PLANES_EACH_SIDE; ++step) {
-        planes.push_back(defocused(planes.front(), step, true));
-        planes.push_back(defocused(planes.front(), step, false));
-    }
+    const auto in_focus = in_focus_tile();
+    std::vector<std::vector<std::uint8_t>> planes;
+    for (std::size_t step = Z_PLANES_EACH_SIDE; step >= 1; --step) planes.push_back(defocused(in_focus, step, false));
+    planes.push_back(in_focus);
+    for (std::size_t step = 1; step <= Z_PLANES_EACH_SIDE; ++step) planes.push_back(defocused(in_focus, step, true));
     return planes;
 }
 std::vector<std::span<const std::uint8_t>> spans_of(const std::vector<std::vector<std::uint8_t>>& planes)
@@ -210,7 +210,7 @@ double luma_psnr(std::span<const std::uint8_t> a, std::span<const std::uint8_t> 
 
 /// A slide whose every tile is the in-focus pattern shifted by its position, white past its
 /// extent; with several planes, plane p is that tile raised by p · PLANE_LIFT, so each plane is
-/// told apart, the middle one standing for the in-focus plane.
+/// told apart.
 constexpr std::uint8_t PLANE_LIFT = 12;
 class StackSource final : public IrisSlide::Source {
 public:
@@ -291,11 +291,12 @@ TEST_CASE("Every tile of an AV1 slide the encoder writes is one plane dav1d deco
 }
 
 // RTM Encode_13
-TEST_CASE("A Z-stacked slide is written with every focal plane of every tile, the in-focus plane first", "[Encode_13]")
+TEST_CASE("A Z-stacked slide is written with every focal plane of every tile, in Z order from the first", "[Encode_13]")
 {
-    // ZStackSource_27.9: five planes, the middle one in focus; stream order 2, 3, 1, 4, 0 (D9).
-    constexpr std::uint32_t STACK_PLANES = 5, IN_FOCUS = STACK_PLANES / 2;
-    constexpr std::array<std::uint32_t, STACK_PLANES> STREAM_ORDER {2, 3, 1, 4, 0};
+    // ZStackSource_27.9, Q24 (resolved 2026-11-27): five planes, written in Z order, the first plane
+    // the key frame and each later plane an inter frame.
+    constexpr std::uint32_t STACK_PLANES = 5;
+    constexpr std::array<std::uint32_t, STACK_PLANES> STREAM_ORDER {0, 1, 2, 3, 4};
     const ScratchFolder folder;
     IrisSlide::EncoderProgress progress;
     const auto created = encode_stack(folder, STACK_PLANES, IrisSlide::TILE_ENCODING_AV1, progress);
@@ -322,7 +323,7 @@ TEST_CASE("A Z-stacked slide is written with every focal plane of every tile, th
             for (std::size_t p = 1; p < STACK_PLANES; ++p) CHECK(decoded[p].frame_type == DAV1D_FRAME_TYPE_INTER);
         }
     // At full resolution, tile (0, 0) is the source's own tile: each decoded plane matches the
-    // plane its stream position names, so the in-focus plane leads.
+    // plane its stream position names: frame k is plane k.
     StackSource source(SLIDE, STACK_PLANES);
     std::vector<std::uint8_t> planes(STACK_PLANES * SIDE * SIDE * RGBA);
     source.read_tile(0, 0, planes);
@@ -337,7 +338,6 @@ TEST_CASE("A Z-stacked slide is written with every focal plane of every tile, th
         const auto source_luma = IrisSlide::tile_to_i420(plane);
         CHECK(luma_psnr(decoded[position].luma, std::span(source_luma).first(SIDE * SIDE)) > LUMA_PSNR_FLOOR_DB);
     }
-    CHECK(STREAM_ORDER.front() == IN_FOCUS);
 }
 
 TEST_CASE("A Z-stacked encode at the smallest budget it accepts stays within it", "[Encode_11][Encode_13]")
@@ -418,7 +418,7 @@ TEST_CASE("One focal plane is a bare AV1 stream dav1d decodes: BT.601 full range
     CHECK(luma_psnr(decoded.front().luma, std::span(source).first(SIDE * SIDE)) > LUMA_PSNR_FLOOR_DB);
 }
 
-TEST_CASE("An emulated Z-stack is one AV1 stream: the in-focus key frame, then an inter frame per plane", "[Encode_13]")
+TEST_CASE("An emulated Z-stack is one AV1 stream: the first plane the key frame, then an inter frame per plane", "[Encode_13]")
 {
     const auto planes = z_stack();
     const auto stream = IrisSlide::encode_av1_tile(spans_of(planes), QUALITY);
