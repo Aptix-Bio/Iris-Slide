@@ -1,7 +1,7 @@
 # VcpkgCaching_2 (FirstPartyPorts_2.7; RTM Build_01): Iris-Headers at a commit, verified by the
 # archive's SHA-512, in place of FetchContent at the tip of a branch. The commit is the tip of the
 # paired branch feature/Av1TileEncode_27 (Aptix-Bio/Iris-Headers#15), merged before Iris-Slide's:
-# EncoderDesc::effort (EncoderEffort_5.7, decided 2026-11-27); then its commit on main
+# EncoderDesc::effort (decided 2026-11-27); then its commit on main
 # (PortsPinMain_17.6).
 set(VCPKG_BUILD_TYPE release)   # headers and sources only: nothing is compiled here
 vcpkg_from_github(
