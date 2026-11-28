@@ -19,8 +19,14 @@ if(NOT EXISTS "${clang_cl}")
 endif()
 set(CMAKE_C_COMPILER "${clang_cl}")
 set(CMAKE_CXX_COMPILER "${clang_cl}")
-# CMAKE_TOOLCHAIN_FILE is vcpkg's scripts/buildsystems/vcpkg.cmake in compiler detection, in the
-# port's configure and in its try_compile checks, so two levels up is vcpkg's scripts folder.
-get_filename_component(vcpkg_scripts_dir "${CMAKE_TOOLCHAIN_FILE}" DIRECTORY)
+# vcpkg's scripts/buildsystems/vcpkg.cmake includes this file in compiler detection, in the port's
+# configure and in each try_compile, so the including file locates vcpkg's scripts folder two
+# levels up. CMAKE_TOOLCHAIN_FILE does not serve: try_compile reaches vcpkg.cmake through
+# CMakeSystem.cmake with it empty (CI at 3b1a737).
+if(NOT CMAKE_PARENT_LIST_FILE MATCHES "/scripts/buildsystems/vcpkg\\.cmake$")
+    message(FATAL_ERROR "x64-windows-clang-cl.cmake is chainloaded by vcpkg's scripts/buildsystems/vcpkg.cmake; "
+                        "it was included by \"${CMAKE_PARENT_LIST_FILE}\"")
+endif()
+get_filename_component(vcpkg_scripts_dir "${CMAKE_PARENT_LIST_FILE}" DIRECTORY)
 get_filename_component(vcpkg_scripts_dir "${vcpkg_scripts_dir}" DIRECTORY)
 include("${vcpkg_scripts_dir}/toolchains/windows.cmake")
