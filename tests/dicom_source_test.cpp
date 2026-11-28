@@ -19,6 +19,7 @@
 
 #include "IrisSlideCore.hpp"
 #include "IrisSlideDicomSource.hpp"
+#include "IrisSlideGeometry.hpp"
 #include "dicom_builder.hpp"
 
 using Catch::Matchers::ContainsSubstring;
@@ -33,18 +34,19 @@ constexpr std::uint8_t WHITE = 0xFF;
 constexpr double PSNR_FLOOR_DB = 36.0;                    // quality 95, 4:4:4, a smooth pattern
 constexpr double MICRONS_PER_MILLIMETRE = 1000.0;
 
-std::uint8_t pattern(std::uint64_t x, std::uint64_t y, std::size_t channel)
+std::uint8_t pattern(std::uint64_t x, std::uint64_t y, std::size_t channel, std::uint8_t lift = 0)
 {
-    return static_cast<std::uint8_t>(40 + (x / 2 + y / 3 + channel * 50) % 170);
+    return static_cast<std::uint8_t>(40 + (x / 2 + y / 3 + channel * 50) % 170 + lift);
 }
 
-/// Frame (fx, fy) of the pattern as a 4:4:4 JPEG stream (stored YCbCr, libjpeg-turbo's default).
-dicom_builder::Bytes jpeg_frame(std::uint32_t fx, std::uint32_t fy)
+/// Frame (fx, fy) of the pattern, every value raised by @p lift, as a 4:4:4 JPEG stream (stored
+/// YCbCr, libjpeg-turbo's default).
+dicom_builder::Bytes jpeg_frame(std::uint32_t fx, std::uint32_t fy, std::uint8_t lift = 0)
 {
     std::vector<std::uint8_t> rgb(std::size_t{FRAME} * FRAME * RGB);
     for (std::size_t i = 0; i < rgb.size(); ++i) {
         const std::size_t pixel = i / RGB;
-        rgb[i] = pattern(std::uint64_t{fx} * FRAME + pixel % FRAME, std::uint64_t{fy} * FRAME + pixel / FRAME, i % RGB);
+        rgb[i] = pattern(std::uint64_t{fx} * FRAME + pixel % FRAME, std::uint64_t{fy} * FRAME + pixel / FRAME, i % RGB, lift);
     }
     std::unique_ptr<void, decltype(&tj3Destroy)> handle(tj3Init(TJINIT_COMPRESS), &tj3Destroy);
     REQUIRE(handle);
@@ -66,8 +68,9 @@ dicom_builder::WholeSlide slide()
     return built;
 }
 
-/// PSNR of tile (tx, ty) against the pattern inside the slide; every value beyond it must be white.
-double tile_psnr(std::span<const std::uint8_t> tile, std::uint32_t tx, std::uint32_t ty, std::size_t& not_white)
+/// PSNR of tile (tx, ty) against the pattern raised by @p lift inside the slide; every value beyond it must be white.
+double tile_psnr(std::span<const std::uint8_t> tile, std::uint32_t tx, std::uint32_t ty, std::size_t& not_white,
+                 std::uint8_t lift = 0)
 {
     double squared = 0;
     std::size_t inside = 0;
@@ -78,13 +81,61 @@ double tile_psnr(std::span<const std::uint8_t> tile, std::uint32_t tx, std::uint
         for (std::size_t c = 0; c < RGB; ++c) {
             const std::uint8_t value = tile[pixel * RGBA + c];
             if (!is_inside) { not_white += value != WHITE; continue; }
-            squared += (double(value) - pattern(gx, gy, c)) * (double(value) - pattern(gx, gy, c));
+            squared += (double(value) - pattern(gx, gy, c, lift)) * (double(value) - pattern(gx, gy, c, lift));
             ++inside;
         }
     }
     return 10 * std::log10(255.0 * 255.0 / (squared / double(inside)));
 }
 } // namespace
+
+// RTM Encode_13
+TEST_CASE("A Z-stacked instance is read as every focal plane of each tile, in Z order", "[Encode_10][Encode_13]")
+{
+    // ZStackSource_27.9: three planes, each the pattern raised by its own amount, so a plane read
+    // from the wrong frames is told apart.
+    constexpr std::uint32_t STACK_PLANES = 3;
+    constexpr std::uint8_t LIFT_STEP = 20;
+    dicom_builder::WholeSlide built {.width = WIDTH, .height = HEIGHT, .frame_columns = FRAME, .frame_rows = FRAME};
+    built.focal_planes = STACK_PLANES;
+    built.plane_spacing_mm = 0.001f;
+    for (std::uint32_t p = 0; p < STACK_PLANES; ++p)
+        for (std::uint32_t fy = 0; fy < FRAMES_DOWN; ++fy)
+            for (std::uint32_t fx = 0; fx < FRAMES_ACROSS; ++fx)
+                built.frames.push_back(jpeg_frame(fx, fy, static_cast<std::uint8_t>(p * LIFT_STEP)));
+    const auto path = dicom_builder::write_instance(dicom_builder::whole_slide(built), "source_zstack");
+    auto source = IrisSlide::open_dicom_source(path);
+    REQUIRE(source->planes() == STACK_PLANES);
+    CHECK(std::abs(source->measurements().microns_between_planes - 1.0) < 1e-6);
+    using IrisSlide::TILE_BYTES;
+    std::vector<std::uint8_t> planes(STACK_PLANES * TILE_BYTES);
+    source->read_tile(1, 1, planes);
+    for (std::uint32_t p = 0; p < STACK_PLANES; ++p) {
+        INFO("plane " << p);
+        std::size_t not_white = 0;
+        CHECK(tile_psnr(std::span(planes).subspan(p * TILE_BYTES, TILE_BYTES), 1, 1, not_white,
+                        static_cast<std::uint8_t>(p * LIFT_STEP)) > PSNR_FLOOR_DB);
+        CHECK(not_white == 0);
+    }
+}
+
+// RTM Encode_13
+TEST_CASE("An instance declaring 0 focal planes, or a Z-stack whose planes are not a positive distance apart, is refused naming it",
+          "[Encode_10][Encode_13]")
+{
+    dicom_builder::WholeSlide none = slide();
+    none.focal_planes = 0;
+    const auto none_path = dicom_builder::write_instance(dicom_builder::whole_slide(none), "source_no_planes");
+    CHECK_THROWS_WITH(IrisSlide::open_dicom_source(none_path), ContainsSubstring("TotalPixelMatrixFocalPlanes") && ContainsSubstring("is 0"));
+    dicom_builder::WholeSlide backward {.width = WIDTH, .height = HEIGHT, .frame_columns = FRAME, .frame_rows = FRAME};
+    backward.focal_planes = 2;
+    backward.plane_spacing_mm = -0.001f;
+    for (std::uint32_t p = 0; p < backward.focal_planes; ++p)
+        for (std::uint32_t fy = 0; fy < FRAMES_DOWN; ++fy)
+            for (std::uint32_t fx = 0; fx < FRAMES_ACROSS; ++fx) backward.frames.push_back(jpeg_frame(fx, fy));
+    const auto backward_path = dicom_builder::write_instance(dicom_builder::whole_slide(backward), "source_negative_spacing");
+    CHECK_THROWS_WITH(IrisSlide::open_dicom_source(backward_path), ContainsSubstring("DistanceBetweenFocalPlanes") && ContainsSubstring("-0.001"));
+}
 
 TEST_CASE("A synthetic JPEG whole-slide instance is read as 256-pixel tiles from its 240-pixel frames",
           "[Encode_10][Dicom_05]")

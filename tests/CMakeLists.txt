@@ -17,8 +17,11 @@ if (IRIS_BUILD_ENCODER)
                    source_codec_test.cpp openjpeg_frames_test.cpp jpeg_frames_test.cpp
                    local_slides_test.cpp dicom_series_test.cpp
                    retile_test.cpp reduce_test.cpp encoder_rewrite_test.cpp
-                   dicom_frames_test.cpp dicom_source_test.cpp)
-    set(test_dependencies ${IrisSlideEncoderDependencies})
+                   dicom_frames_test.cpp dicom_source_test.cpp av1_tiles_test.cpp memory_pressure_test.cpp)
+    # RTM Encode_13: dav1d decodes the encoder's AV1 tiles back (ARCHITECTURE D22), through the
+    # CMake config its overlay port adds (ports/dav1d).
+    find_package(unofficial-dav1d CONFIG REQUIRED)
+    set(test_dependencies ${IrisSlideEncoderDependencies} unofficial::dav1d::dav1d)
 endif()
 iris_slide_compile_settings(IrisSlideTests)
 iris_slide_optimise_kernels()
@@ -39,6 +42,11 @@ if (IRIS_BUILD_ENCODER)
         "budget_not_a_number|-s,absent.dcm,--memory-budget,2abc|2|memory budget \"2abc\""
         "budget_too_large|-s,absent.dcm,--memory-budget,1e30|2|is above 2\\^64 bytes"
         "subsampling_unknown|-s,absent.dcm,--subsampling,411|2|subsampling \"411\""
+        "encoding_unknown|-s,absent.dcm,--encoding,webp|2|encoding \"webp\""
+        "av1_chroma_refused|-s,absent.dcm,-e,av1,--subsampling,444|1|AV1 tiles are 4:2:0"
+        "av1_default_chroma|-s,absent.dcm,-e,av1|1|absent.dcm is not a file"
+        "effort_out_of_range|-s,absent.dcm,-e,av1,--effort,7|1|effort 7 is outside 0-6"
+        "jpeg_effort_refused|-s,absent.dcm,--effort,3|1|effort 3 is refused for TILE_ENCODING_JPEG"
         "argument_unknown|-s,absent.dcm,--colour,red|2|unknown argument \"--colour\""
         "source_missing|-q,90|2|a source slide is needed"
         "source_absent|-s,absent.dcm|1|absent.dcm is not a file")

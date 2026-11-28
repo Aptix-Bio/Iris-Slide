@@ -19,7 +19,6 @@ constexpr std::uint32_t SEED = 20261127;
 constexpr std::size_t RGBA = IrisSlide::RGBA_BYTES;
 constexpr std::uint8_t WHITE = 0xFF;
 constexpr std::size_t REGION_BYTES = std::size_t{IrisSlide::REDUCE_REGION} * IrisSlide::REDUCE_REGION * RGBA;
-constexpr std::size_t TILE_BYTES = std::size_t{IrisSlide::RECUT_TILE} * IrisSlide::RECUT_TILE * RGBA;
 
 // The weights are a compile-time table; their sum is checked where they are made, and here.
 static_assert(IrisSlide::REDUCE_WEIGHT_SUM == (1 << IrisSlide::REDUCE_WEIGHT_BITS));
@@ -40,7 +39,7 @@ TEST_CASE("The reduction's weights are symmetric, sum to the fixed-point unit an
 
 TEST_CASE("A flat region reduces to the same flat tile", "[Pyramid_01][Pyramid_02]")
 {
-    std::vector<std::uint8_t> region(REGION_BYTES), tile(TILE_BYTES);
+    std::vector<std::uint8_t> region(REGION_BYTES), tile(IrisSlide::TILE_BYTES);
     for (std::size_t i = 0; i < region.size(); i += RGBA) {
         region[i] = 12; region[i + 1] = 200; region[i + 2] = 255; region[i + 3] = WHITE;
     }
@@ -56,7 +55,7 @@ TEST_CASE("A vertical step reduces to the cubic's response, with its overshoot c
 {
     // Columns left of region column 3 + 256 (source x 256) are 0, the rest 255: the output's step
     // sits at output x 128, with the negative lobes overshooting each side before the clamp.
-    std::vector<std::uint8_t> region(REGION_BYTES), tile(TILE_BYTES);
+    std::vector<std::uint8_t> region(REGION_BYTES), tile(IrisSlide::TILE_BYTES);
     for (std::uint32_t y = 0; y < IrisSlide::REDUCE_REGION; ++y)
         for (std::uint32_t x = 0; x < IrisSlide::REDUCE_REGION; ++x)
             for (std::uint32_t c = 0; c < RGBA; ++c)
@@ -85,7 +84,7 @@ TEST_CASE("The Highway reduction equals the scalar reference on every compiled a
     std::string names;
     for (const auto target : targets) names += std::string(names.empty() ? "" : ", ") + hwy::TargetName(target);
     WARN("Highway targets tested: " << names);
-    std::vector<std::uint8_t> simd(TILE_BYTES), reference(TILE_BYTES);
+    std::vector<std::uint8_t> simd(IrisSlide::TILE_BYTES), reference(IrisSlide::TILE_BYTES);
     for (const auto target : targets) {
         hwy::SetSupportedTargetsForTest(target);
         INFO("target " << hwy::TargetName(target));
@@ -110,7 +109,7 @@ TEST_CASE("At the slide's edge the edge pixel repeats, and beyond the next layer
     constexpr std::uint32_t TILE = IrisSlide::RECUT_TILE;
     constexpr std::size_t RGB = IrisSlide::RGB_BYTES;
     const IrisSlide::LayerSize layer {.width = WIDTH, .height = HEIGHT};
-    std::vector<std::vector<std::uint8_t>> tiles(2, std::vector<std::uint8_t>(TILE_BYTES, WHITE));
+    std::vector<std::vector<std::uint8_t>> tiles(2, std::vector<std::uint8_t>(IrisSlide::TILE_BYTES, WHITE));
     for (std::uint32_t t = 0; t < 2; ++t)
         for (std::size_t pixel = 0; pixel < std::size_t{TILE} * HEIGHT; ++pixel) {
             const std::uint32_t x = t * TILE + static_cast<std::uint32_t>(pixel % TILE);
@@ -120,7 +119,7 @@ TEST_CASE("At the slide's edge the edge pixel repeats, and beyond the next layer
     const auto tile_of = [&tiles](std::uint32_t x, std::uint32_t y) {
         return y == 0 && x < 2 ? std::span<const std::uint8_t>(tiles[x]) : std::span<const std::uint8_t>();
     };
-    std::vector<std::uint8_t> region(REGION_BYTES), tile(TILE_BYTES);
+    std::vector<std::uint8_t> region(REGION_BYTES), tile(IrisSlide::TILE_BYTES);
     IrisSlide::gather_region(layer, 0, 0, tile_of, region);
     IrisSlide::reduce_2x_reference(region, tile);
     IrisSlide::whiten_beyond(IrisSlide::reduced(layer), 0, 0, tile);

@@ -85,17 +85,17 @@ class Encoder:
     """
     An encoder for one slide; it encodes once
     """
-def create_encoder(source: str, destination: str, quality: typing.SupportsInt | typing.SupportsIndex = 90, subsampling: str = '422', memory_budget: typing.SupportsInt | typing.SupportsIndex = 0, concurrency: typing.SupportsInt | typing.SupportsIndex = ..., layer_step: typing.SupportsInt | typing.SupportsIndex = 2, i2s_attributes: collections.abc.Mapping[str, str] = {}, i2s_version: typing.SupportsInt | typing.SupportsIndex = 0) -> Encoder:
+def create_encoder(source: str, destination: str, quality: typing.SupportsInt | typing.SupportsIndex = 90, subsampling: str | None = None, memory_budget: typing.SupportsInt | typing.SupportsIndex = 0, concurrency: typing.SupportsInt | typing.SupportsIndex = ..., layer_step: typing.SupportsInt | typing.SupportsIndex = 2, i2s_attributes: collections.abc.Mapping[str, str] = {}, i2s_version: typing.SupportsInt | typing.SupportsIndex = 0, encoding: str = 'jpeg', effort: typing.SupportsInt | typing.SupportsIndex = 0) -> Encoder:
     """
-    An encoder for one slide (a DICOM whole-slide instance: JPEG, JPEG 2000 or HTJ2K frames), writing <source stem>.jpeg.iris into destination; raises RuntimeError naming what it refuses
+    An encoder for one slide (a DICOM whole-slide instance: JPEG, JPEG 2000 or HTJ2K frames), writing <source stem>.<encoding>.iris into destination, its tiles 'jpeg' or 'av1'; subsampling left as None takes the encoding's default ('422' for jpeg; av1 is '420' alone); effort is how hard to work on each tile, 0 (fastest) to 6 (slowest, usually smallest), av1 only; raises RuntimeError naming what it refuses
     """
 def dispatch_encoder(encoder: Encoder) -> None:
     """
     Starts the encode and returns; raises when the encoder was already dispatched
     """
-def encoder_output_name(source: str) -> str:
+def encoder_output_name(source: str, encoding: str = 'jpeg') -> str:
     """
-    The file name an encode of source writes
+    The file name an encode of source writes in encoding ('jpeg' or 'av1')
     """
 def encoder_progress(encoder: Encoder) -> EncoderProgress:
     """

@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
-  "$comment": "VcpkgCaching_2 (RTM Build_01, Build_05): every library Iris-Slide builds against, first-party and third-party, prebuilt from vcpkg's binary cache; nothing is fetched at configure. The core is what every build needs, the JavaScript module's included: Iris-Headers and Iris-File-Extension. The baseline is vcpkg's release 2026.10.16 (scripts/bootstrap_vcpkg.cmake checks vcpkg out at it). Each direct third-party dependency's version is stated by an override, equal to Iris-Headers' cmake/dependencies.cmake where vcpkg has that version; Iris-Headers and Iris-File-Extension are pinned by commit in their overlay ports (ports/). development/PIPELINE.md lists each pin, its source and every difference.",
+  "$comment": "VcpkgCaching_2 (RTM Build_01, Build_05): every library Iris-Slide builds against, first-party and third-party, prebuilt from vcpkg's binary cache; nothing is fetched at configure. The core is what every build needs, the JavaScript module's included: Iris-Headers and Iris-File-Extension. The baseline is vcpkg's release 2026.10.16 (scripts/bootstrap_vcpkg.cmake checks vcpkg out at it). Each direct third-party dependency's version is stated by an override, equal to Iris-Headers' cmake/dependencies.cmake where vcpkg has that version; Iris-Headers and Iris-File-Extension are pinned by commit in their overlay ports (ports/), and aom at 3.15.3 by vcpkg's own port as an overlay (D22), since no vcpkg release carries it yet. development/PIPELINE.md lists each pin, its source and every difference.",
   "name": "iris-slide",
   "version": "0.0.0",
   "builtin-baseline": "9eec002df1cd109f8f104cd966a763daf9751489",
@@ -31,9 +31,11 @@
       ]
     },
     "encoder": {
-      "description": "IrisSlideEncoder and the Python encoder module (IRIS_BUILD_ENCODER=ON): libdicom, and OpenJPEG for JPEG 2000 and HTJ2K source frames",
+      "description": "IrisSlideEncoder and the Python encoder module (IRIS_BUILD_ENCODER=ON): libdicom, OpenJPEG for JPEG 2000 and HTJ2K source frames, and libaom and libyuv for AV1 tiles (D22)",
       "dependencies": [
+        "aom",
         "libdicom",
+        "libyuv",
         {
           "name": "openjpeg",
           "default-features": false
@@ -47,9 +49,10 @@
       ]
     },
     "tests": {
-      "description": "The tests (TestHarness_1): Catch2",
+      "description": "The tests (TestHarness_1): Catch2, and dav1d to decode the encoder's AV1 tiles back (D22)",
       "dependencies": [
-        "catch2"
+        "catch2",
+        "dav1d"
       ]
     }
   },
@@ -57,6 +60,10 @@
     {
       "name": "catch2",
       "version": "3.15.1"
+    },
+    {
+      "name": "dav1d",
+      "version": "1.5.4"
     },
     {
       "name": "glm",
@@ -79,6 +86,10 @@
     {
       "name": "libpng",
       "version": "1.6.50"
+    },
+    {
+      "name": "libyuv",
+      "version": "1916"
     },
     {
       "name": "openjpeg",

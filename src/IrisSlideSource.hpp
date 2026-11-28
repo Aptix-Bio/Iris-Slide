@@ -25,23 +25,28 @@ namespace IrisSlide {
 struct SourceMeasurements {
     double      microns_per_pixel = 0.0;   ///< 0 when the source does not say
     double      magnification     = 0.0;   ///< the objective's power; 0 when the source does not say
+    double      microns_between_planes = 0.0;   ///< a Z-stack's focal-plane spacing; 0 for one plane or unsaid
     std::string icc_profile;               ///< ICC.1 bytes, verbatim; empty when the source has none
 };
 
-/// A slide's highest-resolution layer, read as 256-pixel RGBA8 tiles. read_tile is the whole of
-/// a tile's reading: one call takes the source data under the tile, decodes it and assembles the
-/// tile, so a worker that claims a tile does all of it on its own thread. It is safe to call from
-/// any number of threads at once, for any tiles, in any order.
+/// A slide's highest-resolution layer, read as 256-pixel RGBA8 tiles, each with every focal plane
+/// the slide has (a Z-stack; one plane otherwise). read_tile is the whole of a tile's reading: one
+/// call takes the source data under the tile, decodes it and assembles every plane of the tile, so
+/// a worker that claims a tile does all of it on its own thread. It is safe to call from any
+/// number of threads at once, for any tiles, in any order.
 class Source {
 public:
     virtual ~Source () = default;
     /// The layer's size in pixels.
     virtual LayerSize size () const noexcept = 0;
     virtual const SourceMeasurements& measurements () const noexcept = 0;
-    /// Tile (x, y) into @p rgba (RECUT_TILE² × 4 bytes), white beyond the slide. Throws
-    /// std::runtime_error naming what did not read or decode.
+    /// The focal planes every tile has: 1, or a Z-stack's count (RTM Encode_13).
+    virtual std::uint32_t planes () const noexcept = 0;
+    /// Tile (x, y) into @p rgba (planes() × RECUT_TILE² × 4 bytes): each focal plane's tile in Z
+    /// order, the lowest plane first, white beyond the slide. Throws std::runtime_error naming
+    /// what did not read or decode.
     virtual void read_tile (std::uint32_t x, std::uint32_t y, std::span<std::uint8_t> rgba) = 0;
-    /// The most memory one read_tile call holds while it runs, beyond the tile it writes: the
+    /// The most memory one read_tile call holds while it runs, beyond the planes it writes: the
     /// encoder charges it to its byte budget for every tile being read.
     virtual std::uint64_t read_scratch_bytes () const noexcept = 0;
 };

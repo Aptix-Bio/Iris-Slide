@@ -52,7 +52,12 @@ flowchart LR
    uncommitted changes are written into the port, so a package built from
    other source is never restored for it. Iris-Headers' downstream cell builds
    Iris-Slide this way.
-5. **Prebuilt over built.** Every package is static and release-only (`triplets/`). The encoder
+5. **Prebuilt over built.** Every package is static and release-only (`triplets/`). On Windows,
+   aom is compiled by Visual Studio's clang-cl and every other package by MSVC, since MSVC 19.44
+   (Visual Studio 2022 17.14) miscompiles libaom's inter-frame mode search into an aligned SSE
+   load from a misaligned stack slot (ZStackWindowsCrash_27.19). aom's compiler is named by a
+   chainloaded toolchain (`triplets/toolchains/x64-windows-clang-cl.cmake`), so vcpkg detects
+   clang-cl and aom's package hash follows the clang-cl binary (AomCompilerHash_27.20). The encoder
    read vendor slide files through OpenSlide until its rebuild (decided 2026-11-27, ARCHITECTURE
    D14); OpenSlide left the build with it, and a vendor source returns as a Source module.
 6. **The store.** CI keeps vcpkg's packages and the compiler's objects (sccache)
@@ -167,7 +172,10 @@ and from each upstream's release.
 | vcpkg | `9eec002df1cd109f8f104cd966a763daf9751489` | — | release 2026.10.16, https://github.com/microsoft/vcpkg/releases/tag/2026.10.16 |
 | Highway | 1.2.0 (override; floor 1.2.0) | 1.2.0 (floor 1.2) | vcpkg `versions/h-/highway.json` |
 | libjpeg-turbo | 3.2.0#1 | 3.2.0 | vcpkg baseline |
-| libavif | 1.4.2#1, feature `aom` (aom 3.15.2, libyuv 1916 from the baseline) | v1.4.2 | vcpkg baseline; the source build used aom and libyuv too |
+| libavif | 1.4.2#1, feature `aom` (aom from the overlay below, libyuv 1916 from the baseline) | v1.4.2 | vcpkg baseline; the source build used aom and libyuv too |
+| libaom | 3.15.3 (overlay `ports/aom`: vcpkg's own port at microsoft/vcpkg `dee3416740`, 2026-11-02, unchanged; feature `encoder`), its source pinned by git commit `b141d9c45db236335351c8a4b2a14b3ade27c937` (tag v3.15.3), a content-addressed pin, through `vcpkg_from_git`, since aomedia.googlesource.com serves no fixed archive to hash; compiled on Windows by Visual Studio's clang-cl (`triplets/x64-windows-static-md.cmake`, rule 5) | — | D22; the baseline carries 3.15.2 and no vcpkg release carries 3.15.3 yet (latest 2026.10.16, read 2026-11-27); BSD-2-Clause AND BSD-3-Clause AND MIT AND ISC, as the port declares for libaom and the third-party code it bundles, with the AOM Patent License 1.0; the overlay goes once a release carries 3.15.3 |
+| libyuv | 1916 (override, feature `encoder`) | — | vcpkg baseline; converts AV1 tiles to 4:2:0 (D22) |
+| dav1d | 1.5.4 (override, feature `tests`; overlay `ports/dav1d`: vcpkg's port plus a CMake config, `unofficial::dav1d::dav1d`, as libdicom's) | — | vcpkg baseline; BSD-2-Clause and ISC; decodes the encoder's AV1 tiles back in the tests (D22) |
 | libpng | 1.6.50 (override) | v1.6.50 | vcpkg `versions/l-/libpng.json` (baseline 1.6.59) |
 | zlib | 1.3.2#2 (baseline; libpng's dependency) | zlib-ng 2.3.3 | **differs**: vcpkg's libpng depends on the `zlib` port; zlib-ng's port builds its zlib-compatible library only when a triplet sets `ZLIB_COMPAT`, and the `zlib` port would still be installed for libpng. Ends with libpng (PngRemoved_4) |
 | libdicom | 1.3.0#1 (overlay: vcpkg's port plus a CMake config) | v1.3.0 | vcpkg baseline |
@@ -177,7 +185,7 @@ and from each upstream's release.
 | GLM | 1.0.3 (override) | 1.0.3 | vcpkg baseline |
 | pybind11 | 3.1.0 (overlay: vcpkg's port without its python3 dependency) | v3.1.0 | vcpkg baseline; the archive's SHA-512 is vcpkg's |
 | Catch2 | 3.15.1 (override, feature `tests`) | 3.15.1 | vcpkg `versions/c-/catch2.json` (baseline 3.16.0) |
-| Iris-Headers | `4eecc967cd173529a941487513b67efdfb2a4332` (main, moved 2026-11-27 from `2cfb551` on feature/EncoderRewrite_24) | — | the merge of Aptix-Bio/Iris-Headers#13: the rebuilt encoder's public API (`EncoderDesc`, `EncoderState`, `EncoderProgress`, `create_encoder`, `dispatch_encoder`, `encoder_progress`, `interrupt_encoder`, `encoder_output_name`, `LAYER_STEP_DEFAULT`; ARCHITECTURE D14), https://github.com/Aptix-Bio/Iris-Headers/commit/4eecc967cd173529a941487513b67efdfb2a4332, the archive's SHA-512 computed 2026-11-27 (PortsPinMain_17.6) |
+| Iris-Headers | `fb73e7de4636d79a45e1d985fa2862f3e1394a88` (main, moved 2026-11-28 from `9ca5b91` on the paired branch `feature/Av1TileEncode_27`) | — | the merge of Aptix-Bio/Iris-Headers#15 (`EncoderDesc::effort`), https://github.com/Aptix-Bio/Iris-Headers/commit/fb73e7de4636d79a45e1d985fa2862f3e1394a88, the archive's SHA-512 computed 2026-11-28 (PortsPinMain_17.6) |
 | Iris-File-Extension | `b31a788dd29f74edfb827dbb3a20ac5887ca7676` (main, moved 2026-11-27 from `06ec6f2`) | — | IFE's read calls return a `Result` and write their value through a reference (IFE R-8, decided 2026-11-25), https://github.com/Aptix-Bio/Iris-File-Extension/commit/b31a788dd29f74edfb827dbb3a20ac5887ca7676, the archive's SHA-512 computed 2026-11-27 (PortsPinMain_17.6) |
 | Emscripten SDK | 6.0.13, `35659964bc2762fffec0d257997fb61475f765b7` | — | https://github.com/emscripten-core/emsdk/releases/tag/6.0.13 |
 | sccache | v0.19.0 | — | through mozilla-actions/sccache-action v0.0.11 |

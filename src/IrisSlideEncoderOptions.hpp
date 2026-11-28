@@ -20,6 +20,30 @@
 
 namespace IrisSlide {
 // RTM Encode_09, Bindings_01
+/// The quality range every tile encoding takes: JPEG's own scale, and AV1's mapped onto libaom's
+/// quantiser (IrisSlideAv1Tiles.hpp).
+constexpr int QUALITY_MIN = 1, QUALITY_MAX = 100;
+/// A tile encoding the encoder writes and the word callers type for it, which is also the
+/// encoding's word in the file name <source stem>.<word>.iris.
+struct EncodingName {
+    std::string_view name;
+    Encoding         encoding;
+};
+/// Every tile encoding the encoder writes; adding one (UASTC, XUASTC) is a row here and a case in
+/// the encoder's compress_tile.
+constexpr std::array<EncodingName, 2> ENCODING_NAMES {{
+    {"jpeg", TILE_ENCODING_JPEG},
+    {"av1",  TILE_ENCODING_AV1},    // D22, Av1TileEncode_27
+}};
+
+/// The encoding @p text names; throws std::invalid_argument naming the text otherwise.
+inline Encoding encoding_of (std::string_view text)
+{
+    for (const auto& row : ENCODING_NAMES)
+        if (row.name == text) return row.encoding;
+    throw std::invalid_argument("encoding \"" + std::string(text) + "\" is not jpeg or av1");
+}
+
 /// A chroma subsampling and the name callers type for it.
 struct SubsamplingName {
     std::string_view name;
@@ -47,6 +71,22 @@ inline std::string_view subsampling_name (Subsampling subsampling)
     for (const auto& row : SUBSAMPLING_NAMES)
         if (row.subsampling == subsampling) return row.name;
     throw std::invalid_argument("subsampling " + std::to_string(int(subsampling)) + " has no name");
+}
+
+/// The word callers type for an encoding the encoder writes, which names it in the file name;
+/// throws std::invalid_argument for any other.
+inline std::string_view encoding_word (Encoding encoding)
+{
+    for (const auto& row : ENCODING_NAMES)
+        if (row.encoding == encoding) return row.name;
+    throw std::invalid_argument("tile encoding " + std::to_string(int(encoding)) + " is not one the encoder writes");
+}
+
+/// The subsampling an encode of @p encoding takes when the caller names none: the encoder's
+/// default for JPEG, and 4:2:0 for AV1, the only chroma its tiles carry (D22).
+inline Subsampling default_subsampling (Encoding encoding) noexcept
+{
+    return encoding == TILE_ENCODING_AV1 ? SUBSAMPLE_420 : SUBSAMPLE_DEFAULT;
 }
 
 /// @p value as T, refused naming @p what when T cannot hold it, so a large number is never

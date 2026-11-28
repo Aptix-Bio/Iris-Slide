@@ -23,8 +23,13 @@ _POLL_SECONDS = 0.5
 def encode_slide_file(source: str, outdir: str = "", quality: int | None = None, subsampling: str | None = None,
                       layer_step: int | None = None, memory_budget: int | None = None,
                       concurrency: int | None = None, i2s_attributes: dict[str, str] | None = None,
-                      i2s_version: int = 0, show_progress: bool = True) -> str:
+                      i2s_version: int = 0, show_progress: bool = True, encoding: str | None = None,
+                      effort: int | None = None) -> str:
     """Encode source as an Iris slide in outdir (default: the source's folder); returns the file written.
+
+    encoding is the tile encoding, 'jpeg' (the encoder's default) or 'av1'; an AV1 slide's tiles are 4:2:0 alone, the
+    subsampling it takes when none is named. effort is how hard the encoder works on each AV1 tile,
+    0 (fastest, the default) to 6 (the slowest, usually the smallest at the same quality).
 
     An option left as None takes the encoder's own default (create_encoder's), so the defaults are
     written once, in the core.
@@ -34,7 +39,7 @@ def encode_slide_file(source: str, outdir: str = "", quality: int | None = None,
     to, as IFE's 16-bit ATTRIBUTES.VERSION holds it: major << 8 | minor, so I2S 0.1 is 1. It is
     required with i2s_attributes; 0, an unversioned claim, is refused.
     """
-    given = {"quality": quality, "subsampling": subsampling, "layer_step": layer_step,
+    given = {"encoding": encoding, "quality": quality, "subsampling": subsampling, "layer_step": layer_step, "effort": effort,
              "memory_budget": memory_budget, "concurrency": concurrency}
     options = {name: value for name, value in given.items() if value is not None}
     encoder = create_encoder(source, outdir or os.path.dirname(os.path.abspath(source)),

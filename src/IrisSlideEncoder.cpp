@@ -19,7 +19,9 @@
 
 #include <algorithm>
 #include <array>
+#include <span>
 #include <bit>
+#include <chrono>
 #include <cmath>
 #include <concepts>
 #include <atomic>
@@ -40,16 +42,16 @@
 #include "IrisSlidePriv.hpp"
 #include "IFE_Builder.hpp"
 #include "IrisSlideReduce.hpp"
+#include "IrisSlideEncoderOptions.hpp"
+#include "IrisSlideAv1Tiles.hpp"
 
 namespace IrisSlide {
 namespace {
-constexpr std::uint64_t TILE_BYTES = std::uint64_t{RECUT_TILE} * RECUT_TILE * RGBA_BYTES;
-/// The default budget is this fraction of physical memory (Q20, decided 2026-11-27).
-constexpr std::uint64_t BUDGET_DIVISOR = 4;
+/// The default budget is this fraction of physical memory: a half (D26, amending Q20's quarter, 2026-11-27).
+constexpr std::uint64_t BUDGET_DIVISOR = 2;
 /// A derived row reads up to 4 rows of the layer below; with the row being made, 5 rows of each
 /// layer is the smallest working set an encode can progress in.
 constexpr std::uint64_t ROWS_HELD = 5;
-constexpr int QUALITY_MIN = 1, QUALITY_MAX = 100;
 
 /// The machine's physical memory; throws naming the system call that could not say, so the
 /// default budget is never silently 0.
@@ -77,28 +79,11 @@ std::uint64_t physical_memory ()
 #endif
 }
 
-/// The tile encodings this encoder writes, each with its file-name word; one row per encoding, so
-/// adding one (AV1, UASTC, XUASTC) is a row here and a case in compress_tile.
-struct WrittenEncoding {
-    Encoding         encoding;
-    std::string_view word;
-};
-constexpr std::array<WrittenEncoding, 1> WRITTEN_ENCODINGS {{
-    {TILE_ENCODING_JPEG, "jpeg"},
-}};
-
-/// Whether this encoder writes @p encoding.
+/// Whether this encoder writes @p encoding (a row of ENCODING_NAMES).
 bool is_written_encoding (Encoding encoding) noexcept
 {
-    return std::any_of(WRITTEN_ENCODINGS.begin(), WRITTEN_ENCODINGS.end(),
-                       [encoding](const WrittenEncoding& row) { return row.encoding == encoding; });
-}
-/// The file-name word of an encoding this encoder writes; throws for any other.
-std::string_view encoding_word (Encoding encoding)
-{
-    for (const auto& row : WRITTEN_ENCODINGS)
-        if (row.encoding == encoding) return row.word;
-    throw std::runtime_error("tile encoding " + std::to_string(int(encoding)) + " has no file-name word here");
+    return std::any_of(ENCODING_NAMES.begin(), ENCODING_NAMES.end(),
+                       [encoding](const EncodingName& row) { return row.encoding == encoding; });
 }
 /// The encoding's name as IFE's specification spells it (IFE's generated member_name).
 std::string encoding_name (Encoding encoding)
@@ -113,11 +98,12 @@ std::string file_name (const std::filesystem::path& source, Encoding encoding)
     return source.stem().string() + "." + std::string(encoding_word(encoding)) + ".iris";
 }
 
-/// The encoder's one way out for pixels: a 256-pixel RGBA8 tile compressed in the IFE tile
-/// encoding the file declares. An encoding is one case here (JPEG: libjpeg-turbo through the
-/// codec context).
+/// The encoder's one way out for pixels: a 256-pixel RGBA8 tile, its @p planes focal planes back
+/// to back in Z order, compressed in the IFE tile encoding the file declares. An encoding is one
+/// case here (JPEG: libjpeg-turbo through the codec context, one plane; AV1: libaom, every plane
+/// in Z order, IrisSlideAv1Tiles.hpp).
 Buffer compress_tile (const Context& context, Encoding encoding, const std::vector<std::uint8_t>& rgba,
-                      Quality quality, Subsampling subsampling)
+                      std::uint32_t planes, Quality quality, Subsampling subsampling, Effort effort)
 {
     switch (encoding) {
         case TILE_ENCODING_JPEG:
@@ -127,9 +113,16 @@ Buffer compress_tile (const Context& context, Encoding encoding, const std::vect
                                            .encoding    = encoding,
                                            .quality     = quality,
                                            .subsampling = subsampling});
+        case TILE_ENCODING_AV1: {
+            // RTM Encode_13: the planes in Z order, the first plane the key frame (Q24, resolved 2026-11-27).
+            std::vector<std::span<const std::uint8_t>> ordered;
+            for (std::uint32_t plane = 0; plane < planes; ++plane)
+                ordered.push_back(std::span<const std::uint8_t>(rgba).subspan(plane * TILE_BYTES, TILE_BYTES));
+            const std::vector<std::uint8_t> stream = encode_av1_tile(ordered, quality, effort);
+            return Iris::Copy_strong_buffer_from_data(stream.data(), stream.size());
+        }
         case TILE_ENCODING_UNDEFINED:
         case TILE_ENCODING_IRIS:
-        case TILE_ENCODING_AV1:
         case TILE_ENCODING_UASTC:
         case TILE_ENCODING_XUASTC:
             break;
@@ -288,7 +281,7 @@ std::pair<std::uint32_t, std::uint32_t> rows_read (std::uint32_t row, std::uint3
 // RTM Encode_09, Encode_10, Encode_11, Encode_12, Concurrency_04
 class Encoder_t {
 public:
-    Encoder_t (const EncoderDesc& desc, std::unique_ptr<Source> source, std::uint64_t budget);
+    Encoder_t (const EncoderDesc& desc, std::unique_ptr<Source> source, std::uint64_t budget, PressureProbe probe);
     Encoder_t (const Encoder_t&) = delete;
     Encoder_t& operator= (const Encoder_t&) = delete;
     ~Encoder_t ();
@@ -300,6 +293,8 @@ public:
 private:
     void advance () noexcept;
     void step ();
+    /// The system's memory pressure, read again once MEMORY_PRESSURE_INTERVAL has passed (D26).
+    void read_pressure () noexcept;
     bool is_base_row_admitted () const noexcept;
     bool is_startable (const Job& job) const noexcept;
     void start_tiles (std::uint32_t depth, std::uint32_t row);
@@ -310,14 +305,28 @@ private:
     void finish ();
     /// The layers as IFE numbers them: from the lowest resolution, whose scale is 1.
     Iris::Extent ife_extent () const;
+    /// The plane count IFE records for a layer and a stream: 0, which IFE reads as one plane, for
+    /// a single plane, and the Z-stack's count otherwise.
+    std::uint16_t z_planes () const noexcept { return _planes > 1 ? static_cast<std::uint16_t>(_planes) : 0; }
     void fail (const std::string& why) noexcept;
     void charge (std::int64_t bytes) noexcept;
+    /// What a row of layer @p depth charges when it starts: its tiles' pixels and, for a written
+    /// layer, room for each tile's compressed stream, settled to the stream's size once it is made,
+    /// so a stream waiting its turn to be written is inside the budget (ZStackBudget_27.10). A
+    /// compressed tile is taken to be no larger than its pixels, which the Builder's capacity assumes too.
+    std::uint64_t row_charge (std::uint32_t depth) const noexcept
+    {
+        const std::uint64_t allowance = _layers[depth].written ? _tile_bytes : 0;
+        return std::uint64_t{_layers[depth].across} * (_tile_bytes + allowance);
+    }
     void issue (std::invocable auto&& body);
 
     EncoderDesc                  _desc;
     std::filesystem::path        _file, _scratch;
     std::unique_ptr<Source>      _source;
     Context                      _context;
+    std::uint32_t                _planes;        // every tile's focal planes (RTM Encode_13)
+    std::uint64_t                _tile_bytes;    // a tile's pixels: _planes × TILE_BYTES
     std::vector<Layer>           _layers;
     std::vector<Job>             _schedule;
     // advance()'s cursors, under its claim: base rows started in row order, derived rows started
@@ -328,6 +337,11 @@ private:
     std::uint64_t                _tiles_total = 0;
     std::atomic<std::uint64_t>   _tiles_written {0};
     std::uint64_t                _budget;
+    std::uint64_t                _smallest = 0;   // the least this slide can keep to; the floor under pressure
+    PressureProbe                _probe;
+    // advance()'s, under its claim: the last pressure read and when.
+    MemoryPressure               _pressure = MemoryPressure::NORMAL;
+    std::chrono::steady_clock::time_point _pressure_read {};
     std::uint64_t                _reserve = 0;   // kept free for derived rows and every worker's scratch
     std::atomic<std::int64_t>    _resident {0};
     std::atomic<std::int64_t>    _peak {0};
@@ -342,13 +356,16 @@ private:
     std::unique_ptr<Iris::Async::Pool> _pool;
 };
 
-Encoder_t::Encoder_t (const EncoderDesc& desc, std::unique_ptr<Source> source, std::uint64_t budget) :
+Encoder_t::Encoder_t (const EncoderDesc& desc, std::unique_ptr<Source> source, std::uint64_t budget, PressureProbe probe) :
 _desc       (desc),
 _file       (desc.destination / file_name(desc.source, desc.encoding)),
 _scratch    (desc.destination / ("." + file_name(desc.source, desc.encoding) + ".partial")),
 _source     (std::move(source)),
 _context    (create_context(ContextCreateInfo {})),
+_planes     (_source->planes()),
+_tile_bytes (std::uint64_t{TILE_BYTES} * _planes),
 _budget     (budget),
+_probe      (probe),
 _pool       (std::make_unique<Iris::Async::Pool>(desc.concurrency))
 {
     // The layers, the source's first, each the 2x reduction of the one before, every
@@ -371,9 +388,20 @@ _pool       (std::make_unique<Iris::Async::Pool>(desc.concurrency))
     }
     // A base row is read only with room left for one row of every derived layer and the scratch
     // of every worker, so the rows that free memory can always start.
-    for (std::size_t d = 1; d < _layers.size(); ++d) _reserve += std::uint64_t{_layers[d].across} * TILE_BYTES;
+    for (std::uint32_t d = 1; d < _layers.size(); ++d) _reserve += row_charge(d);
     _reserve += std::uint64_t{_desc.concurrency} *
                 std::max(_source->read_scratch_bytes(), REDUCE_SCRATCH_BYTES);
+    // RTM Encode_11: the smallest budget this slide can keep to: the pixels of ROWS_HELD rows of
+    // every layer, one row's stream room per layer, and every worker's scratch; and at least one
+    // base row with the reserve beside it, since a base row is read with no row in flight whatever
+    // the budget.
+    std::uint64_t working_set = std::uint64_t{_desc.concurrency} * std::max(_source->read_scratch_bytes(), REDUCE_SCRATCH_BYTES);
+    for (std::uint32_t d = 0; d < _layers.size(); ++d)
+        working_set += (ROWS_HELD - 1) * std::uint64_t{_layers[d].across} * _tile_bytes + row_charge(d);
+    _smallest = std::max(working_set, row_charge(0) + _reserve);
+    if (_budget < _smallest)
+        throw std::runtime_error("a memory budget of " + std::to_string(_budget) + " bytes is below the " +
+                                 std::to_string(_smallest) + " bytes this slide needs at once");
     // The schedule: each base row, then every derived row whose last input row is now made.
     std::vector<std::uint32_t> made(_layers.size(), 0);
     for (std::uint32_t base = 0; base < _layers[0].down; ++base) {
@@ -423,11 +451,16 @@ void Encoder_t::dispatch ()
         std::filesystem::remove(_scratch);
         _builder = Iris::File::Builder::create({
             // A compressed tile never outgrows its raw pixels; only written pages cost disk.
-            .capacity    = Iris::File::BuilderCreateInfo{}.capacity + _tiles_total * TILE_BYTES,
+            .capacity    = Iris::File::BuilderCreateInfo{}.capacity + _tiles_total * _tile_bytes,
             .filepath    = _scratch,
+            // A single-plane layer's streams go unframed; a Z-stacked layer's are framed by the Builder
+            // whatever this says, since the frame is where IFE records a tile's plane count (RTM Encode_13).
             .tile_frames = false,
         });
-        _builder.set_tile_table({.encoding = _desc.encoding, .format = Iris::FORMAT_R8G8B8A8, .extent = ife_extent()});
+        // RTM Encode_13: a Z-stack's every layer carries every plane; one plane leaves the layers single-plane.
+        const Iris::Extent extent = ife_extent();
+        _builder.set_tile_table({.encoding = _desc.encoding, .format = Iris::FORMAT_R8G8B8A8, .extent = extent,
+                                 .planes = std::vector<std::uint16_t>(extent.layers.size(), z_planes())});
     } catch (const std::exception& error) {
         fail(error.what());
         throw;
@@ -480,7 +513,8 @@ bool Encoder_t::is_base_row_admitted () const noexcept
     // budget, so an encode always progresses. The comparison is unsigned, so a budget of
     // UINT64_MAX means no limit.
     const std::uint64_t resident = std::uint64_t(std::max<std::int64_t>(0, _resident.load()));
-    return _rows_in_flight == 0 || resident + std::uint64_t{_layers[0].across} * TILE_BYTES + _reserve <= _budget;
+    // RTM Encode_11: under memory pressure the limit falls toward the slide's least (D26).
+    return _rows_in_flight == 0 || resident + row_charge(0) + _reserve <= pressured_budget(_budget, _smallest, _pressure);
 }
 
 bool Encoder_t::is_startable (const Job& job) const noexcept
@@ -491,8 +525,17 @@ bool Encoder_t::is_startable (const Job& job) const noexcept
     return true;
 }
 
+void Encoder_t::read_pressure () noexcept
+{
+    const auto now = std::chrono::steady_clock::now();
+    if (now - _pressure_read < MEMORY_PRESSURE_INTERVAL) return;
+    _pressure = _probe();
+    _pressure_read = now;
+}
+
 void Encoder_t::step ()
 {
+    read_pressure();
     while (is_base_row_admitted()) start_tiles(0, _next_base++);
     // Derived rows start in schedule order as their inputs are made; base rows have their own cursor.
     for (; _next_job < _schedule.size(); ++_next_job) {
@@ -517,7 +560,7 @@ void Encoder_t::start_tiles (std::uint32_t depth, std::uint32_t r)
     row.remaining.store(across);
     row.stage.store(Row::Stage::WORKING);
     ++_rows_in_flight;
-    charge(std::int64_t(across * TILE_BYTES));
+    charge(std::int64_t(row_charge(depth)));
     for (std::uint32_t x = 0; x < across; ++x)
         issue([this, depth, r, x] { work_tile(depth, r, x); });
 }
@@ -531,28 +574,30 @@ void Encoder_t::work_tile (std::uint32_t depth, std::uint32_t r, std::uint32_t x
         const std::int64_t scratch = std::int64_t(depth == 0 ? _source->read_scratch_bytes() : REDUCE_SCRATCH_BYTES);
         charge(scratch);
         struct Uncharge { Encoder_t* encoder; std::int64_t bytes; ~Uncharge() { encoder->charge(-bytes); } } uncharge {this, scratch};
+        row.pixels[x].resize(_tile_bytes);
         if (depth == 0) {
-            row.pixels[x].resize(TILE_BYTES);
             _source->read_tile(x, r, row.pixels[x]);
         } else {
-            // Gather this tile's region from the layer below, reduce it, and make what lies
-            // beyond this layer's extent white.
+            // Each plane on its own: gather its region from the same plane of the layer below,
+            // reduce it, and make what lies beyond this layer's extent white.
             const Layer& below = _layers[depth - 1];
             std::vector<std::uint8_t> region(std::size_t{REDUCE_REGION} * REDUCE_REGION * RGBA_BYTES);
-            gather_region(below.size, x, r,
-                          [&below](std::uint32_t tx, std::uint32_t ty) {
-                              return std::span<const std::uint8_t>(below.rows[ty].pixels[tx]);
-                          },
-                          region);
-            row.pixels[x].resize(TILE_BYTES);
-            reduce_2x(region, row.pixels[x]);
-            whiten_beyond(_layers[depth].size, x, r, row.pixels[x]);
+            for (std::uint32_t plane = 0; plane < _planes; ++plane) {
+                gather_region(below.size, x, r,
+                              [&below, plane](std::uint32_t tx, std::uint32_t ty) {
+                                  return std::span<const std::uint8_t>(below.rows[ty].pixels[tx]).subspan(plane * TILE_BYTES, TILE_BYTES);
+                              },
+                              region);
+                const auto out = std::span<std::uint8_t>(row.pixels[x]).subspan(plane * TILE_BYTES, TILE_BYTES);
+                reduce_2x(region, out);
+                whiten_beyond(_layers[depth].size, x, r, out);
+            }
         }
         if (!_layers[depth].written) { tile_done(depth, r); return; }   // only reduced from, never stored
-        row.streams[x] = compress_tile(_context, _desc.encoding, row.pixels[x], _desc.quality, _desc.subsampling);
+        row.streams[x] = compress_tile(_context, _desc.encoding, row.pixels[x], _planes, _desc.quality, _desc.subsampling, _desc.effort);
         if (!row.streams[x]) throw std::runtime_error("tile (" + std::to_string(x) + ", " + std::to_string(r) +
                                                       ") of layer " + std::to_string(depth) + " did not compress");
-        charge(std::int64_t(row.streams[x]->size()));
+        charge(std::int64_t(row.streams[x]->size()) - std::int64_t(_tile_bytes));   // the allowance settled to the stream
     } catch (const std::exception& error) {
         fail(error.what());
         return;
@@ -580,7 +625,7 @@ void Encoder_t::write (const Job& job)
         for (std::uint32_t x = 0; x < layer.across; ++x) {
             Buffer& stream = row.streams[x];
             _builder.append_tile(ife_layer, job.row * layer.across + x,
-                                 static_cast<const BYTE*>(stream->data()), stream->size(), 0);
+                                 static_cast<const BYTE*>(stream->data()), stream->size(), z_planes());
             charge(-std::int64_t(stream->size()));
             stream = nullptr;
         }
@@ -602,7 +647,7 @@ void Encoder_t::release_pixels (Row& row) noexcept
 {
     std::int64_t freed = 0;
     for (auto& pixels : row.pixels) {
-        freed += std::int64_t(pixels.capacity() ? TILE_BYTES : 0);
+        freed += std::int64_t(pixels.capacity() ? _tile_bytes : 0);
         std::vector<std::uint8_t>().swap(pixels);
     }
     charge(-freed);
@@ -620,7 +665,7 @@ void Encoder_t::finish ()
     const float to_lowest = float(1u << (_layers.size() - 1));   // the lowest layer's downsample
     std::vector<LayerExtentEntry> extents;
     for (const auto& layer : ife_extent().layers)
-        extents.push_back({.X_TILES = layer.xTiles, .Y_TILES = layer.yTiles, .SCALE = layer.scale, .Z_PLANES = 0});
+        extents.push_back({.X_TILES = layer.xTiles, .Y_TILES = layer.yTiles, .SCALE = layer.scale, .Z_PLANES = z_planes()});
     const Offset offsets_at = _builder->append(TileOffsetsCreateInfo{.entries = _builder.tile_offsets()});
     const Offset extents_at = _builder->append(LayerExtentsCreateInfo{.entries = extents});
     const Offset table_at   = _builder->append(TileTableCreateInfo{
@@ -660,6 +705,7 @@ void Encoder_t::finish ()
         // IFE normalises both to layer scale 1, the lowest resolution.
         .MICRONS_PIXEL     = float(measured.microns_per_pixel) * to_lowest,
         .MAGNIFICATION     = float(measured.magnification) / to_lowest,
+        .MICRONS_PLANE     = float(measured.microns_between_planes),   // RTM Encode_13; 0 for one plane
     });
     _builder.finalize({.tileTable = table_at, .metadata = metadata_at});
     _builder = Iris::File::Builder();   // the mapping is released before the rename
@@ -739,33 +785,41 @@ void check_desc (const EncoderDesc& desc)
         throw std::runtime_error(std::string("the encoder does not write ") + encoding_name(desc.encoding));
     if (desc.quality < QUALITY_MIN || desc.quality > QUALITY_MAX)
         throw std::runtime_error("quality " + std::to_string(desc.quality) + " is outside 1-100");
+    // RTM Encode_16: effort is AV1's speed setting (D25); the JPEG path sets nothing an effort could
+    // change today (libjpeg-turbo's optimised Huffman tables are not set), so it takes EFFORT_MIN alone.
+    if (desc.effort > EFFORT_MAX)
+        throw std::runtime_error("effort " + std::to_string(int(desc.effort)) + " is outside " + std::to_string(int(EFFORT_MIN)) +
+                                 "-" + std::to_string(int(EFFORT_MAX)));
+    if (desc.effort != EFFORT_MIN && desc.encoding != TILE_ENCODING_AV1)
+        throw std::runtime_error("effort " + std::to_string(int(desc.effort)) + " is refused for " + encoding_name(desc.encoding) +
+                                 ", whose encode sets nothing an effort changes today; only AV1 tiles take an effort above " + std::to_string(int(EFFORT_MIN)));
+    // RTM Encode_13: AV1 tiles are 4:2:0 alone (D22), so another chroma is refused before it could
+    // be written as something else.
+    if (desc.encoding == TILE_ENCODING_AV1 && desc.subsampling != SUBSAMPLE_420)
+        throw std::runtime_error("AV1 tiles are 4:2:0 (subsampling 420); subsampling " +
+                                 std::string(subsampling_name(desc.subsampling)) + " is refused");
     if (desc.concurrency == 0) throw std::runtime_error("concurrency 0 is refused: an encode needs at least 1 worker thread");
     if (!std::filesystem::is_directory(desc.destination))
         throw std::runtime_error("the destination " + desc.destination.string() + " is not a folder");
 }
 
 /// The encoder for @p source, after the descriptor's checks and the source's; throws naming the value refused.
-Encoder make_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source)
+Encoder make_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source, PressureProbe probe)
 {
     if (!source) throw std::runtime_error("create_encoder was given no source");
     check_desc(desc);
-    const std::uint32_t per_step = reductions_per_step(desc.layer_step);
+    // RTM Encode_13: AV1 alone carries a Z-stack (D9); IFE's plane count is 16-bit.
+    const std::uint32_t planes = source->planes();
+    if (planes == 0 || planes > std::numeric_limits<std::uint16_t>::max())
+        throw std::runtime_error("the source has " + std::to_string(planes) + " focal planes; 1 to 65535 are encoded");
+    if (planes > 1 && desc.encoding != TILE_ENCODING_AV1)
+        throw std::runtime_error("the source has " + std::to_string(planes) + " focal planes and " + encoding_name(desc.encoding) +
+                                 " tiles carry one; a Z-stack is encoded as TILE_ENCODING_AV1 (JPEG holds a single plane)");
     if (source->size().width == 0 || source->size().height == 0)
         throw std::runtime_error("the source is " + std::to_string(source->size().width) + " x " +
                                  std::to_string(source->size().height) + " pixels; an empty slide is not encoded");
-    // The smallest working set: 5 rows of every layer and every worker's scratch.
-    std::uint64_t working_set = std::uint64_t{desc.concurrency} *
-                                std::max(source->read_scratch_bytes(), REDUCE_SCRATCH_BYTES);
-    LayerSize size = source->size();
-    for (std::uint32_t depth = 0;; ++depth, size = reduced(size)) {
-        working_set += ROWS_HELD * tiles_across(size) * TILE_BYTES;
-        if (is_last_layer(size, depth, per_step)) break;
-    }
     const std::uint64_t budget = desc.memory_budget ? desc.memory_budget : physical_memory() / BUDGET_DIVISOR;
-    if (budget < working_set)
-        throw std::runtime_error("a memory budget of " + std::to_string(budget) + " bytes is below the " +
-                                 std::to_string(working_set) + " bytes this slide needs at once");
-    return std::make_shared<Encoder_t>(desc, std::move(source), budget);
+    return std::make_shared<Encoder_t>(desc, std::move(source), budget, probe);   // refuses a budget below the slide's working set
 }
 
 /// The encoder a boundary was handed, or a throw naming @p call when it was given none.
@@ -785,13 +839,13 @@ Result create_encoder (const EncoderDesc& desc, Encoder& encoder) noexcept
 {
     return at_boundary("create_encoder", [&desc, &encoder] {
         check_desc(desc);   // refused before the source is opened
-        encoder = make_encoder(desc, open_source(desc.source));
+        encoder = make_encoder(desc, open_source(desc.source), memory_pressure);
     });
 }
 
-Result create_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source, Encoder& encoder) noexcept
+Result create_encoder (const EncoderDesc& desc, std::unique_ptr<Source> source, Encoder& encoder, PressureProbe probe) noexcept
 {
-    return at_boundary("create_encoder", [&desc, &source, &encoder] { encoder = make_encoder(desc, std::move(source)); });
+    return at_boundary("create_encoder", [&desc, &source, &encoder, probe] { encoder = make_encoder(desc, std::move(source), probe); });
 }
 
 Result dispatch_encoder (const Encoder& encoder) noexcept

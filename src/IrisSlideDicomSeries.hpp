@@ -36,6 +36,8 @@ struct DicomInstance {
     std::uint32_t         columns       = 0;       ///< Columns: a frame's width
     std::uint32_t         rows          = 0;       ///< Rows: a frame's height
     std::uint32_t         frames        = 0;       ///< NumberOfFrames, 1 when absent
+    std::uint32_t         focal_planes  = 1;       ///< TotalPixelMatrixFocalPlanes, 1 when absent
+    double                plane_spacing_mm = 0.0;  ///< DistanceBetweenFocalPlanes; 0 when absent
     /// Pixel Spacing from SharedFunctionalGroupsSequence › PixelMeasuresSequence; absent on many
     /// LABEL and OVERVIEW instances, which the encoder does not read, so the source requires it.
     std::optional<PixelSpacing> spacing;

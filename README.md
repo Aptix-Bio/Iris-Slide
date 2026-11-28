@@ -32,10 +32,10 @@ The Iris Slide encoder reads a DICOM whole-slide image and writes it as an Iris 
 
 **Key Features:**
 - **Sources**: a DICOM whole-slide series' highest-resolution instance (TILED_FULL), its frames JPEG, JPEG 2000 or HTJ2K, read from a read-only memory map so every worker reads its own frames at once
-- **Tiles**: 256-pixel tiles re-cut from frames of any size; JPEG tiles, quality and chroma subsampling set by the caller (90, 4:2:2 by default). The Iris format's AV1, UASTC and XUASTC tile encodings are not yet encoded or decoded; a slide whose tiles declare one is refused with an error naming the encoding
+- **Tiles**: 256-pixel tiles re-cut from frames of any size, encoded as JPEG (quality and chroma subsampling set by the caller, 90 and 4:2:2 by default) or AV1 (libaom; BT.601 at full range, 8-bit 4:2:0, one bare stream per tile). Iris Slide does not yet decode AV1 tiles, nor encode or decode the UASTC and XUASTC tile encodings; reading a slide whose tiles declare one is refused with an error naming the encoding
 - **Layers**: each lower layer derived by a 2x Mitchell-Netravali reduction in fixed-point arithmetic, the same bytes on every CPU, down to the first that fits one tile; a layer step of any power of two from 2 between written layers (default 2)
-- **Deterministic and bounded**: the same source and options give a byte-identical file; memory held at once stays within a budget (a quarter of physical memory by default)
-- **Identity**: from DICOM only the pixel spacing, magnification and ICC profile are carried; the caller's I2S attributes are the slide's only attributes
+- **Deterministic and bounded**: the same source and options give a byte-identical file; memory held at once stays within a budget (half of physical memory by default), and while the operating system reports memory pressure the encoder holds less, down to the least the slide needs
+- **Identity**: from DICOM only the pixel spacing, magnification, ICC profile and, for a Z-stack, the focal-plane spacing (DistanceBetweenFocalPlanes, written as MICRONS_PLANE) are carried; the caller's I2S attributes are the slide's only attributes
 
 ## How the codec sits on the Iris File Extension
 
@@ -62,8 +62,9 @@ The Builder writes each block where the head is when it is asked, so the encoder
 
 **Requirements:**
 - C++ 20 Standard Library
+- On Windows, Visual Studio 2022 with its C++ Clang tools for Windows: libaom is compiled by Visual Studio's clang-cl, whichever compiler builds Iris-Slide ([development/PIPELINE.md](development/PIPELINE.md) rule 5)
 - [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo), and [libavif](https://github.com/AOMediaCodec/libavif) for AVIF associated images
-- [libdicom](https://github.com/ImagingDataCommons/libdicom) and [OpenJPEG](https://github.com/uclouvain/openjpeg) (for the encoder only)
+- [libdicom](https://github.com/ImagingDataCommons/libdicom), [OpenJPEG](https://github.com/uclouvain/openjpeg), [libaom](https://aomedia.googlesource.com/aom) and [libyuv](https://chromium.googlesource.com/libyuv/libyuv) (for the encoder only), and [dav1d](https://code.videolan.org/videolan/dav1d) (for the tests only)
 
 ## Building From Source
 
@@ -73,7 +74,7 @@ The Builder writes each block where the head is when it is asked, so the encoder
 
 **Basic Build:** every dependency comes from `vcpkg.json`; the first configure
 fetches the pinned vcpkg into `dependencies/` and builds the packages once
-(`pkg-config` is needed on macOS and Linux). See
+(`pkg-config` is needed on macOS and Linux; on Windows, Visual Studio's C++ Clang tools). See
 [development/PIPELINE.md](development/PIPELINE.md).
 ```shell
 git clone --depth 1 https://github.com/Aptix-Bio/Iris-Slide.git
@@ -137,7 +138,7 @@ const irisSlide = await createModule();
 
 **Command Line:**
 ```shell
-# A DICOM slide's highest-resolution instance to ./output/<name>.jpeg.iris
+# A DICOM slide's highest-resolution instance to ./output/<name>.jpeg.iris, or <name>.av1.iris with -e av1
 ./IrisSlideEncoder -s slide.dcm -o ./output/
 
 # Quality 95, full chroma, a layer every 4x, 8 threads, at most 4 GiB held
@@ -146,11 +147,13 @@ const irisSlide = await createModule();
 
 **Available Arguments:**
 - `-s, --source`: the slide, a DICOM whole-slide instance (JPEG, JPEG 2000 or HTJ2K frames)
-- `-o, --outdir`: the folder `<source stem>.jpeg.iris` is written to (default: the source's)
+- `-o, --outdir`: the folder `<source stem>.<encoding>.iris` is written to (default: the source's)
+- `-e, --encoding`: the tile encoding, `jpeg` or `av1` (default `jpeg`)
+- `--effort`: how hard the encoder works on each tile, `0` (fastest, the default) to `6` (the slowest, and usually the smallest at the same quality); `av1` only, through libaom's speed setting
 - `-q, --quality`: JPEG quality, 1-100 (default 90)
-- `--subsampling`: JPEG chroma subsampling, `444`, `422` or `420` (default `422`)
+- `--subsampling`: chroma subsampling, `444`, `422` or `420` (default `422` for `jpeg`; `av1` tiles are `420` alone, the default they take)
 - `--layer-step`: the scale between written layers, a power of two from 2 (default 2)
-- `--memory-budget`: GiB held at once (default: a quarter of physical memory)
+- `--memory-budget`: GiB held at once at most (default: half of physical memory); under the system's memory pressure the encoder holds less
 - `-c, --concurrency`: worker threads (default: every core)
 
 **Python:**
@@ -453,7 +456,7 @@ written = Encoder.encode_slide_file(
 )                           # an option left out takes the encoder's default (every core for concurrency)
 ```
 
-**Parameters:** `source`, `outdir` (default: the source's folder), `quality`, `subsampling`, `layer_step`, `memory_budget` (bytes; 0 is a quarter of physical memory), `concurrency` (at least 1; left out, every core), `i2s_attributes` (the slide's Iris Interoperability Specification attributes as key and value text, written as its `METADATA_I2S` attributes; a key that is not ASCII or a value that is not UTF-8 is refused naming it), `i2s_version` (the I2S version, `major << 8 | minor`, so I2S 0.1 is 1; required with `i2s_attributes`), `show_progress`. The lower-level calls are `create_encoder`, `dispatch_encoder`, `encoder_progress` and `interrupt_encoder`.
+**Parameters:** `source`, `outdir` (default: the source's folder), `encoding` (`'jpeg'`, the default, or `'av1'`), `quality`, `subsampling` (left out, the encoding's default: `'422'` for JPEG, `'420'` for AV1, its only chroma), `effort` (AV1 only: `0`, the fastest and the default, to `6`, the slowest and usually the smallest), `layer_step`, `memory_budget` (bytes; 0 is half of physical memory, held lower while the system reports memory pressure), `concurrency` (at least 1; left out, every core), `i2s_attributes` (the slide's Iris Interoperability Specification attributes as key and value text, written as its `METADATA_I2S` attributes; a key that is not ASCII or a value that is not UTF-8 is refused naming it), `i2s_version` (the I2S version, `major << 8 | minor`, so I2S 0.1 is 1; required with `i2s_attributes`), `show_progress`. The lower-level calls are `create_encoder`, `dispatch_encoder`, `encoder_progress` and `interrupt_encoder`.
 
 ## JavaScript Detailed Examples
 

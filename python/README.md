@@ -275,7 +275,7 @@ Efficient patterns for large-scale analysis:
 
 ## Encoding API
 
-The Python module encodes a DICOM whole-slide image (its highest-resolution instance; JPEG, JPEG 2000 or HTJ2K frames) as an Iris slide, `<source stem>.jpeg.iris`. Every lower layer is derived by a 2x bicubic reduction, down to the first that fits one tile. Every failure raises `RuntimeError` naming what failed.
+The Python module encodes a DICOM whole-slide image (its highest-resolution instance; JPEG, JPEG 2000 or HTJ2K frames) as an Iris slide, `<source stem>.jpeg.iris`, or `<source stem>.av1.iris` with `encoding='av1'`. Every lower layer is derived by a 2x bicubic reduction, down to the first that fits one tile. Every failure raises `RuntimeError` naming what failed.
 
 ### Encoding
 
@@ -288,7 +288,7 @@ written = Encoder.encode_slide_file(
     quality=90,           # JPEG quality, 1-100
     subsampling='422',    # '444', '422' or '420'
     layer_step=4,         # a written layer every 4x
-    memory_budget=0,      # bytes held at once; 0 is a quarter of physical memory
+    memory_budget=0,      # bytes held at once at most; 0 is half of physical memory, less under memory pressure
     concurrency=8,
 )
 ```
@@ -312,9 +312,9 @@ print(progress.state, progress.file, progress.error)
 
 ### Encoding Options Reference
 
-**Tile encodings:** JPEG. The Iris format's AV1, UASTC and XUASTC tile encodings are not yet encoded or decoded by Iris Slide; reading a slide whose tiles declare one fails with an error naming the encoding.
+**Tile encodings:** JPEG and AV1 (BT.601 at full range, 8-bit 4:2:0) are encoded. AV1 tiles are not yet decoded, and the UASTC and XUASTC tile encodings are neither encoded nor decoded; reading a slide whose tiles declare one fails with an error naming the encoding.
 
-**Identity:** from the DICOM source only the pixel spacing, magnification and ICC profile are carried. The caller's `i2s_attributes` (with `i2s_version`, `major << 8 | minor`) are the slide's only attributes.
+**Identity:** from the DICOM source only the pixel spacing, magnification, ICC profile and, for a Z-stack, the focal-plane spacing (DistanceBetweenFocalPlanes, written as MICRONS_PLANE) are carried. The caller's `i2s_attributes` (with `i2s_version`, `major << 8 | minor`) are the slide's only attributes.
 
 ## Integration Examples
 

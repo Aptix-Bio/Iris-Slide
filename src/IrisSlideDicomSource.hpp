@@ -37,21 +37,26 @@ class DicomSource final : public Source {
 public:
     /// Throws std::runtime_error naming the file when it is not TILED_FULL, its codec is not one
     /// decode_frame decodes, its PhotometricInterpretation is not one its codec carries as 8-bit
-    /// colour, its Pixel Spacing is not square, its frame count is not one per position of one focal plane, or its
+    /// colour, its Pixel Spacing is not square, its frame count is not one per position of each focal plane, or its
     /// frames cannot be indexed.
     explicit DicomSource (const DicomInstance& instance);
 
     LayerSize size () const noexcept override { return {.width = _grid.width, .height = _grid.height}; }
     const SourceMeasurements& measurements () const noexcept override { return _measurements; }
+    std::uint32_t planes () const noexcept override { return _planes; }
     void read_tile (std::uint32_t x, std::uint32_t y, std::span<std::uint8_t> rgba) override;
     std::uint64_t read_scratch_bytes () const noexcept override;
 
 private:
+    /// Plane @p plane of tile (x, y): its frames read, decoded and re-cut.
+    void read_plane (std::uint32_t x, std::uint32_t y, std::uint32_t plane, std::span<std::uint8_t> rgba);
     SourceCodec         _codec;
     FrameColor          _color;
     SlideGrid           _grid;
     SourceMeasurements  _measurements;
     std::uint32_t       _frames_across = 0;
+    std::uint32_t       _planes = 1;
+    std::uint64_t       _frames_per_plane = 0;
     DicomFrameIndex     _index;
 };
 } // END IRIS SLIDE NAMESPACE

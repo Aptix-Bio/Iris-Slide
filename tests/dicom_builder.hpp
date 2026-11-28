@@ -5,6 +5,7 @@
 #define IrisSlideTestDicomBuilder_hpp
 
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -53,6 +54,12 @@ inline void ul(Bytes& b, std::uint16_t g, std::uint16_t e, std::uint32_t value)
 {
     tag(b, g, e); b.push_back('U'); b.push_back('L'); u16(b, 4); u32(b, value);
 }
+inline void fl(Bytes& b, std::uint16_t g, std::uint16_t e, float value)
+{
+    std::uint32_t bits = 0;
+    std::memcpy(&bits, &value, sizeof bits);
+    tag(b, g, e); b.push_back('F'); b.push_back('L'); u16(b, 4); u32(b, bits);
+}
 
 /// The 128-byte preamble, "DICM" and the file meta group for @p transfer_syntax.
 inline void file_meta(Bytes& b, const std::string& transfer_syntax, const std::string& sop_class, const std::string& sop)
@@ -79,7 +86,9 @@ struct WholeSlide {
     std::string        pixel_spacing = "0.00025\\0.00025";       ///< empty: no SharedFunctionalGroupsSequence
     std::string        series_uid = "1.2.826.0.1.3680043.10.2";
     std::string        sop_uid = "1.2.826.0.1.3680043.10.3";
-    std::vector<Bytes> frames;
+    std::uint32_t      focal_planes = 1;       ///< more than 1: TotalPixelMatrixFocalPlanes is written
+    float              plane_spacing_mm = 0;   ///< DistanceBetweenFocalPlanes, written with the planes
+    std::vector<Bytes> frames;                 ///< every position of plane 0, then of plane 1, ...
 };
 inline Bytes whole_slide(const WholeSlide& slide)
 {
@@ -101,6 +110,10 @@ inline Bytes whole_slide(const WholeSlide& slide)
     us(b, 0x0028, 0x0100, 8); us(b, 0x0028, 0x0101, 8); us(b, 0x0028, 0x0102, 7); us(b, 0x0028, 0x0103, 0);
     ul(b, 0x0048, 0x0006, slide.width);
     ul(b, 0x0048, 0x0007, slide.height);
+    if (slide.focal_planes != 1) {   // 0 too, so a test can declare it
+        fl(b, 0x0048, 0x0014, slide.plane_spacing_mm);   // DistanceBetweenFocalPlanes
+        ul(b, 0x0048, 0x0303, slide.focal_planes);       // TotalPixelMatrixFocalPlanes
+    }
     // SharedFunctionalGroupsSequence › PixelMeasuresSequence › PixelSpacing, undefined lengths.
     if (!slide.pixel_spacing.empty()) {
         long_header(b, 0x5200, 0x9229, "SQ", UNDEFINED);
