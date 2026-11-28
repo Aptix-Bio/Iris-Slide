@@ -185,7 +185,7 @@ and from each upstream's release.
 | GLM | 1.0.3 (override) | 1.0.3 | vcpkg baseline |
 | pybind11 | 3.1.0 (overlay: vcpkg's port without its python3 dependency) | v3.1.0 | vcpkg baseline; the archive's SHA-512 is vcpkg's |
 | Catch2 | 3.15.1 (override, feature `tests`) | 3.15.1 | vcpkg `versions/c-/catch2.json` (baseline 3.16.0) |
-| Iris-Headers | `9ca5b91746cad2221c737af0671422e85ff8f00d` (feature/Av1TileEncode_27, moved 2026-11-27 from main's `4eecc96`) | — | the paired branch of Aptix-Bio/Iris-Headers#15: `EncoderDesc::effort`, https://github.com/Aptix-Bio/Iris-Headers/commit/9ca5b91746cad2221c737af0671422e85ff8f00d, the archive's SHA-512 computed 2026-11-27, until it merges (PortsPinMain_17.6) |
+| Iris-Headers | `fb73e7de4636d79a45e1d985fa2862f3e1394a88` (main, moved 2026-11-28 from `9ca5b91` on the paired branch `feature/Av1TileEncode_27`) | — | the merge of Aptix-Bio/Iris-Headers#15 (`EncoderDesc::effort`), https://github.com/Aptix-Bio/Iris-Headers/commit/fb73e7de4636d79a45e1d985fa2862f3e1394a88, the archive's SHA-512 computed 2026-11-28 (PortsPinMain_17.6) |
 | Iris-File-Extension | `b31a788dd29f74edfb827dbb3a20ac5887ca7676` (main, moved 2026-11-27 from `06ec6f2`) | — | IFE's read calls return a `Result` and write their value through a reference (IFE R-8, decided 2026-11-25), https://github.com/Aptix-Bio/Iris-File-Extension/commit/b31a788dd29f74edfb827dbb3a20ac5887ca7676, the archive's SHA-512 computed 2026-11-27 (PortsPinMain_17.6) |
 | Emscripten SDK | 6.0.13, `35659964bc2762fffec0d257997fb61475f765b7` | — | https://github.com/emscripten-core/emsdk/releases/tag/6.0.13 |
 | sccache | v0.19.0 | — | through mozilla-actions/sccache-action v0.0.11 |
