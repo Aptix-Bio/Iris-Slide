@@ -43,6 +43,9 @@ TEST_CASE("Each system's pressure signal reads as its level, and a signal that c
                                 "full avg10=15.00 avg60=0.50 avg300=0.10 total=3\n") == MemoryPressure::CRITICAL);
     CHECK(pressure_of_linux_psi("some avg10=x avg60=0.00\nfull avg10=\n") == MemoryPressure::NORMAL);
     CHECK(pressure_of_linux_psi("") == MemoryPressure::NORMAL);
+    // Fractional readings either side of the thresholds, read the same in every locale.
+    CHECK(pressure_of_linux_psi("some avg10=10.50 avg60=0.00\nfull avg10=9.99 avg60=0.00\n") == MemoryPressure::WARNING);
+    CHECK(pressure_of_linux_psi("some avg10=0.00\nfull avg10=10.01\n") == MemoryPressure::CRITICAL);
 
     CHECK(pressure_of_linux_meminfo("MemTotal:       1000 kB\nMemFree:  10 kB\nMemAvailable:    500 kB\n") == MemoryPressure::NORMAL);
     CHECK(pressure_of_linux_meminfo("MemTotal:       1000 kB\nMemAvailable:     80 kB\n") == MemoryPressure::WARNING);

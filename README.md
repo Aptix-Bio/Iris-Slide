@@ -62,6 +62,7 @@ The Builder writes each block where the head is when it is asked, so the encoder
 
 **Requirements:**
 - C++ 20 Standard Library
+- On Windows, Visual Studio 2022 with its C++ Clang tools for Windows: libaom is compiled by Visual Studio's clang-cl, whichever compiler builds Iris-Slide ([development/PIPELINE.md](development/PIPELINE.md) rule 5)
 - [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo), and [libavif](https://github.com/AOMediaCodec/libavif) for AVIF associated images
 - [libdicom](https://github.com/ImagingDataCommons/libdicom), [OpenJPEG](https://github.com/uclouvain/openjpeg), [libaom](https://aomedia.googlesource.com/aom) and [libyuv](https://chromium.googlesource.com/libyuv/libyuv) (for the encoder only), and [dav1d](https://code.videolan.org/videolan/dav1d) (for the tests only)
 
@@ -73,7 +74,7 @@ The Builder writes each block where the head is when it is asked, so the encoder
 
 **Basic Build:** every dependency comes from `vcpkg.json`; the first configure
 fetches the pinned vcpkg into `dependencies/` and builds the packages once
-(`pkg-config` is needed on macOS and Linux). See
+(`pkg-config` is needed on macOS and Linux; on Windows, Visual Studio's C++ Clang tools). See
 [development/PIPELINE.md](development/PIPELINE.md).
 ```shell
 git clone --depth 1 https://github.com/Aptix-Bio/Iris-Slide.git
@@ -148,7 +149,7 @@ const irisSlide = await createModule();
 - `-s, --source`: the slide, a DICOM whole-slide instance (JPEG, JPEG 2000 or HTJ2K frames)
 - `-o, --outdir`: the folder `<source stem>.<encoding>.iris` is written to (default: the source's)
 - `-e, --encoding`: the tile encoding, `jpeg` or `av1` (default `jpeg`)
-- `--effort`: how hard the encoder works on each tile, `0` (fastest, the default) to `6` (smallest at the same quality); `av1` only, through libaom's speed setting
+- `--effort`: how hard the encoder works on each tile, `0` (fastest, the default) to `6` (the slowest, and usually the smallest at the same quality); `av1` only, through libaom's speed setting
 - `-q, --quality`: JPEG quality, 1-100 (default 90)
 - `--subsampling`: chroma subsampling, `444`, `422` or `420` (default `422` for `jpeg`; `av1` tiles are `420` alone, the default they take)
 - `--layer-step`: the scale between written layers, a power of two from 2 (default 2)

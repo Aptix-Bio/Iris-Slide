@@ -29,7 +29,7 @@ def encode_slide_file(source: str, outdir: str = "", quality: int | None = None,
 
     encoding is the tile encoding, 'jpeg' (the encoder's default) or 'av1'; an AV1 slide's tiles are 4:2:0 alone, the
     subsampling it takes when none is named. effort is how hard the encoder works on each AV1 tile,
-    0 (fastest, the default) to 6 (smallest at the same quality).
+    0 (fastest, the default) to 6 (the slowest, usually the smallest at the same quality).
 
     An option left as None takes the encoder's own default (create_encoder's), so the defaults are
     written once, in the core.

@@ -5,7 +5,10 @@
 #   Studio 2022 17.14, the windows-2025 runners' compiler) miscompiles libaom 3.15.3's
 #   motion_mode_rd (av1/encoder/rdopt.c): an SSE andps reads its sign mask from a stack slot 8
 #   bytes off the 16-byte alignment the instruction requires, so an inter-frame encode faults
-#   (found 2026-11-27). MSVC 19.51 compiles the same source correctly, so a toolset outside the
+#   (found 2026-11-28 on CI at ca97e1e). On a Windows x64 machine with MSVC 14.44.35207 the two
+#   Z-stack budget tests fault as on CI (103/105) and pass with aom from clang-cl (105/105); five
+#   CPUs emulated by Intel SDE 10.13.1 pass, AVX-512 included, so the fault follows the compiler.
+#   MSVC 19.51 compiles the same source correctly, so a toolset outside the
 #   image would fix the runners but not a user building with Visual Studio 2022; clang-cl from
 #   the same Visual Studio install fixes both. vcpkg's Windows toolchain already handles clang-cl.
 set(VCPKG_TARGET_ARCHITECTURE x64)

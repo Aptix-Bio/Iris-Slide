@@ -9,7 +9,6 @@
 #include "IrisSlideMemoryPressure.hpp"
 
 #include <array>
-#include <cstdlib>
 #include <optional>
 
 #if defined(__APPLE__)
@@ -39,21 +38,24 @@ constexpr double LINUX_SOME_WARNING = 10.0, LINUX_FULL_CRITICAL = 10.0;
 constexpr double LINUX_AVAILABLE_WARNING = 0.10, LINUX_AVAILABLE_CRITICAL = 0.05;
 constexpr std::string_view AVG10 = "avg10=";
 
-/// The longest number leading_number reads; a pressure share or a kB count is far shorter.
-constexpr std::size_t NUMBER_CHARS = 31;
-
-/// The number that opens @p text after any spaces, or nothing when none does. Read with strtod
-/// from a terminated copy, since Apple's libc++ for macOS 15 deletes std::from_chars for double.
+/// The unsigned decimal that opens @p text after any spaces (digits, then optionally a point and
+/// more digits), or nothing when none does. Parsed by hand, since strtod reads the decimal point
+/// from the process's locale and Apple's libc++ for macOS 15 has no std::from_chars for double;
+/// the kernel writes these numbers with a point in every locale.
 std::optional<double> leading_number (std::string_view text) noexcept
 {
     const auto start = text.find_first_not_of(' ');
     if (start == std::string_view::npos) return std::nullopt;
-    std::array<char, NUMBER_CHARS + 1> digits {};
-    const auto length = std::min(NUMBER_CHARS, text.size() - start);
-    text.copy(digits.data(), length, start);
-    char* end = nullptr;
-    const double value = std::strtod(digits.data(), &end);
-    if (end == digits.data()) return std::nullopt;
+    text.remove_prefix(start);
+    const auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+    if (text.empty() || !is_digit(text.front())) return std::nullopt;
+    double value = 0;
+    std::size_t at = 0;
+    for (; at < text.size() && is_digit(text[at]); ++at) value = value * 10 + (text[at] - '0');
+    if (at < text.size() && text[at] == '.') {
+        double place = 0.1;
+        for (++at; at < text.size() && is_digit(text[at]); ++at, place /= 10) value += (text[at] - '0') * place;
+    }
     return value;
 }
 /// avg10 of the /proc/pressure/memory line that starts with @p kind, or nothing.
@@ -92,7 +94,7 @@ public:
     FileDescriptor& operator= (const FileDescriptor&) = delete;
     ~FileDescriptor () { if (_fd >= 0) ::close(_fd); }
     [[nodiscard]] bool is_open () const noexcept { return _fd >= 0; }
-    [[nodiscard]] int get () const noexcept { return _fd; }
+    [[nodiscard]] int fd () const noexcept { return _fd; }
 private:
     int _fd;
 };
@@ -104,7 +106,7 @@ std::string_view proc_file (const char* path, std::array<char, PROC_FILE_BYTES>&
     if (!file.is_open()) return {};
     std::size_t length = 0;
     while (length < buffer.size()) {
-        const ssize_t got = ::read(file.get(), buffer.data() + length, buffer.size() - length);
+        const ssize_t got = ::read(file.fd(), buffer.data() + length, buffer.size() - length);
         if (got <= 0) break;
         length += static_cast<std::size_t>(got);
     }

@@ -46,7 +46,7 @@ std::string help ()
         "  -q, --quality N          tile quality, 1-100 (default {})\n"
         "      --subsampling S      chroma subsampling: 444, 422 or 420 (default {} for jpeg; av1 is 420 alone)\n"
         "      --layer-step N       the scale between written layers, a power of two from 2 (default {})\n"
-        "      --effort N           how hard to work on each tile, 0 (fastest) to 6 (smallest); av1 only (default {})\n"
+        "      --effort N           how hard to work on each tile, 0 (fastest) to 6 (slowest, usually smallest); av1 only (default {})\n"
         "      --memory-budget GIB  memory held at once at most, less under memory pressure (default: half of physical memory)\n"
         "  -c, --concurrency N      worker threads (default: every core, {} here)\n"
         "  -h, --help               this text\n",

@@ -85,7 +85,7 @@ PYBIND11_MODULE(encoder, m)
     m.def("create_encoder", &create,
           "An encoder for one slide (a DICOM whole-slide instance: JPEG, JPEG 2000 or HTJ2K frames), writing "
           "<source stem>.<encoding>.iris into destination, its tiles 'jpeg' or 'av1'; subsampling left as None "
-          "takes the encoding's default ('422' for jpeg; av1 is '420' alone); effort is how hard to work on each tile, 0 (fastest) to 6 (smallest), av1 only; raises RuntimeError naming what it refuses",
+          "takes the encoding's default ('422' for jpeg; av1 is '420' alone); effort is how hard to work on each tile, 0 (fastest) to 6 (slowest, usually smallest), av1 only; raises RuntimeError naming what it refuses",
           py::arg("source"), py::arg("destination"), py::arg("quality") = std::uint64_t{DEFAULTS.quality},
           py::arg("subsampling") = std::optional<std::string>(),
           py::arg("memory_budget") = DEFAULTS.memory_budget,
