@@ -290,11 +290,11 @@ TEST_CASE("Every tile of an AV1 slide the encoder writes is one plane dav1d deco
 TEST_CASE("A Z-stacked slide is written with every focal plane of every tile, the in-focus plane first", "[Encode_13]")
 {
     // ZStackSource_27.9: five planes, the middle one in focus; stream order 2, 3, 1, 4, 0 (D9).
-    constexpr std::uint32_t PLANES = 5, IN_FOCUS = PLANES / 2;
-    constexpr std::array<std::uint32_t, PLANES> STREAM_ORDER {2, 3, 1, 4, 0};
+    constexpr std::uint32_t STACK_PLANES = 5, IN_FOCUS = STACK_PLANES / 2;
+    constexpr std::array<std::uint32_t, STACK_PLANES> STREAM_ORDER {2, 3, 1, 4, 0};
     const ScratchFolder folder;
     IrisSlide::EncoderProgress progress;
-    const auto created = encode_stack(folder, PLANES, IrisSlide::TILE_ENCODING_AV1, progress);
+    const auto created = encode_stack(folder, STACK_PLANES, IrisSlide::TILE_ENCODING_AV1, progress);
     INFO(created.message << progress.error);
     REQUIRE(progress.state == IrisSlide::EncoderState::DONE);
     Iris::File::Parser parser;
@@ -303,31 +303,31 @@ TEST_CASE("A Z-stacked slide is written with every focal plane of every tile, th
     REQUIRE(parser.abstraction(file).succeeded());
     CHECK(std::abs(file->micronsPerPlane - 1.f) < 1e-6f);
     REQUIRE(file->tileTable.planes.size() == file->tileTable.layers.size());
-    for (const auto planes : file->tileTable.planes) CHECK(planes == PLANES);
+    for (const auto planes : file->tileTable.planes) CHECK(planes == STACK_PLANES);
     for (std::uint32_t layer = 0; layer < file->tileTable.layers.size(); ++layer)
         for (std::uint32_t tile = 0; tile < file->tileTable.layers[layer].size(); ++tile) {
             INFO("layer " << layer << ", tile " << tile);
             std::uint16_t planes = 0;
             REQUIRE(parser.tile_planes(layer, tile, planes).succeeded());
-            CHECK(planes == PLANES);
+            CHECK(planes == STACK_PLANES);
             std::span<const std::uint8_t> stream;
             REQUIRE(parser.tile(layer, tile, stream).succeeded());
             const auto decoded = decode(stream);
-            REQUIRE(decoded.size() == PLANES);
+            REQUIRE(decoded.size() == STACK_PLANES);
             CHECK(decoded.front().frame_type == DAV1D_FRAME_TYPE_KEY);
-            for (std::size_t p = 1; p < PLANES; ++p) CHECK(decoded[p].frame_type == DAV1D_FRAME_TYPE_INTER);
+            for (std::size_t p = 1; p < STACK_PLANES; ++p) CHECK(decoded[p].frame_type == DAV1D_FRAME_TYPE_INTER);
         }
     // At full resolution, tile (0, 0) is the source's own tile: each decoded plane matches the
     // plane its stream position names, so the in-focus plane leads.
-    StackSource source(SLIDE, PLANES);
-    std::vector<std::uint8_t> planes(PLANES * SIDE * SIDE * RGBA);
+    StackSource source(SLIDE, STACK_PLANES);
+    std::vector<std::uint8_t> planes(STACK_PLANES * SIDE * SIDE * RGBA);
     source.read_tile(0, 0, planes);
     const auto full = static_cast<std::uint32_t>(file->tileTable.layers.size() - 1);
     std::span<const std::uint8_t> stream;
     REQUIRE(parser.tile(full, 0, stream).succeeded());
     const auto decoded = decode(stream);
-    REQUIRE(decoded.size() == PLANES);
-    for (std::size_t position = 0; position < PLANES; ++position) {
+    REQUIRE(decoded.size() == STACK_PLANES);
+    for (std::size_t position = 0; position < STACK_PLANES; ++position) {
         INFO("stream position " << position);
         const auto plane = std::span<const std::uint8_t>(planes).subspan(STREAM_ORDER[position] * SIDE * SIDE * RGBA, SIDE * SIDE * RGBA);
         const auto source_luma = IrisSlide::tile_to_i420(plane);

@@ -93,23 +93,23 @@ TEST_CASE("A Z-stacked instance is read as every focal plane of each tile, in Z 
 {
     // ZStackSource_27.9: three planes, each the pattern raised by its own amount, so a plane read
     // from the wrong frames is told apart.
-    constexpr std::uint32_t PLANES = 3;
+    constexpr std::uint32_t STACK_PLANES = 3;
     constexpr std::uint8_t LIFT_STEP = 20;
     dicom_builder::WholeSlide built {.width = WIDTH, .height = HEIGHT, .frame_columns = FRAME, .frame_rows = FRAME};
-    built.focal_planes = PLANES;
+    built.focal_planes = STACK_PLANES;
     built.plane_spacing_mm = 0.001f;
-    for (std::uint32_t p = 0; p < PLANES; ++p)
+    for (std::uint32_t p = 0; p < STACK_PLANES; ++p)
         for (std::uint32_t fy = 0; fy < FRAMES_DOWN; ++fy)
             for (std::uint32_t fx = 0; fx < FRAMES_ACROSS; ++fx)
                 built.frames.push_back(jpeg_frame(fx, fy, static_cast<std::uint8_t>(p * LIFT_STEP)));
     const auto path = dicom_builder::write_instance(dicom_builder::whole_slide(built), "source_zstack");
     auto source = IrisSlide::open_dicom_source(path);
-    REQUIRE(source->planes() == PLANES);
+    REQUIRE(source->planes() == STACK_PLANES);
     CHECK(std::abs(source->measurements().microns_between_planes - 1.0) < 1e-6);
     constexpr std::size_t TILE_BYTES = std::size_t{IrisSlide::RECUT_TILE} * IrisSlide::RECUT_TILE * RGBA;
-    std::vector<std::uint8_t> planes(PLANES * TILE_BYTES);
+    std::vector<std::uint8_t> planes(STACK_PLANES * TILE_BYTES);
     source->read_tile(1, 1, planes);
-    for (std::uint32_t p = 0; p < PLANES; ++p) {
+    for (std::uint32_t p = 0; p < STACK_PLANES; ++p) {
         INFO("plane " << p);
         std::size_t not_white = 0;
         CHECK(tile_psnr(std::span(planes).subspan(p * TILE_BYTES, TILE_BYTES), 1, 1, not_white,
