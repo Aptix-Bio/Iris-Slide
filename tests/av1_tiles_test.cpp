@@ -383,6 +383,20 @@ TEST_CASE("Every plane of a stack is coded at the quantiser its quality names, t
     }
 }
 
+TEST_CASE("The highest effort writes a stack no larger than the lowest, at the same quantiser", "[Encode_13]")
+{
+    // Av1TileEncode_27 (decided 2026-11-27): effort maps to libaom's speed (6 - effort).
+    const auto planes = z_stack();
+    const auto fastest = IrisSlide::encode_av1_tile(spans_of(planes), QUALITY, IrisSlide::EFFORT_MIN);
+    const auto smallest = IrisSlide::encode_av1_tile(spans_of(planes), QUALITY, IrisSlide::EFFORT_MAX);
+    CHECK(smallest.size() <= fastest.size());
+    const auto decoded_fastest = decode(fastest), decoded_smallest = decode(smallest);
+    REQUIRE(decoded_smallest.size() == planes.size());
+    for (std::size_t plane = 0; plane < planes.size(); ++plane) CHECK(decoded_smallest[plane].q_index == decoded_fastest[plane].q_index);
+    const std::vector<std::span<const std::uint8_t>> one {planes.front()};
+    CHECK_THROWS_WITH(IrisSlide::encode_av1_tile(one, QUALITY, IrisSlide::EFFORT_MAX + 1), ContainsSubstring("effort 7"));
+}
+
 TEST_CASE("The same planes and quality give the same AV1 bytes", "[Encode_12][Encode_13]")
 {
     const auto planes = z_stack();

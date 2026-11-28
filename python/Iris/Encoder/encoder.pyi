@@ -85,9 +85,9 @@ class Encoder:
     """
     An encoder for one slide; it encodes once
     """
-def create_encoder(source: str, destination: str, encoding: str = 'jpeg', quality: typing.SupportsInt | typing.SupportsIndex = 90, subsampling: str | None = None, memory_budget: typing.SupportsInt | typing.SupportsIndex = 0, concurrency: typing.SupportsInt | typing.SupportsIndex = ..., layer_step: typing.SupportsInt | typing.SupportsIndex = 2, i2s_attributes: collections.abc.Mapping[str, str] = {}, i2s_version: typing.SupportsInt | typing.SupportsIndex = 0) -> Encoder:
+def create_encoder(source: str, destination: str, encoding: str = 'jpeg', quality: typing.SupportsInt | typing.SupportsIndex = 90, subsampling: str | None = None, memory_budget: typing.SupportsInt | typing.SupportsIndex = 0, concurrency: typing.SupportsInt | typing.SupportsIndex = ..., layer_step: typing.SupportsInt | typing.SupportsIndex = 2, effort: typing.SupportsInt | typing.SupportsIndex = 0, i2s_attributes: collections.abc.Mapping[str, str] = {}, i2s_version: typing.SupportsInt | typing.SupportsIndex = 0) -> Encoder:
     """
-    An encoder for one slide (a DICOM whole-slide instance: JPEG, JPEG 2000 or HTJ2K frames), writing <source stem>.<encoding>.iris into destination, its tiles 'jpeg' or 'av1'; subsampling left as None takes the encoding's default ('422' for jpeg; av1 is '420' alone); raises RuntimeError naming what it refuses
+    An encoder for one slide (a DICOM whole-slide instance: JPEG, JPEG 2000 or HTJ2K frames), writing <source stem>.<encoding>.iris into destination, its tiles 'jpeg' or 'av1'; subsampling left as None takes the encoding's default ('422' for jpeg; av1 is '420' alone); effort is how hard to work on each tile, 0 (fastest) to 6 (smallest), av1 only; raises RuntimeError naming what it refuses
     """
 def dispatch_encoder(encoder: Encoder) -> None:
     """

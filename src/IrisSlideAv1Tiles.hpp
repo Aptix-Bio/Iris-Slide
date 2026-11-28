@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "IrisSlideGeometry.hpp"
+#include "IrisSlideTypes.hpp"
 
 namespace IrisSlide {
 // RTM Encode_13
@@ -21,9 +22,11 @@ constexpr std::size_t I420_TILE_BYTES = std::size_t{RECUT_TILE} * RECUT_TILE * 3
 /// The quality scale callers pass (QUALITY_MIN to QUALITY_MAX) and libaom's quantiser range
 /// (0, the finest, to 63), between which encode_av1_tile maps linearly.
 constexpr std::uint32_t AV1_QUANTISER_MAX = 63;
-/// libaom's speed setting in good-quality mode: 0 is the slowest and finest, 6 the fastest of
-/// that mode *(speed and size on stained tissue to measure)*.
-constexpr int AV1_CPU_USED = 6;
+/// libaom's fastest speed setting in good-quality mode (0 is its slowest). An encode's effort
+/// counts down from it, so EFFORT_MIN is libaom's 6 and EFFORT_MAX its 0 (decided 2026-11-27):
+/// one five-plane tissue tile at quality 90 took 87 ms and 37.4 KB at 6, about 1 s and 35.6 KB at 1.
+constexpr int AV1_FASTEST_CPU_USED = 6;
+static_assert(AV1_FASTEST_CPU_USED == EFFORT_MAX, "each effort is one of libaom's good-quality speeds");
 
 /// @p rgba (RECUT_TILE² × 4 bytes) as 8-bit 4:2:0 with BT.601 coefficients at full range, the
 /// colour D22 states: libyuv's ABGRToJ420, whose ABGR is R, G, B, A in memory. Throws
@@ -37,9 +40,11 @@ std::vector<std::uint8_t> tile_to_i420 (std::span<const std::uint8_t> rgba);
 /// BT.601 matrix coefficients at full range; for one plane the full still-picture header, which
 /// every decoder reads), then the frame, each OBU with its size field. The first plane is
 /// the key frame and every later plane an inter frame predicted from the ones before it. @p
-/// quality is QUALITY_MIN to QUALITY_MAX, mapped onto libaom's quantiser range. Throws
-/// std::invalid_argument for no planes, a wrong-sized plane or a quality outside its range, and
-/// std::runtime_error naming libaom's error when an encode fails.
-std::vector<std::uint8_t> encode_av1_tile (std::span<const std::span<const std::uint8_t>> planes, std::uint32_t quality);
+/// quality is QUALITY_MIN to QUALITY_MAX, mapped onto libaom's quantiser range, and @p effort
+/// EFFORT_MIN to EFFORT_MAX, libaom's speed AV1_FASTEST_CPU_USED - effort. Throws
+/// std::invalid_argument for no planes, a wrong-sized plane, or a quality or effort outside its
+/// range, and std::runtime_error naming libaom's error when an encode fails.
+std::vector<std::uint8_t> encode_av1_tile (std::span<const std::span<const std::uint8_t>> planes, std::uint32_t quality,
+                                           Effort effort = EFFORT_DEFAULT);
 } // namespace IrisSlide
 #endif /* IrisSlideAv1Tiles_hpp */

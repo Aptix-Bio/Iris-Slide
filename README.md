@@ -148,6 +148,7 @@ const irisSlide = await createModule();
 - `-s, --source`: the slide, a DICOM whole-slide instance (JPEG, JPEG 2000 or HTJ2K frames)
 - `-o, --outdir`: the folder `<source stem>.<encoding>.iris` is written to (default: the source's)
 - `-e, --encoding`: the tile encoding, `jpeg` or `av1` (default `jpeg`)
+- `--effort`: how hard the encoder works on each tile, `0` (fastest, the default) to `6` (smallest at the same quality); `av1` only, through libaom's speed setting
 - `-q, --quality`: JPEG quality, 1-100 (default 90)
 - `--subsampling`: chroma subsampling, `444`, `422` or `420` (default `422` for `jpeg`; `av1` tiles are `420` alone, the default they take)
 - `--layer-step`: the scale between written layers, a power of two from 2 (default 2)
@@ -454,7 +455,7 @@ written = Encoder.encode_slide_file(
 )                           # an option left out takes the encoder's default (every core for concurrency)
 ```
 
-**Parameters:** `source`, `outdir` (default: the source's folder), `encoding` (`'jpeg'`, the default, or `'av1'`), `quality`, `subsampling` (left out, the encoding's default: `'422'` for JPEG, `'420'` for AV1, its only chroma), `layer_step`, `memory_budget` (bytes; 0 is a quarter of physical memory), `concurrency` (at least 1; left out, every core), `i2s_attributes` (the slide's Iris Interoperability Specification attributes as key and value text, written as its `METADATA_I2S` attributes; a key that is not ASCII or a value that is not UTF-8 is refused naming it), `i2s_version` (the I2S version, `major << 8 | minor`, so I2S 0.1 is 1; required with `i2s_attributes`), `show_progress`. The lower-level calls are `create_encoder`, `dispatch_encoder`, `encoder_progress` and `interrupt_encoder`.
+**Parameters:** `source`, `outdir` (default: the source's folder), `encoding` (`'jpeg'`, the default, or `'av1'`), `quality`, `subsampling` (left out, the encoding's default: `'422'` for JPEG, `'420'` for AV1, its only chroma), `effort` (AV1 only: `0`, the fastest and the default, to `6`, the smallest), `layer_step`, `memory_budget` (bytes; 0 is a quarter of physical memory), `concurrency` (at least 1; left out, every core), `i2s_attributes` (the slide's Iris Interoperability Specification attributes as key and value text, written as its `METADATA_I2S` attributes; a key that is not ASCII or a value that is not UTF-8 is refused naming it), `i2s_version` (the I2S version, `major << 8 | minor`, so I2S 0.1 is 1; required with `i2s_attributes`), `show_progress`. The lower-level calls are `create_encoder`, `dispatch_encoder`, `encoder_progress` and `interrupt_encoder`.
 
 ## JavaScript Detailed Examples
 

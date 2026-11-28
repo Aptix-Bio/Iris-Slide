@@ -47,6 +47,8 @@ if (IRIS_BUILD_ENCODER)
         "subsampling_unknown|-s,absent.dcm,--subsampling,411|2|subsampling \"411\""
         "encoding_unknown|-s,absent.dcm,--encoding,webp|2|encoding \"webp\""
         "av1_chroma_refused|-s,absent.dcm,-e,av1,--subsampling,444|1|AV1 tiles are 4:2:0"
+        "effort_out_of_range|-s,absent.dcm,-e,av1,--effort,7|1|effort 7 is outside 0-6"
+        "jpeg_effort_refused|-s,absent.dcm,--effort,3|1|effort 3 is refused for TILE_ENCODING_JPEG"
         "argument_unknown|-s,absent.dcm,--colour,red|2|unknown argument \"--colour\""
         "source_missing|-q,90|2|a source slide is needed"
         "source_absent|-s,absent.dcm|1|absent.dcm is not a file")

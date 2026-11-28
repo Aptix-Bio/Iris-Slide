@@ -75,12 +75,16 @@ std::vector<std::uint8_t> tile_to_i420 (std::span<const std::uint8_t> rgba)
 }
 
 // RTM Encode_13
-std::vector<std::uint8_t> encode_av1_tile (std::span<const std::span<const std::uint8_t>> planes, std::uint32_t quality)
+std::vector<std::uint8_t> encode_av1_tile (std::span<const std::span<const std::uint8_t>> planes, std::uint32_t quality,
+                                           Effort effort)
 {
     if (planes.empty()) throw std::invalid_argument("an AV1 tile needs at least one focal plane");
     if (quality < std::uint32_t{QUALITY_MIN} || quality > std::uint32_t{QUALITY_MAX})
         throw std::invalid_argument("AV1 quality " + std::to_string(quality) + " is outside " + std::to_string(QUALITY_MIN) +
                                     "-" + std::to_string(QUALITY_MAX));
+    if (effort > EFFORT_MAX)
+        throw std::invalid_argument("AV1 effort " + std::to_string(int(effort)) + " is outside " + std::to_string(int(EFFORT_MIN)) +
+                                    "-" + std::to_string(int(EFFORT_MAX)));
     std::vector<std::vector<std::uint8_t>> i420;
     i420.reserve(planes.size());
     for (const auto plane : planes) i420.push_back(tile_to_i420(plane));
@@ -112,7 +116,7 @@ std::vector<std::uint8_t> encode_av1_tile (std::span<const std::span<const std::
     context.is_initialised = true;
 
     check(context.codec, aom_codec_control(&context.codec, AOME_SET_CQ_LEVEL, int(quantiser)), "AOME_SET_CQ_LEVEL");
-    check(context.codec, aom_codec_control(&context.codec, AOME_SET_CPUUSED, AV1_CPU_USED), "AOME_SET_CPUUSED");
+    check(context.codec, aom_codec_control(&context.codec, AOME_SET_CPUUSED, AV1_FASTEST_CPU_USED - int(effort)), "AOME_SET_CPUUSED");
     check(context.codec, aom_codec_control(&context.codec, AV1E_SET_ROW_MT, 0), "AV1E_SET_ROW_MT");
     check(context.codec, aom_codec_control(&context.codec, AV1E_SET_COLOR_RANGE, AOM_CR_FULL_RANGE), "AV1E_SET_COLOR_RANGE");
     check(context.codec, aom_codec_control(&context.codec, AV1E_SET_MATRIX_COEFFICIENTS, AOM_CICP_MC_BT_601),

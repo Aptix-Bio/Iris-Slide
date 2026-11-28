@@ -46,10 +46,12 @@ std::string help ()
         "  -q, --quality N          tile quality, 1-100 (default {})\n"
         "      --subsampling S      chroma subsampling: 444, 422 or 420 (default {} for jpeg; av1 is 420 alone)\n"
         "      --layer-step N       the scale between written layers, a power of two from 2 (default {})\n"
+        "      --effort N           how hard to work on each tile, 0 (fastest) to 6 (smallest); av1 only (default {})\n"
         "      --memory-budget GIB  memory held at once (default: a quarter of physical memory)\n"
         "  -c, --concurrency N      worker threads (default: every core, {} here)\n"
         "  -h, --help               this text\n",
-        defaults.quality, IrisSlide::subsampling_name(defaults.subsampling), defaults.layer_step, defaults.concurrency);
+        defaults.quality, IrisSlide::subsampling_name(defaults.subsampling), defaults.layer_step, int(defaults.effort),
+        defaults.concurrency);
 }
 /// A whole decimal number; throws std::invalid_argument naming @p flag and the text otherwise.
 std::uint64_t number_of (std::string_view flag, std::string_view text)
@@ -101,6 +103,8 @@ IrisSlide::EncoderDesc desc_of (int argc, char const* argv[])
         else if (flag == "--memory-budget") desc.memory_budget = gib_of(value);
         else if (flag == "-q" || flag == "--quality")
             desc.quality = IrisSlide::narrowed<IrisSlide::Quality>(number_of(flag, value), "quality");
+        else if (flag == "--effort")
+            desc.effort = IrisSlide::narrowed<IrisSlide::Effort>(number_of(flag, value), "effort");
         else if (flag == "--layer-step")
             desc.layer_step = IrisSlide::narrowed<std::uint32_t>(number_of(flag, value), "layer step");
         else if (flag == "-c" || flag == "--concurrency")

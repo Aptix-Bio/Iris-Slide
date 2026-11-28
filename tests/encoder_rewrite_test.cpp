@@ -251,6 +251,23 @@ TEST_CASE("An AV1 slide is written, and the same source gives the same bytes at 
     CHECK(bytes_a == bytes_b);
 }
 
+TEST_CASE("An effort above EFFORT_MAX, or a JPEG encode at any effort above EFFORT_MIN, is refused naming it", "[Encode_09][Encode_13]")
+{
+    // Av1TileEncode_27 (decided 2026-11-27): effort is AV1's speed setting; JPEG has none.
+    const ScratchFolder folder;
+    IrisSlide::Encoder encoder;
+    const auto source = [] { return std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 600, .height = 600}); };
+    IrisSlide::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path};
+    desc.encoding = IrisSlide::TILE_ENCODING_AV1;
+    desc.subsampling = IrisSlide::SUBSAMPLE_420;
+    desc.effort = IrisSlide::EFFORT_MAX + 1;
+    CHECK_THAT(IrisSlide::create_encoder(desc, source(), encoder).message, ContainsSubstring("effort 7"));
+    desc.encoding = IrisSlide::TILE_ENCODING_JPEG;
+    desc.subsampling = IrisSlide::SUBSAMPLE_DEFAULT;
+    desc.effort = 1;
+    CHECK_THAT(IrisSlide::create_encoder(desc, source(), encoder).message, ContainsSubstring("effort 1") && ContainsSubstring("JPEG"));
+}
+
 TEST_CASE("An AV1 encode with chroma other than 4:2:0 is refused naming it", "[Encode_09][Encode_13]")
 {
     const ScratchFolder folder;

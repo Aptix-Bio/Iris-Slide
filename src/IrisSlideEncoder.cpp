@@ -124,7 +124,7 @@ std::vector<std::uint32_t> stream_order (std::uint32_t planes)
 /// case here (JPEG: libjpeg-turbo through the codec context, one plane; AV1: libaom, every plane
 /// in stream order, IrisSlideAv1Tiles.hpp).
 Buffer compress_tile (const Context& context, Encoding encoding, const std::vector<std::uint8_t>& rgba,
-                      std::uint32_t planes, Quality quality, Subsampling subsampling)
+                      std::uint32_t planes, Quality quality, Subsampling subsampling, Effort effort)
 {
     switch (encoding) {
         case TILE_ENCODING_JPEG:
@@ -139,7 +139,7 @@ Buffer compress_tile (const Context& context, Encoding encoding, const std::vect
             std::vector<std::span<const std::uint8_t>> ordered;
             for (const std::uint32_t plane : stream_order(planes))
                 ordered.push_back(std::span<const std::uint8_t>(rgba).subspan(plane * TILE_BYTES, TILE_BYTES));
-            const std::vector<std::uint8_t> stream = encode_av1_tile(ordered, quality);
+            const std::vector<std::uint8_t> stream = encode_av1_tile(ordered, quality, effort);
             return Iris::Copy_strong_buffer_from_data(stream.data(), stream.size());
         }
         case TILE_ENCODING_UNDEFINED:
@@ -575,7 +575,7 @@ void Encoder_t::work_tile (std::uint32_t depth, std::uint32_t r, std::uint32_t x
             }
         }
         if (!_layers[depth].written) { tile_done(depth, r); return; }   // only reduced from, never stored
-        row.streams[x] = compress_tile(_context, _desc.encoding, row.pixels[x], _planes, _desc.quality, _desc.subsampling);
+        row.streams[x] = compress_tile(_context, _desc.encoding, row.pixels[x], _planes, _desc.quality, _desc.subsampling, _desc.effort);
         if (!row.streams[x]) throw std::runtime_error("tile (" + std::to_string(x) + ", " + std::to_string(r) +
                                                       ") of layer " + std::to_string(depth) + " did not compress");
         charge(std::int64_t(row.streams[x]->size()));
@@ -768,6 +768,14 @@ void check_desc (const EncoderDesc& desc)
         throw std::runtime_error("quality " + std::to_string(desc.quality) + " is outside 1-100");
     // RTM Encode_13: AV1 tiles are 4:2:0 alone (D22), so another chroma is refused before it could
     // be written as something else.
+    // RTM Encode_13: effort is AV1's speed setting (decided 2026-11-27); JPEG has none to spend
+    // more on, so it takes EFFORT_MIN alone.
+    if (desc.effort > EFFORT_MAX)
+        throw std::runtime_error("effort " + std::to_string(int(desc.effort)) + " is outside " + std::to_string(int(EFFORT_MIN)) +
+                                 "-" + std::to_string(int(EFFORT_MAX)));
+    if (desc.effort != EFFORT_MIN && desc.encoding != TILE_ENCODING_AV1)
+        throw std::runtime_error("effort " + std::to_string(int(desc.effort)) + " is refused for " + encoding_name(desc.encoding) +
+                                 ", which has no speed setting; only AV1 tiles take an effort above " + std::to_string(int(EFFORT_MIN)));
     if (desc.encoding == TILE_ENCODING_AV1 && desc.subsampling != SUBSAMPLE_420)
         throw std::runtime_error("AV1 tiles are 4:2:0 (subsampling 420); subsampling " +
                                  std::string(subsampling_name(desc.subsampling)) + " is refused");

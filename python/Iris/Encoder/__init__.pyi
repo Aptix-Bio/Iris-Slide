@@ -9,6 +9,7 @@ __all__ = ["encode_slide_file", "EncoderState", "EncoderProgress", "Encoder", "c
 
 def encode_slide_file(source: str, outdir: str = ..., encoding: str = ..., quality: int | None = ...,
                       subsampling: str | None = ...,
-                      layer_step: int | None = ..., memory_budget: int | None = ..., concurrency: int | None = ...,
+                      layer_step: int | None = ..., effort: int | None = ..., memory_budget: int | None = ...,
+                      concurrency: int | None = ...,
                       i2s_attributes: dict[str, str] | None = ..., i2s_version: int = ...,
                       show_progress: bool = ...) -> str: ...

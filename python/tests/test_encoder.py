@@ -24,6 +24,13 @@ class EncoderBindingTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '"webp"'):
                 create_encoder(str(Path(folder) / "absent.dcm"), folder, encoding="webp")
 
+    def test_effort_above_six_and_jpeg_effort_are_refused_by_the_core(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaisesRegex(RuntimeError, "effort 7"):
+                create_encoder(str(Path(folder) / "absent.dcm"), folder, encoding="av1", effort=7)
+            with self.assertRaisesRegex(RuntimeError, "effort 2 is refused for TILE_ENCODING_JPEG"):
+                create_encoder(str(Path(folder) / "absent.dcm"), folder, effort=2)
+
     def test_av1_with_chroma_other_than_420_is_refused_by_the_core(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             with self.assertRaisesRegex(RuntimeError, "4:2:0"):
