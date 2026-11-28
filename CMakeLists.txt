@@ -121,6 +121,10 @@ if (IRIS_BUILD_ENCODER)
     # RTM Dicom_05: OpenJPEG decodes JPEG 2000 and HTJ2K source frames (ARCHITECTURE D17).
     find_package(OpenJPEG CONFIG REQUIRED)
     list(APPEND IrisSlideEncoderDependencies openjp2)
+    # RTM Encode_13: libaom encodes AV1 tiles and libyuv converts them to 4:2:0 (ARCHITECTURE D22).
+    find_package(AOM CONFIG REQUIRED)
+    find_package(libyuv CONFIG REQUIRED)
+    list(APPEND IrisSlideEncoderDependencies AOM::aom yuv)
 endif()
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -157,6 +161,7 @@ set (
     ${SLIDE_SOURCE_DIR}/IrisSlideDicomFrames.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideSource.cpp
     ${SLIDE_SOURCE_DIR}/IrisSlideReduce.cpp
+    ${SLIDE_SOURCE_DIR}/IrisSlideAv1Tiles.cpp
 )
 set (
     IrisSlideInclude

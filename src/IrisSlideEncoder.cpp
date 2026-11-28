@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <array>
+#include <span>
 #include <bit>
 #include <cmath>
 #include <concepts>
@@ -40,6 +41,8 @@
 #include "IrisSlidePriv.hpp"
 #include "IFE_Builder.hpp"
 #include "IrisSlideReduce.hpp"
+#include "IrisSlideEncoderOptions.hpp"
+#include "IrisSlideAv1Tiles.hpp"
 
 namespace IrisSlide {
 namespace {
@@ -49,7 +52,6 @@ constexpr std::uint64_t BUDGET_DIVISOR = 4;
 /// A derived row reads up to 4 rows of the layer below; with the row being made, 5 rows of each
 /// layer is the smallest working set an encode can progress in.
 constexpr std::uint64_t ROWS_HELD = 5;
-constexpr int QUALITY_MIN = 1, QUALITY_MAX = 100;
 
 /// The machine's physical memory; throws naming the system call that could not say, so the
 /// default budget is never silently 0.
@@ -77,27 +79,17 @@ std::uint64_t physical_memory ()
 #endif
 }
 
-/// The tile encodings this encoder writes, each with its file-name word; one row per encoding, so
-/// adding one (AV1, UASTC, XUASTC) is a row here and a case in compress_tile.
-struct WrittenEncoding {
-    Encoding         encoding;
-    std::string_view word;
-};
-constexpr std::array<WrittenEncoding, 1> WRITTEN_ENCODINGS {{
-    {TILE_ENCODING_JPEG, "jpeg"},
-}};
-
-/// Whether this encoder writes @p encoding.
+/// Whether this encoder writes @p encoding (a row of ENCODING_NAMES).
 bool is_written_encoding (Encoding encoding) noexcept
 {
-    return std::any_of(WRITTEN_ENCODINGS.begin(), WRITTEN_ENCODINGS.end(),
-                       [encoding](const WrittenEncoding& row) { return row.encoding == encoding; });
+    return std::any_of(ENCODING_NAMES.begin(), ENCODING_NAMES.end(),
+                       [encoding](const EncodingName& row) { return row.encoding == encoding; });
 }
 /// The file-name word of an encoding this encoder writes; throws for any other.
 std::string_view encoding_word (Encoding encoding)
 {
-    for (const auto& row : WRITTEN_ENCODINGS)
-        if (row.encoding == encoding) return row.word;
+    for (const auto& row : ENCODING_NAMES)
+        if (row.encoding == encoding) return row.name;
     throw std::runtime_error("tile encoding " + std::to_string(int(encoding)) + " has no file-name word here");
 }
 /// The encoding's name as IFE's specification spells it (IFE's generated member_name).
@@ -115,7 +107,7 @@ std::string file_name (const std::filesystem::path& source, Encoding encoding)
 
 /// The encoder's one way out for pixels: a 256-pixel RGBA8 tile compressed in the IFE tile
 /// encoding the file declares. An encoding is one case here (JPEG: libjpeg-turbo through the
-/// codec context).
+/// codec context; AV1: libaom, one focal plane, IrisSlideAv1Tiles.hpp).
 Buffer compress_tile (const Context& context, Encoding encoding, const std::vector<std::uint8_t>& rgba,
                       Quality quality, Subsampling subsampling)
 {
@@ -127,9 +119,14 @@ Buffer compress_tile (const Context& context, Encoding encoding, const std::vect
                                            .encoding    = encoding,
                                            .quality     = quality,
                                            .subsampling = subsampling});
+        case TILE_ENCODING_AV1: {
+            // RTM Encode_13: one focal plane, a stack of one (D9).
+            const std::array<std::span<const std::uint8_t>, 1> planes {std::span<const std::uint8_t>(rgba)};
+            const std::vector<std::uint8_t> stream = encode_av1_tile(planes, quality);
+            return Iris::Copy_strong_buffer_from_data(stream.data(), stream.size());
+        }
         case TILE_ENCODING_UNDEFINED:
         case TILE_ENCODING_IRIS:
-        case TILE_ENCODING_AV1:
         case TILE_ENCODING_UASTC:
         case TILE_ENCODING_XUASTC:
             break;
@@ -739,6 +736,11 @@ void check_desc (const EncoderDesc& desc)
         throw std::runtime_error(std::string("the encoder does not write ") + encoding_name(desc.encoding));
     if (desc.quality < QUALITY_MIN || desc.quality > QUALITY_MAX)
         throw std::runtime_error("quality " + std::to_string(desc.quality) + " is outside 1-100");
+    // RTM Encode_13: AV1 tiles are 4:2:0 alone (D22), so another chroma is refused before it could
+    // be written as something else.
+    if (desc.encoding == TILE_ENCODING_AV1 && desc.subsampling != SUBSAMPLE_420)
+        throw std::runtime_error("AV1 tiles are 4:2:0 (subsampling 420); subsampling " +
+                                 std::string(subsampling_name(desc.subsampling)) + " is refused");
     if (desc.concurrency == 0) throw std::runtime_error("concurrency 0 is refused: an encode needs at least 1 worker thread");
     if (!std::filesystem::is_directory(desc.destination))
         throw std::runtime_error("the destination " + desc.destination.string() + " is not a folder");

@@ -105,11 +105,13 @@ IrisSlide::EncoderProgress wait_for(const IrisSlide::Encoder& encoder)
 /// Encodes a PatternSource of @p size into @p folder and waits for it to end.
 IrisSlide::EncoderProgress encode(IrisSlide::LayerSize size, const std::filesystem::path& folder,
                                 std::uint64_t budget = 0, std::uint32_t concurrency = std::thread::hardware_concurrency(),
-                                std::uint32_t layer_step = 2)
+                                std::uint32_t layer_step = 2, IrisSlide::Encoding encoding = IrisSlide::TILE_ENCODING_JPEG)
 {
     IrisSlide::Encoder encoder;
-    const IrisSlide::EncoderDesc desc {.source = folder / "pattern.dcm", .destination = folder,
-                                     .memory_budget = budget, .concurrency = concurrency, .layer_step = layer_step};
+    IrisSlide::EncoderDesc desc {.source = folder / "pattern.dcm", .destination = folder,
+                                 .memory_budget = budget, .concurrency = concurrency, .layer_step = layer_step};
+    desc.encoding = encoding;
+    if (encoding == IrisSlide::TILE_ENCODING_AV1) desc.subsampling = IrisSlide::SUBSAMPLE_420;   // AV1 is 4:2:0 alone (D22)
     const auto created = IrisSlide::create_encoder(desc, std::make_unique<PatternSource>(size), encoder);
     INFO(created.message);
     REQUIRE(created.succeeded());
@@ -138,8 +140,10 @@ TEST_CASE("The output is named for its source and tile encoding", "[Encode_09]")
     std::string name;
     REQUIRE(IrisSlide::encoder_output_name("slides/synthetic.dcm", IrisSlide::TILE_ENCODING_JPEG, name).succeeded());
     CHECK(name == "synthetic.jpeg.iris");
-    CHECK_THAT(IrisSlide::encoder_output_name("slides/synthetic.dcm", IrisSlide::TILE_ENCODING_AV1, name).message,
-               ContainsSubstring("TILE_ENCODING_AV1"));
+    REQUIRE(IrisSlide::encoder_output_name("slides/synthetic.dcm", IrisSlide::TILE_ENCODING_AV1, name).succeeded());
+    CHECK(name == "synthetic.av1.iris");
+    CHECK_THAT(IrisSlide::encoder_output_name("slides/synthetic.dcm", IrisSlide::TILE_ENCODING_UASTC, name).message,
+               ContainsSubstring("TILE_ENCODING_UASTC"));
 }
 
 TEST_CASE("Each subsampling name reads as its enumerator and back", "[Encode_09]")
@@ -157,8 +161,8 @@ TEST_CASE("create_encoder refuses what it cannot encode, naming the value", "[En
     IrisSlide::Encoder encoder;
     const auto source = [] { return std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 600, .height = 600}); };
     IrisSlide::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path};
-    desc.encoding = IrisSlide::TILE_ENCODING_AV1;
-    CHECK_THAT(IrisSlide::create_encoder(desc, source(), encoder).message, ContainsSubstring("TILE_ENCODING_AV1"));
+    desc.encoding = IrisSlide::TILE_ENCODING_UASTC;
+    CHECK_THAT(IrisSlide::create_encoder(desc, source(), encoder).message, ContainsSubstring("TILE_ENCODING_UASTC"));
     desc.encoding = IrisSlide::TILE_ENCODING_JPEG;
     desc.quality = 0;
     CHECK_THAT(IrisSlide::create_encoder(desc, source(), encoder).message, ContainsSubstring("quality 0"));
@@ -231,6 +235,30 @@ TEST_CASE("The same source and options give a byte-identical file", "[Encode_12]
     const auto bytes_a = bytes_of(a.file), bytes_b = bytes_of(b.file);
     REQUIRE_FALSE(bytes_a.empty());
     CHECK(bytes_a == bytes_b);
+}
+
+TEST_CASE("An AV1 slide is written, and the same source gives the same bytes at any concurrency", "[Encode_12][Encode_13]")
+{
+    const ScratchFolder first, second;
+    const IrisSlide::LayerSize size {.width = 600, .height = 520};   // 3 x 3 tiles, then 2 x 2, then 1
+    const auto a = encode(size, first.path, 0, 1, 2, IrisSlide::TILE_ENCODING_AV1);
+    const auto b = encode(size, second.path, 0, 4, 2, IrisSlide::TILE_ENCODING_AV1);
+    CHECK(a.file.filename() == "pattern.av1.iris");
+    const auto bytes_a = bytes_of(a.file), bytes_b = bytes_of(b.file);
+    REQUIRE_FALSE(bytes_a.empty());
+    CHECK(bytes_a == bytes_b);
+}
+
+TEST_CASE("An AV1 encode with chroma other than 4:2:0 is refused naming it", "[Encode_09][Encode_13]")
+{
+    const ScratchFolder folder;
+    IrisSlide::Encoder encoder;
+    IrisSlide::EncoderDesc desc {.source = folder.path / "s.dcm", .destination = folder.path};
+    desc.encoding = IrisSlide::TILE_ENCODING_AV1;
+    desc.subsampling = IrisSlide::SUBSAMPLE_444;
+    const auto created = IrisSlide::create_encoder(desc, std::make_unique<PatternSource>(IrisSlide::LayerSize{.width = 600, .height = 600}), encoder);
+    CHECK_THAT(created.message, ContainsSubstring("444"));
+    CHECK_THAT(created.message, ContainsSubstring("4:2:0"));
 }
 
 TEST_CASE("A slide whose decoded size is over 4x the budget encodes within the budget", "[Encode_11]")
