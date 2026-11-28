@@ -79,18 +79,30 @@ std::optional<double> meminfo_kb (std::string_view meminfo, std::string_view fie
 /// /proc/meminfo is about 1.5 KB and /proc/pressure/memory under 200 bytes.
 constexpr std::size_t PROC_FILE_BYTES = 8192;
 
+/// A file descriptor, closed when it leaves scope; negative when the open failed.
+class FileDescriptor {
+public:
+    explicit FileDescriptor (const char* path) noexcept : _fd(::open(path, O_RDONLY | O_CLOEXEC)) {}
+    FileDescriptor (const FileDescriptor&) = delete;
+    FileDescriptor& operator= (const FileDescriptor&) = delete;
+    ~FileDescriptor () { if (_fd >= 0) ::close(_fd); }
+    [[nodiscard]] bool is_open () const noexcept { return _fd >= 0; }
+    [[nodiscard]] int get () const noexcept { return _fd; }
+private:
+    int _fd;
+};
+
 /// The start of the file at @p path, read into @p buffer with no allocation; empty when it cannot be read.
 std::string_view proc_file (const char* path, std::array<char, PROC_FILE_BYTES>& buffer) noexcept
 {
-    const int file = ::open(path, O_RDONLY | O_CLOEXEC);
-    if (file < 0) return {};
+    const FileDescriptor file(path);
+    if (!file.is_open()) return {};
     std::size_t length = 0;
     while (length < buffer.size()) {
-        const ssize_t got = ::read(file, buffer.data() + length, buffer.size() - length);
+        const ssize_t got = ::read(file.get(), buffer.data() + length, buffer.size() - length);
         if (got <= 0) break;
         length += static_cast<std::size_t>(got);
     }
-    ::close(file);
     return {buffer.data(), length};
 }
 #endif
