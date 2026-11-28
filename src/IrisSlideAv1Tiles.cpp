@@ -101,12 +101,17 @@ std::vector<std::uint8_t> encode_av1_tile (std::span<const std::span<const std::
     config.kf_max_dist = config.g_limit;     // one key frame: the in-focus plane opens the stack
     config.g_timebase = {1, TIMEBASE_DENOMINATOR};
     config.rc_end_usage = AOM_Q;             // constant quantiser: quality alone sets the size
+    // Quality 100 is the finest quantiser (0) and quality 1 the coarsest (AV1_QUANTISER_MAX).
+    const auto quantiser = (QUALITY_MAX - quality) * AV1_QUANTISER_MAX / (QUALITY_MAX - QUALITY_MIN);
+    // Every plane at that quantiser, the key frame included: without the range pinned, libaom's
+    // rate control gives a key frame that later planes reference a finer one (a five-plane tile at
+    // quality 90 had its key frame at q-index 1 and the rest at 24, found 2026-11-27).
+    config.rc_min_quantizer = quantiser;
+    config.rc_max_quantizer = quantiser;
     check(context.codec, aom_codec_enc_init(&context.codec, av1, &config, 0), "aom_codec_enc_init");
     context.is_initialised = true;
 
-    // Quality 100 is the finest quantiser (0) and quality 1 the coarsest (AV1_QUANTISER_MAX).
-    const auto quantiser = int((QUALITY_MAX - quality) * AV1_QUANTISER_MAX / (QUALITY_MAX - QUALITY_MIN));
-    check(context.codec, aom_codec_control(&context.codec, AOME_SET_CQ_LEVEL, quantiser), "AOME_SET_CQ_LEVEL");
+    check(context.codec, aom_codec_control(&context.codec, AOME_SET_CQ_LEVEL, int(quantiser)), "AOME_SET_CQ_LEVEL");
     check(context.codec, aom_codec_control(&context.codec, AOME_SET_CPUUSED, AV1_CPU_USED), "AOME_SET_CPUUSED");
     check(context.codec, aom_codec_control(&context.codec, AV1E_SET_ROW_MT, 0), "AV1E_SET_ROW_MT");
     check(context.codec, aom_codec_control(&context.codec, AV1E_SET_COLOR_RANGE, AOM_CR_FULL_RANGE), "AV1E_SET_COLOR_RANGE");

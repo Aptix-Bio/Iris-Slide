@@ -116,12 +116,14 @@ struct DecodedPlane {
     Dav1dSequenceHeader  sequence {};
     Dav1dFrameType       frame_type {};
     Dav1dPixelLayout     layout {};
+    int                  q_index = 0;   // the frame's base quantiser index (AV1 specification 5.9.12)
     std::vector<std::uint8_t> luma;   // SIDE × SIDE
 };
 /// @p picture's headers and luma, the picture released.
 DecodedPlane plane_of(Dav1dPicture& picture)
 {
-    DecodedPlane plane {.sequence = *picture.seq_hdr, .frame_type = picture.frame_hdr->frame_type, .layout = picture.p.layout};
+    DecodedPlane plane {.sequence = *picture.seq_hdr, .frame_type = picture.frame_hdr->frame_type, .layout = picture.p.layout,
+                        .q_index = picture.frame_hdr->quant.yac};
     REQUIRE(picture.p.w == int(SIDE));
     REQUIRE(picture.p.h == int(SIDE));
     for (std::size_t y = 0; y < SIDE; ++y) {
@@ -361,6 +363,23 @@ TEST_CASE("An emulated Z-stack is one AV1 stream: the in-focus key frame, then a
         CHECK(decoded[plane].sequence.color_range == 1);
         const auto source = IrisSlide::tile_to_i420(planes[plane]);
         CHECK(luma_psnr(decoded[plane].luma, std::span(source).first(SIDE * SIDE)) > LUMA_PSNR_FLOOR_DB);
+    }
+}
+
+TEST_CASE("Every plane of a stack is coded at the quantiser its quality names, the key frame included", "[Encode_13]")
+{
+    // A key frame that later planes reference is given a finer quantiser by libaom's rate control
+    // unless the range is pinned: found 2026-11-27, a five-plane tile at quality 90 had its key frame
+    // at q-index 2 and the rest at 24, 2.7 times the single plane's bytes.
+    const auto planes = z_stack();
+    const std::vector<std::span<const std::uint8_t>> one {planes.front()};
+    const auto alone = decode(IrisSlide::encode_av1_tile(one, QUALITY));
+    const auto stack = decode(IrisSlide::encode_av1_tile(spans_of(planes), QUALITY));
+    REQUIRE(alone.size() == 1);
+    REQUIRE(stack.size() == planes.size());
+    for (std::size_t plane = 0; plane < stack.size(); ++plane) {
+        INFO("stream position " << plane);
+        CHECK(stack[plane].q_index == alone.front().q_index);
     }
 }
 
